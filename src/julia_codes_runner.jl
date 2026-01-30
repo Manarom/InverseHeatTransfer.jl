@@ -1,13 +1,13 @@
 # runner for julia codes and benchmarking
 using BenchmarkTools,Plots,Polynomials
-# plotly()
-gr()
+ plotly()
+#gr()
 using AllocCheck#, Revise
 include("finite_difference_functions.jl")
 
-lam_pars = [0.44]
+lam_pars = [0.44, 0.21e-2, 0.35e-4]
 lam_fun = Polynomials.ImmutablePolynomial(lam_pars) #T -> lam_poly(T) # теплопроводность
-lam_der_poly = Polynomials.ImmutablePolynomial( length(lam_pars)> 1 ? derivative(lam_poly) : [0.0])
+lam_der_poly = Polynomials.ImmutablePolynomial( length(lam_pars)> 1 ? derivative(lam_fun) : [0.0])
 lam_der = Polynomials.ImmutablePolynomial( lam_der_poly)#T->lam_der_poly(T)#;% производная теплопроводности
 plot(range(200.0,1000,30),lam_fun.(range(200.0,1000.0,30)))
 plot(range(200.0,1000,30),lam_der.(range(200.0,1000.0,30)))
@@ -24,7 +24,7 @@ H = 15e-3#; % толщина слоя в мм
 @eval Cp_fun(_)= $Cp*$Ro#;% не зависит от температуры
 @eval initT_f(_) =  $Tinit #;% стартовая температура постоянна
 BC_dwn_f = Polynomials.ImmutablePolynomial([Tinit])#;% температура снизу постоянна
-BC_up_f =  Polynomials.ImmutablePolynomial([Tinit, (Tmax - Tinit)/tmax])  #;% температура сверху линейно возрастает
+BC_up_f =  Polynomials.ImmutablePolynomial([Tinit, (Tmax - Tinit)/tmax, 1e-2])  #;% температура сверху линейно возрастает
 
 #plot(linspace(0,tmax,100),BC_up_f(linspace(0,tmax,100)))##;title("Режим нагрева")
 #% решаем диффур

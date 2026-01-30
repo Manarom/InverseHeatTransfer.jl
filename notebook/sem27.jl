@@ -20,13 +20,13 @@ end
 using Revise,AllocCheck
 
 # ╔═╡ c7400800-f152-11f0-a386-29e067f9216c
-using PlutoUI,Polynomials,Interpolations, BenchmarkTools,PlutoPlotly,Interpolations,Polynomials,LegendrePolynomials,StaticArrays,NonlinearSolvers,RecipesBase,Plots
+using PlutoUI,Polynomials,Interpolations, BenchmarkTools,PlutoPlotly,Interpolations,Polynomials,LegendrePolynomials,StaticArrays,RecipesBase,Plots
 
 # ╔═╡ b8d791bf-976d-4a0d-b6c0-af9d0febe464
 #using PlotlyBase
 
 # ╔═╡ 9386589f-1767-46a8-8a60-ec3f44a0970d
-deps_folder = joinpath(@__DIR__,"sem27_deps")
+deps_folder = joinpath(@__DIR__,"..\\src")
 
 # ╔═╡ ba9efa8d-054c-42a4-99a4-31319c87c54b
 include(joinpath(deps_folder,"PolynomialWrappers.jl"))
@@ -51,82 +51,16 @@ md"""
 	time nods = $(@bind M Slider(2:10:50000, default = 3000, show_value = true))
 	"""
 
-# ╔═╡ 0eae0fd4-8b5d-448a-b935-e06d469f080b
-@bind  lam_pars PlutoUI.combine() do Child
-	md"""
-	``\lambda(T) = a_0T^3 + a_1T^2 + a_2T + a_3``
-	
-	a0 = $(
-		Child(Slider(0:0.01:100,default=0.6,show_value = true))
-	) \
-	a1 = $(
-		Child(Slider(0:0.01:100,default=0.8,show_value = true))
-	)\
-	a2 = $(
-		Child(Slider(0:0.01:100,default=0.8,show_value = true))
-	)\
-	a3 = $(
-		Child(Slider(0:0.01:100,default=0.8,show_value = true))
-	)\
-	"""
-end
-
-# ╔═╡ aea2088f-c782-4cd7-8158-2a8e077da42f
-begin 
-	PolyType = BernsteinSymPolyWrapper{length(lam_pars),Float64}
-	T_dummy = SVector{N}(collect(range(Tinit,Tmax,N)))
-	V_temp = VanderMatrix(T_dummy,PolyType)
-end;
-
-# ╔═╡ ea882e26-5972-443f-a7ac-3075701b90fe
-begin 
-	N_t_dummy_points = 100
-	
-	t_dummy_range = range(0,tmax, N_t_dummy_points)
-	t_dummy = SVector{length(t_dummy_range)}(collect(t_dummy_range));
-	V_time = VanderMatrix(t_dummy,PolyType)
-end;
-
-# ╔═╡ 8f6d3be5-ffb5-41d5-8e50-f4353193c53c
-begin 
-	lam_values = Vector(V_temp*SVector(lam_pars)) 
-	p_lam = Plots.plot(Vector(T_dummy),Vector(lam_values),title="thermal conductivity",label= nothing,linewidth = 4)
-	xlabel!(p_lam,"Temperature, ᵒC")
-	ylabel!(p_lam,"Thermal conductivity, W/(m*K)")
-end
-
-# ╔═╡ 84bfb85d-def3-4a08-be60-01de2d68be36
-md" Use plotly backend for surf $(@bind is_use_plotly CheckBox(default = false))"
-
-# ╔═╡ 8992ffda-fcbb-4994-9acb-1080056903b7
-md"""
-	camera angle α $(@bind α Slider(-180:180,default = 0))
-	camera angle β $(@bind β Slider(-180:180,default = 0))
-	"""
-
-# ╔═╡ e4aac0a1-d9c0-4e20-8f86-151090a9651f
-begin 
-	lam_prs = Polynomials.fit(Polynomial{Float64},Vector(T_dummy),lam_values,3)
-	lam_fun = Polynomials.ImmutablePolynomial( lam_prs ) # теплопроводность
-	lam_der = Polynomials.ImmutablePolynomial( derivative(lam_prs))#;% производная теплопроводности
-end;
-
-# ╔═╡ d9e8f0ee-6563-4ea5-8d12-ec58c9bbc39a
-begin 
-	@eval Cp_fun(_) = $Cp*$Ro# capacity
-	@eval initT_f(_) = $Tinit # starting 
-end
-
-# ╔═╡ b9a4856c-cd3a-4b2e-9b46-4850a77c9c4f
-func_names = Main.OneDHeatTransfer.func_names
+# ╔═╡ 914a5c0b-7b86-474f-8e73-55f135a559d0
+Main.OneDHeatTransfer
 
 # ╔═╡ d6145328-5f43-4148-8911-232c9fed39c4
 md"""
-	Select solver: $(@bind solver_name  Select(func_names))
+	Select solver: $(@bind solver_name  Select(collect(Main.OneDHeatTransfer.)))
 
-	Select upper BC type: $(@bind upper_bc_type  Select(subtypes(Main.OneDHeatTransfer.AbstractBC)))
+	Select upper BC type: $(@bind upper_bc_type  Select(subtypes(Main.OneDHeatTransfer.AbstractBoundaryCondition)))
 
-	Select lower BC type: $(@bind lower_bc_type  Select(subtypes(Main.OneDHeatTransfer.AbstractBC)))
+	Select lower BC type: $(@bind lower_bc_type  Select(subtypes(Main.OneDHeatTransfer.AbstractBoundaryCondition)))
 	"""
 
 # ╔═╡ eeb3d1a0-be52-444d-aa82-89c639d5aece
@@ -135,6 +69,14 @@ begin
 	is_upper_neuman =  upper_bc_type == Main.OneDHeatTransfer.NeumanBC  
 	ubc_mult = !is_upper_dirichle ? 1e6 : 1e3
 	def_val_ubc = !is_upper_dirichle  ? 1e6/2 : 1e3/2
+end;
+
+# ╔═╡ 4d348c80-1035-4561-85e2-02c9bf12486a
+begin 
+	is_lower_dirichle =  lower_bc_type == Main.OneDHeatTransfer.DirichletBC
+	is_lower_neuman =  lower_bc_type == Main.OneDHeatTransfer.NeumanBC
+	lbc_mult = !is_lower_dirichle ? 1e6 : 1e3
+	def_val_lbc = !is_lower_dirichle ? 0 : 0
 end;
 
 # ╔═╡ 36e2c7b2-0cb0-4684-8d01-03e107349cb2
@@ -157,14 +99,6 @@ end;
 	"""
 end
 
-# ╔═╡ 4d348c80-1035-4561-85e2-02c9bf12486a
-begin 
-	is_lower_dirichle =  lower_bc_type == Main.OneDHeatTransfer.DirichletBC
-	is_lower_neuman =  lower_bc_type == Main.OneDHeatTransfer.NeumanBC
-	lbc_mult = !is_lower_dirichle ? 1e6 : 1e3
-	def_val_lbc = !is_lower_dirichle ? 0 : 0
-end;
-
 # ╔═╡ 8c0b27e0-7f0b-4921-a679-ceda2ad46e82
 @bind  lower_bc_pars PlutoUI.combine() do Child
 	md"""
@@ -184,6 +118,45 @@ end;
 	)\
 	"""
 end
+
+# ╔═╡ 84bfb85d-def3-4a08-be60-01de2d68be36
+md" Use plotly backend for surf $(@bind is_use_plotly CheckBox(default = false))"
+
+# ╔═╡ 0eae0fd4-8b5d-448a-b935-e06d469f080b
+@bind  lam_pars PlutoUI.combine() do Child
+	md"""
+	``\lambda(T) = a_0T^3 + a_1T^2 + a_2T + a_3``
+	
+	a0 = $(
+		Child(Slider(1e-3:0.01:100,default=0.6,show_value = true))
+	) \
+	a1 = $(
+		Child(Slider(1e-3:0.01:100,default=0.8,show_value = true))
+	)\
+	a2 = $(
+		Child(Slider(1e-3:0.01:100,default=0.8,show_value = true))
+	)\
+	a3 = $(
+		Child(Slider(1e-3:0.01:100,default=0.8,show_value = true))
+	)\
+	"""
+end
+
+# ╔═╡ aea2088f-c782-4cd7-8158-2a8e077da42f
+begin 
+	PolyType = BernsteinSymPolyWrapper{length(lam_pars),Float64}
+	T_dummy = SVector{N}(collect(range(Tinit,Tmax,N)))
+	V_temp = VanderMatrix(T_dummy,PolyType)
+end;
+
+# ╔═╡ ea882e26-5972-443f-a7ac-3075701b90fe
+begin 
+	N_t_dummy_points = 100
+	
+	t_dummy_range = range(0,tmax, N_t_dummy_points)
+	t_dummy = SVector{length(t_dummy_range)}(collect(t_dummy_range));
+	V_time = VanderMatrix(t_dummy,PolyType)
+end;
 
 # ╔═╡ da943c51-3f33-4f10-bc3d-9129f76399df
 begin 
@@ -233,20 +206,57 @@ begin
 	
 end
 
+# ╔═╡ 8f6d3be5-ffb5-41d5-8e50-f4353193c53c
+begin 
+	lam_values = Vector(V_temp*SVector(lam_pars)) 
+	p_lam = Plots.plot(Vector(T_dummy),Vector(lam_values),title="thermal conductivity",label= nothing,linewidth = 4)
+	xlabel!(p_lam,"Temperature, ᵒC")
+	ylabel!(p_lam,"Thermal conductivity, W/(m*K)")
+end
+
+# ╔═╡ 8992ffda-fcbb-4994-9acb-1080056903b7
+md"""
+	camera angle α $(@bind α Slider(-180:180,default = 0))
+	camera angle β $(@bind β Slider(-180:180,default = 0))
+	"""
+
+# ╔═╡ e4aac0a1-d9c0-4e20-8f86-151090a9651f
+begin 
+	lam_prs = Polynomials.fit(Polynomial{Float64},Vector(T_dummy),lam_values,3)
+	lam_fun = Polynomials.ImmutablePolynomial( lam_prs ) # теплопроводность
+	lam_der = Polynomials.ImmutablePolynomial( derivative(lam_prs))#;% производная теплопроводности
+end;
+
+# ╔═╡ d9e8f0ee-6563-4ea5-8d12-ec58c9bbc39a
+begin 
+	@eval Cp_fun(_) = $Cp*$Ro# capacity
+	@eval initT_f(_) = $Tinit # starting 
+end
+
+# ╔═╡ b9a4856c-cd3a-4b2e-9b46-4850a77c9c4f
+problem = Main.OneDHeatTransfer.HeatTransferProblem(Cp_fun, lam_fun,lam_der,initT_f, H,N, tmax,M,BC_up_f,upper_bc_type(),BC_dwn_f,lower_bc_type(),Float64)
+
 # ╔═╡ d8e97e88-da66-48d7-b5cd-4c1b3d9a4c4c
-fd_solver =getproperty(Main.OneDHeatTransfer,solver_name)
+fd_solver =Main.OneDHeatTransfer.unified_fd_solver!
+
+# ╔═╡ 7f309001-2d39-4e34-911f-a9594d224d30
+solver_type = Main.OneDHeatTransfer.FDSolverScheme(Main.OneDHeatTransfer.BFD1(),
+                                  Main.OneDHeatTransfer.IMP(),
+                                   Main.OneDHeatTransfer.EXP_NL(),
+                                   Main.OneDHeatTransfer.EXP_NL())
 
 # ╔═╡ 9fbe7c0d-90b7-4348-8b22-d8058452a02b
 begin 
-	(TCN,dx,dt) = fd_solver(Cp_fun, lam_fun,lam_der, H, tmax,initT_f,BC_up_f,BC_dwn_f,M,N; upper_bc_type = upper_bc_type(), lower_bc_type = lower_bc_type())
+	fd_solver(problem,solver_type)
+	TCN = problem.T
 end;
 
 # ╔═╡ ec6e4678-a807-47f6-845d-dc529f38e80c
 begin 
 	NN = 9
 	step  = M ÷ NN
-	coord = dx*(0:N-1)
-	time = dt*(0:M-1)
+	coord = Main.OneDHeatTransfer.xstep(problem)*(0:N-1)
+	time =  Main.OneDHeatTransfer.timestep(problem)*(0:M-1)
 	ppp = Plots.plot(grid = true,gridlinewidth=3,gridstyle = :dot,minorgrid=true,legend_position = :best,legend_title = "time:")
 	for k in 1:step:M
 		Plots.plot!(ppp,1e3*coord,TCN[:,k], label = string(round(time[k],digits = 2)),linewidth = 3,linealpha = 0.8)
@@ -291,7 +301,6 @@ AllocCheck = "9b6a8646-10ed-4001-bbdc-1d2f46dfbb1a"
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
 LegendrePolynomials = "3db4a2ba-fc88-11e8-3e01-49c72059a882"
-NonlinearSolvers = "f4b8ab15-8e73-4e04-9661-b5912071d22b"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 PlutoPlotly = "8e989ff0-3d88-8e9f-f020-2b208a939ff0"
 PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
@@ -305,7 +314,6 @@ AllocCheck = "~0.2.3"
 BenchmarkTools = "~1.6.3"
 Interpolations = "~0.16.2"
 LegendrePolynomials = "~0.4.5"
-NonlinearSolvers = "~0.1.1"
 Plots = "~1.41.4"
 PlutoPlotly = "~0.6.5"
 PlutoUI = "~0.7.78"
@@ -321,7 +329,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.12.4"
 manifest_format = "2.0"
-project_hash = "bdc7ad859a2113c2c4a6311312dcf7db9604e51e"
+project_hash = "18f05f66a6ad43f23a9735a510029f0fda2949c1"
 
 [[deps.AbstractPlutoDingetjes]]
 deps = ["Pkg"]
@@ -452,12 +460,6 @@ git-tree-sha1 = "37ea44092930b1811e666c3bc38065d7d87fcc74"
 uuid = "5ae59095-9a9b-59fe-a467-6f913c188581"
 version = "0.13.1"
 
-[[deps.CommonSubexpressions]]
-deps = ["MacroTools"]
-git-tree-sha1 = "cda2cfaebb4be89c9084adaca7dd7333369715c5"
-uuid = "bbf7d656-a473-5ed7-a52c-81e309532950"
-version = "0.3.1"
-
 [[deps.Compat]]
 deps = ["TOML", "UUIDs"]
 git-tree-sha1 = "9d8a54ce4b17aa5bdce0ea5c34bc5e7c340d16ad"
@@ -532,18 +534,6 @@ git-tree-sha1 = "9e2f36d3c96a820c678f2f1f1782582fcf685bae"
 uuid = "8bb1440f-4735-579b-a4ab-409b98df4dab"
 version = "1.9.1"
 
-[[deps.DiffResults]]
-deps = ["StaticArraysCore"]
-git-tree-sha1 = "782dd5f4561f5d267313f23853baaaa4c52ea621"
-uuid = "163ba53b-c6d8-5494-b064-1a9d43ac40c5"
-version = "1.1.0"
-
-[[deps.DiffRules]]
-deps = ["IrrationalConstants", "LogExpFunctions", "NaNMath", "Random", "SpecialFunctions"]
-git-tree-sha1 = "23163d55f885173722d1e4cf0f6110cdbaf7e272"
-uuid = "b552c78f-8df3-52c6-915a-8e097449b14b"
-version = "1.15.1"
-
 [[deps.Distributed]]
 deps = ["Random", "Serialization", "Sockets"]
 uuid = "8ba89e20-285c-5b6f-9357-94700520ee1b"
@@ -615,16 +605,6 @@ version = "2.17.1+0"
 git-tree-sha1 = "9c68794ef81b08086aeb32eeaf33531668d5f5fc"
 uuid = "1fa38f19-a742-5d3f-a2b9-30dd87b9d5f8"
 version = "1.3.7"
-
-[[deps.ForwardDiff]]
-deps = ["CommonSubexpressions", "DiffResults", "DiffRules", "LinearAlgebra", "LogExpFunctions", "NaNMath", "Preferences", "Printf", "Random", "SpecialFunctions"]
-git-tree-sha1 = "afb7c51ac63e40708a3071f80f5e84a752299d4f"
-uuid = "f6369f11-7733-5829-9624-2563aa707210"
-version = "0.10.39"
-weakdeps = ["StaticArrays"]
-
-    [deps.ForwardDiff.extensions]
-    ForwardDiffStaticArraysExt = "StaticArrays"
 
 [[deps.FreeType2_jll]]
 deps = ["Artifacts", "Bzip2_jll", "JLLWrappers", "Libdl", "Zlib_jll"]
@@ -1041,12 +1021,6 @@ version = "1.1.3"
 [[deps.NetworkOptions]]
 uuid = "ca575930-c2e3-43a9-ace4-1e988b2c1908"
 version = "1.3.0"
-
-[[deps.NonlinearSolvers]]
-deps = ["DocStringExtensions", "ForwardDiff"]
-git-tree-sha1 = "ba6bcd4f251b164aa804bf543ca3bed286f10585"
-uuid = "f4b8ab15-8e73-4e04-9661-b5912071d22b"
-version = "0.1.1"
 
 [[deps.OffsetArrays]]
 git-tree-sha1 = "117432e406b5c023f665fa73dc26e79ec3630151"
@@ -1821,15 +1795,14 @@ version = "1.13.0+0"
 # ╠═c7400800-f152-11f0-a386-29e067f9216c
 # ╠═b8d791bf-976d-4a0d-b6c0-af9d0febe464
 # ╠═5fe54406-20d7-4747-bcd4-c5c0f17af47a
-# ╟─9386589f-1767-46a8-8a60-ec3f44a0970d
-# ╟─ada6d5ce-ac5e-4de8-b9fe-4394be6a34ca
-# ╟─ba9efa8d-054c-42a4-99a4-31319c87c54b
+# ╠═9386589f-1767-46a8-8a60-ec3f44a0970d
+# ╠═ada6d5ce-ac5e-4de8-b9fe-4394be6a34ca
+# ╠═ba9efa8d-054c-42a4-99a4-31319c87c54b
 # ╟─6c87fcb7-55e6-44f4-8978-12e74b9cfdbf
 # ╟─4316370d-583d-4b48-8632-d17bc34209bd
 # ╟─aea2088f-c782-4cd7-8158-2a8e077da42f
 # ╟─ea882e26-5972-443f-a7ac-3075701b90fe
-# ╟─8f6d3be5-ffb5-41d5-8e50-f4353193c53c
-# ╟─0eae0fd4-8b5d-448a-b935-e06d469f080b
+# ╠═914a5c0b-7b86-474f-8e73-55f135a559d0
 # ╟─d6145328-5f43-4148-8911-232c9fed39c4
 # ╟─eeb3d1a0-be52-444d-aa82-89c639d5aece
 # ╟─4d348c80-1035-4561-85e2-02c9bf12486a
@@ -1838,15 +1811,18 @@ version = "1.13.0+0"
 # ╟─1611afbd-f13c-4532-aec9-6404b33e3f15
 # ╟─8c0b27e0-7f0b-4921-a679-ceda2ad46e82
 # ╟─ec6e4678-a807-47f6-845d-dc529f38e80c
-# ╠═84bfb85d-def3-4a08-be60-01de2d68be36
+# ╟─84bfb85d-def3-4a08-be60-01de2d68be36
+# ╟─8f6d3be5-ffb5-41d5-8e50-f4353193c53c
+# ╟─0eae0fd4-8b5d-448a-b935-e06d469f080b
 # ╟─3acc0be7-dabc-4577-917d-26530cf192bd
 # ╟─84713c58-fe6f-472b-a856-7677beb43218
 # ╟─8992ffda-fcbb-4994-9acb-1080056903b7
 # ╟─e4aac0a1-d9c0-4e20-8f86-151090a9651f
 # ╟─d9e8f0ee-6563-4ea5-8d12-ec58c9bbc39a
 # ╟─b9a4856c-cd3a-4b2e-9b46-4850a77c9c4f
-# ╟─d8e97e88-da66-48d7-b5cd-4c1b3d9a4c4c
-# ╟─9fbe7c0d-90b7-4348-8b22-d8058452a02b
+# ╠═d8e97e88-da66-48d7-b5cd-4c1b3d9a4c4c
+# ╠═7f309001-2d39-4e34-911f-a9594d224d30
+# ╠═9fbe7c0d-90b7-4348-8b22-d8058452a02b
 # ╠═7a22e820-13df-4e56-8507-d1b089fe7f52
 # ╟─0ed065e8-4f97-46ba-bf07-eb02fb2ae9d6
 # ╟─00000000-0000-0000-0000-000000000001

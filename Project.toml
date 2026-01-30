@@ -4,6 +4,7 @@ version = "1.0.0-DEV"
 authors = ["Manarom <manarom@yandex.ru> and contributors"]
 
 [deps]
+AllocCheck = "9b6a8646-10ed-4001-bbdc-1d2f46dfbb1a"
 Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
 LaTeXStrings = "b964fa9f-0449-5b57-a5c2-d3ea65f4040f"
 LegendrePolynomials = "3db4a2ba-fc88-11e8-3e01-49c72059a882"
@@ -13,6 +14,7 @@ RecipesBase = "3cdcf5f2-1ef4-517c-9805-6587b60abb01"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 
 [compat]
+AllocCheck = "0.2.3"
 Interpolations = "0.16.2"
 LaTeXStrings = "1.4.0"
 LegendrePolynomials = "0.4.5"

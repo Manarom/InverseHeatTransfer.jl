@@ -3,7 +3,12 @@ abstract type AbstractBoundaryCondition end
 struct DirichletBC <: AbstractBoundaryCondition end
 struct NeumanBC <: AbstractBoundaryCondition end
 struct RobinBC <: AbstractBoundaryCondition end
-
+"""
+Available type of boundary conditions 
+"""
+const BOUNDARY_CONDITIONS = Dict(:Dirichlet => DirichletBC, 
+                                :Neuman => NeumanBC, 
+                                :Robin => RobinBC)
 # boundary type upper or lower 
 abstract type AbstractBCDirection end
 struct LowerBC <: AbstractBCDirection end
@@ -25,7 +30,8 @@ struct PhysicalPropertyFunction{D,F,V} <: AbstractHTFunction{D,F,V}
     fun::F
     params::V
     function PhysicalPropertyFunction(f , p::V = nothing, ::Type{D} = Float64) where {D <:Number,V}
-        fun = t -> f(t)
+        #fun = t -> f(t)
+        fun = f
         F = typeof(fun)
         new{D,F,V}(fun,p)
     end 
@@ -35,7 +41,8 @@ struct InitialTFunction{D, F, V} <: AbstractHTFunction{D, F, V}
     fun::F
     value::V
     function InitialTFunction(f , t ,  ::Type{D} = Float64) where {D <:Number}
-        fun = t -> f(t)
+        #fun = t -> f(t)
+        fun = f
         F = typeof(fun)
         val = @. fun(t)
         V = typeof(val)
@@ -48,7 +55,8 @@ struct BoundaryFunction{D, F, V, BCtype, BCdirection} <: AbstractHTFunction{D, F
     fun::F
     value::V
     function BoundaryFunction(f , t, ::B , ::DIR,   ::Type{D} = Float64) where {D, B  <: BCtype, DIR <: AbstractBCDirection} where BCtype <: Union{DirichletBC,NeumanBC}
-        fun = t -> f(t)
+        #fun = t -> f(t)
+        fun = f
         val = @. fun(t)
         V = typeof(val)
         F = typeof(fun)
@@ -57,7 +65,8 @@ struct BoundaryFunction{D, F, V, BCtype, BCdirection} <: AbstractHTFunction{D, F
     function BoundaryFunction(f, t, ::B , ::DIR, ::Type{D} = Float64) where { D, B <: BCtype, DIR <: AbstractBCDirection} where BCtype <: RobinBC
         val = nothing
         V = typeof(val)
-        fun = t -> f(t)
+        #fun = t -> f(t)
+        fun = f
         F = typeof(fun)
         new{D, F, V, B, DIR}(fun,val)
     end 

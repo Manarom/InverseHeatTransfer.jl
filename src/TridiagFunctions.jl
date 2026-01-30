@@ -184,7 +184,7 @@ function tridiag_ldiv!( dl::AbstractVector{T}, d::AbstractVector{T}, du::Abstrac
     
     return rhs
 end
-
+tridiag_ldiv!(M::Tridiagonal{T,Vector{T}}, rhs::AbstractVector{T}) where T = tridiag_ldiv!(M.dl,M.d,M.du, rhs)
 
 function column_sym_tridiag_ldiv!(rhs::AbstractVector{T}, work::AbstractVector{T}, F::AbstractVector{T}, a1::T, a0::T, a::T) where T
     n = length(rhs)

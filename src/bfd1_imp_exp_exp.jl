@@ -1,4 +1,4 @@
-const BFD1_IMP_EXP_EXP = FDSolverScheme{BFD1,IMP,EXP_NL,EXP_NL}
+
 #=
             fill_LHS!(LHS, Fm1, F, Fp1, m, solver_scheme, problem)
             fill_RHS!(b, D, Tm, Tmm1, Fm1, F, Fp1, phi, solver_scheme, problem)

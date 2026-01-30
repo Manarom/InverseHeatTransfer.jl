@@ -1,7 +1,7 @@
 
 module OneDHeatTransfer
 
-using LinearAlgebra,NonlinearSolvers, StaticArrays, LaTeXStrings
+using LinearAlgebra #,NonlinearSolvers, StaticArrays #, LaTeXStrings
 
 using AllocCheck
 
@@ -38,17 +38,14 @@ include("TridiagFunctions.jl")
 
 const COMMON_DOC = """
 
-    
-
-    with SCHEME_NAME finite difference scheme
+     SCHEME_NAME finite difference scheme
 
 """
 
-const SCHEME_NAMES = [:BFD1_EXP_EXP_EXP,
-                      :BFD1_IMP_EXP_EXP,
-                      :BFD1_CN_EXP_EXP]
+
 
 export BFD1_EXP_EXP_EXP,BFD1_IMP_EXP_EXP,BFD1_CN_EXP_EXP
+
 abstract type AbstractSolverScheme end
 abstract type AbstractFDScheme{T,X,N,P} <: AbstractSolverScheme end
 """
@@ -67,19 +64,37 @@ struct FDSolverScheme{T,X,N,P} <: AbstractFDScheme{T,X,N,P}
 end
 
 const BFD1_CN_EXP_EXP = FDSolverScheme{BFD1,CN,EXP_NL,EXP_NL}
-
+const BFD1_IMP_EXP_EXP = FDSolverScheme{BFD1,IMP,EXP_NL,EXP_NL}
+const BFD1_EXP_EXP_EXP = FDSolverScheme{BFD1,IMP,EXP_NL,EXP_NL}
 # generating docstrings
+
+const SCHEME_NAMES = [:BFD1_EXP_EXP_EXP,
+                      :BFD1_IMP_EXP_EXP,
+                      :BFD1_CN_EXP_EXP]
+const AVAILABLE_SCHEMES = Dict{Symbol, Type{<:FDSolverScheme}}()
 for d in SCHEME_NAMES
     sd = string(d)
+    types_vec = split(sd,"_")
     full_name = replace(sd,"BFD1" => "first-order-backward =",
                             "EXP" => "explicit",
                             "IMP" => "implicit",
                             "CN" => "Crank-Nicolson",
                             "BFD2" =>"second-order-backward =",
                             "_" => " + ")
-    dsds = Symbol("DOC_"*sd)
-    cur_doc = replace(COMMON_DOC,"SCHEME_NAME" => full_name)
-    @eval $dsds = replace($cur_doc,"func" => $sd)
+    @eval begin
+        @doc """
+            Finite difference scheme:
+            time derivative scheme =  
+            $($(full_name))
+        """
+        const $d = FDSolverScheme{$(Symbol(types_vec[1])),
+                                        $(Symbol(types_vec[2])),
+                                        $(Symbol(types_vec[3]*"_NL")),
+                                        $(Symbol(types_vec[4]*"_NL"))}
+
+    end
+    cur_scheme = eval(d)
+    AVAILABLE_SCHEMES[d] = cur_scheme
 end
 
 include("ExplicitSolver.jl")
@@ -114,13 +129,12 @@ Fills left-hand side of finite difference scheme inside the loop over time
     - problem  - PDE problem see [`HeatTransferProblem`](@ref)
 
 """
-function fill_LHS!(LHS, Fm1, F, Fp1, m, solver_scheme, problem) ni_err() end
-
+function fill_LHS!(LHS, Fm1, F, Fp1, m, solver_scheme, problem) 
+    throw(MethodError(fill_LHS!,(LHS, Fm1, F, Fp1, m, solver_scheme, problem)))
+end
 
 """
-    fill_RHS!(b, D, Tm, Tmm1, Fm1, F, Fp1, phi, solver_scheme::AbstractSolverScheme, problem::AbstractFDScheme)
-
-Fills righthand side of finite difference scheme inside the loop over time
+    fill_RHS!(b, D, Tm, Tmm1, Fm1, F, Fp1, phi, solver_scheme, problem)
 
 # Arguments
     - b - righthand side vector 
@@ -135,7 +149,9 @@ Fills righthand side of finite difference scheme inside the loop over time
     - problem  - PDE problem see [`HeatTransferProblem`](@ref)
 
 """
-function fill_RHS!(b, D, Tm, Tmm1, Fm1, F, Fp1, phi, solver_scheme::AbstractSolverScheme, problem::AbstractFDScheme) ni_err() end
+function fill_RHS!(b, D, Tm, Tmm1, Fm1, F, Fp1, phi, solver_scheme, problem)
+     throw(MethodError(fill_RHS!,(b, D, Tm, Tmm1, Fm1, F, Fp1, phi, solver_scheme, problem)))
+end
 
 """
     apply_bc!(dir::AbstractBCDirection, bc_type::AbstractBoundaryCondition, 
@@ -157,8 +173,24 @@ Applies boundary conditions to the finite - difference scheme matricies
     - solver_scheme - see [`FDSolverScheme`](@ref)
     - problem  - PDE problem see [`HeatTransferProblem`](@ref)
 """
-function apply_bc!(LHS, b, bc_fun,  F, Tm, phi ,   m,  solver_scheme, problem)  ni_err() end
-
+function apply_bc!(LHS, b, bc_fun,  F, Tm, phi ,   m,  solver_scheme, problem)  
+     throw(MethodError(apply_bc!,(LHS, b, bc_fun,  F, Tm, phi ,   m,  solver_scheme, problem)))
+end
+struct ProblemCache{Vtype, Mtype, N, DT}
+    F::Vtype
+    phi::Vtype
+    D::Mtype
+    LHS::Mtype
+    function ProblemCache(N::Int,::Type{DT}) where {DT} 
+        Vtype = Vector{DT}
+        F = Vtype(undef,N) # properties vector
+        phi = Vtype(undef,N) # nonlinear coefficient vector λ'/λ
+        LHS = allocate_tridiagonal(N,DT) # left-hand side matrix 
+        Mtype = typeof(LHS)
+        D = central_finite_difference(N) # creates finite difference matrix for b vector evaluation
+        new{Vtype, Mtype, N, DT}(F,phi,D,LHS)
+    end
+end
 """
     HeatTransferProblem(C_fun, L_fun, Ld_fun, initT_fun,
                                 H::D, N::Int,
@@ -214,7 +246,7 @@ Robin conditions:
     - lower_bc_type - type of lower BC: DirichletBC, NeumanBC or RobinBC
     - DT - temperature data type 
 """
-struct HeatTransferProblem{D, CF,LF,LDF,ITF, G, BCU, BCD,TMATtype} # D is for temperature data type
+struct HeatTransferProblem{D, CF,LF,LDF,ITF, G, BCU, BCD,TMATtype, CacheType} # D is for temperature data type
     C_f::CF 
     L_f::LF
     Ld_f::LDF
@@ -223,7 +255,7 @@ struct HeatTransferProblem{D, CF,LF,LDF,ITF, G, BCU, BCD,TMATtype} # D is for te
     bc_up::BCU
     bc_dwn::BCD
     T::TMATtype
-
+    cache::CacheType
     function HeatTransferProblem(C_fun, L_fun, Ld_fun, initT_fun,
                                 H::D, N::Int,
                                 tmax::D, M::Int,
@@ -248,15 +280,15 @@ struct HeatTransferProblem{D, CF,LF,LDF,ITF, G, BCU, BCD,TMATtype} # D is for te
         LDF = typeof(Ld_f)
         initT_f = InitialTFunction(initT_fun, time_range, DT)
         ITF = typeof(initT_f)
-
-
         TMATtype = Matrix{DT}
         T = TMATtype(undef,N,M)
         bc_up = BoundaryFunction(bc_fun_up,time_range, upper_bc_type, UPPER_BC,DT)
         BCU = typeof(bc_up)
         bc_dwn = BoundaryFunction(bc_fun_dwn, time_range,lower_bc_type, LOWER_BC, DT)
         BCD = typeof(bc_dwn)
-        return new{DT, CF, LF, LDF, ITF, G, BCU, BCD, TMATtype}(C_f, L_f, Ld_f, initT_f, g, bc_up, bc_dwn, T)
+        cache = ProblemCache(N,DT)
+        CacheType = typeof(cache)
+        return new{DT, CF, LF, LDF, ITF, G, BCU, BCD, TMATtype, CacheType}(C_f, L_f, Ld_f, initT_f, g, bc_up, bc_dwn, T, cache)
     end
 end
 timestep(p::HeatTransferProblem, m::Int = 1) = timestep(p.grid,m)
@@ -304,57 +336,59 @@ function unified_fd_solver!( problem::HeatTransferProblem{DT, CF, LF, LDF, ITF, 
         map!(problem.initT_f, T1, eachx(problem.grid))
 
         dd = problem.grid.dt/(problem.grid.dx * problem.grid.dx)#
-
+        F, phi, LHS, D = problem.cache.F, problem.cache.phi, problem.cache.LHS, problem.cache.D
         # allocating vectors and matrices
-        F = Vector{DT}(undef,N) # properties vector
+        #F = Vector{DT}(undef,N) # properties vector
         Fm1 = @view F[2 : end] 
         Fp1 = @view F[1 : end - 1]
-        phi = Vector{DT}(undef,N) # nonlinear coefficient vector λ'/λ
-        lam = Vector{DT}(undef,N)
-        b = Vector{DT}(undef,N) # left-hand part 
-        D = central_finite_difference(N) # creates finite difference matrix for b vector evaluation
+        #phi = Vector{DT}(undef,N) # nonlinear coefficient vector λ'/λ
+        #lam = Vector{DT}(undef,N)
+        #LHS = allocate_tridiagonal(N,DT) # left-hand side matrix 
+        #D = central_finite_difference(N) # creates finite difference matrix for b vector evaluation
         #(C_f, L_f, Ld_f) = (,, )
         (bc_up, bc_dwn) = (problem.bc_up, problem.bc_dwn)
-        Tm = T1
+        #Tm = T1
         Tmm1 = T1
         # allocating left matrix
-        LHS = allocate_tridiagonal(N,DT) # left-hand side matrix 
+        
         is_show = N <= 10
         for m = 1 : M - 1 #% цикл по времени
             Tm = @view T[:,m] # Tm current time
-             @inbounds for ii in 1 : N
+            # filling current values of physical quantities
+              @inbounds  for ii in 1 : N
                 ti = Tm[ii]
+                #abs(ti - Tmm1[ii]) >= 1e-8 || continue
                 λ =  problem.L_f(ti) # λ
-                lam[ii] = λ
+                #lam[ii] = λ
                 F[ii] = dd * λ / problem.C_f(ti) # Fm - (dx^-2)*dt*Cp/λ
                 phi[ii] = 0.25 * problem.Ld_f(ti)/λ #phi  - λ'/(4λ)
             end 
 
             Tmp1 = @view T[:, m + 1] # Tm+1 next time 
-            
             !is_show || begin println("----------------------")
                             @show m
                         end
             fill_LHS!(LHS, Fm1, F, Fp1, m, solver_scheme, problem)
 
-            fill_RHS!(b, D, Tm, Tmm1, Fm1, F, Fp1, phi, solver_scheme, problem)
+            fill_RHS!(Tmp1, D, Tm, Tmm1, Fm1, F, Fp1, phi, solver_scheme, problem)
             if is_show
                 println("defore BC")
                 @info LHS
-                @info b
+                @info Tmp1
             end
 
-            apply_bc!(LHS, b, bc_up,  F, Tm, phi ,  m,  solver_scheme, problem)
+            apply_bc!(LHS, Tmp1, bc_up,  F, Tm, phi ,  m,  solver_scheme, problem)
 
-            apply_bc!(LHS, b, bc_dwn, F, Tm, phi ,  m,  solver_scheme, problem)
+            apply_bc!(LHS, Tmp1, bc_dwn, F, Tm, phi ,  m,  solver_scheme, problem)
 
             if is_show
                 println("after BC")
                 @info LHS
-                @info b
+                @info Tmp1
             end
-            ldiv!(Tmp1 , LHS , b) # solving LHS*T = b
-
+            #ldiv!(Tmp1 , LHS , b) # solving LHS*T = b
+            #ldiv!(LHS , b)
+            tridiag_ldiv!(LHS,Tmp1)
             (TS <: BFD1) || (Tmm1 = Tm) # Tm-1 next time 
         end
    return problem
@@ -369,7 +403,7 @@ include("bfd1_imp_exp_exp.jl")
                                          P <: AbstractNonLinearPart} =#
 # fill_LHS!(LHS, Fm1, F, Fp1, m, solver_scheme, problem)
 #@doc DOC_BFD1_imp_exp_exp
- function BFD1_imp_exp_exp(C_f, L_f,Ld_f, H, tmax, initT_f,
+ #=function BFD1_imp_exp_exp(C_f, L_f,Ld_f, H, tmax, initT_f,
                  bc_fun_up, bc_fun_dwn, M, N;
                  upper_bc_type::AbstractBoundaryCondition = DirichletBC() , 
                  lower_bc_type::AbstractBoundaryCondition = DirichletBC())
@@ -386,7 +420,7 @@ include("bfd1_imp_exp_exp.jl")
                                 BFD1(),
                                 IMP())
         return (T,g,bc_up,bc_dwn)
-end
+end =#
 
 
 
