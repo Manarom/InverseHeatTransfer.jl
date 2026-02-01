@@ -28,11 +28,17 @@ using PlutoUI,Polynomials,Interpolations, BenchmarkTools,PlutoPlotly,Interpolati
 # ╔═╡ 9386589f-1767-46a8-8a60-ec3f44a0970d
 deps_folder = joinpath(@__DIR__,"..\\src")
 
-# ╔═╡ ba9efa8d-054c-42a4-99a4-31319c87c54b
-include(joinpath(deps_folder,"PolynomialWrappers.jl"))
-
 # ╔═╡ ada6d5ce-ac5e-4de8-b9fe-4394be6a34ca
 includet(joinpath(deps_folder,"finite_difference_functions.jl"))
+
+# ╔═╡ ba9efa8d-054c-42a4-99a4-31319c87c54b
+includet(joinpath(deps_folder,"PolynomialWrappers.jl"))
+
+# ╔═╡ 1936a00f-69f3-48e4-9176-6b2186e40c2c
+	begin 
+		PW = Main.PolynomialWrappers
+		OHT = Main.OneDHeatTransfer
+	end
 
 # ╔═╡ 6c87fcb7-55e6-44f4-8978-12e74b9cfdbf
 begin
@@ -44,6 +50,8 @@ begin
 	Cp = 1000# thermal capacity
 	Ro = 2700# density
 	H = 15e-3# layer thickness in m
+	PolyType = PW.BernsteinSymPolyWrapper
+
 end;
 
 # ╔═╡ 4316370d-583d-4b48-8632-d17bc34209bd
@@ -51,12 +59,20 @@ md"""
 	time nods = $(@bind M Slider(2:10:50000, default = 3000, show_value = true))
 	"""
 
+# ╔═╡ ea882e26-5972-443f-a7ac-3075701b90fe
+begin 
+	N_t_dummy_points = 100
+	t_dummy_range = range(0,tmax, N_t_dummy_points)
+	t_dummy = collect(t_dummy_range);
+	T_dummy = collect(range(Tinit,Tmax,N))
+end;
+
 # ╔═╡ 914a5c0b-7b86-474f-8e73-55f135a559d0
 Main.OneDHeatTransfer
 
 # ╔═╡ d6145328-5f43-4148-8911-232c9fed39c4
 md"""
-	Select solver: $(@bind solver_name  Select(collect(Main.OneDHeatTransfer.)))
+	Select solver: $(@bind solver_name  Select(collect(Main.OneDHeatTransfer.AVAILABLE_SCHEMES)))
 
 	Select upper BC type: $(@bind upper_bc_type  Select(subtypes(Main.OneDHeatTransfer.AbstractBoundaryCondition)))
 
@@ -65,8 +81,8 @@ md"""
 
 # ╔═╡ eeb3d1a0-be52-444d-aa82-89c639d5aece
 begin 
-	is_upper_dirichle =  upper_bc_type == Main.OneDHeatTransfer.DirichletBC
-	is_upper_neuman =  upper_bc_type == Main.OneDHeatTransfer.NeumanBC  
+	is_upper_dirichle =  upper_bc_type == OHT.DirichletBC
+	is_upper_neuman =  upper_bc_type == OHT.NeumanBC  
 	ubc_mult = !is_upper_dirichle ? 1e6 : 1e3
 	def_val_ubc = !is_upper_dirichle  ? 1e6/2 : 1e3/2
 end;
@@ -99,6 +115,26 @@ end;
 	"""
 end
 
+# ╔═╡ da943c51-3f33-4f10-bc3d-9129f76399df
+begin 
+
+	is_upper_time_dependent = is_upper_dirichle || is_upper_neuman
+	(ubc_small_name,up_x_data_name, up_x_data) = 
+		if is_upper_time_dependent 
+			("t","Time,s", t_dummy) 
+		else 
+			("T","Temperature, ᵒC", T_dummy)
+		end
+	up_x_data = is_upper_time_dependent ? t_dummy : T_dummy
+	(min1,max1) =  extrema(up_x_data)
+	BC_up_f = PW.ScaledPolynomial(PolyType,upper_bc_pars, min1,max1)
+	p_ubc = Plots.plot(up_x_data,BC_up_f.(up_x_data),title="upper BC:"*string(upper_bc_type),label= nothing,linewidth = 4)
+	xlabel!(p_ubc,up_x_data_name)
+	ylabel!(p_ubc,"upper BC")
+	p_ubc
+	
+end
+
 # ╔═╡ 8c0b27e0-7f0b-4921-a679-ceda2ad46e82
 @bind  lower_bc_pars PlutoUI.combine() do Child
 	md"""
@@ -117,6 +153,24 @@ end
 		Child(Slider(lbc_mult*(-1:0.01:1), default = def_val_lbc, show_value = true))
 	)\
 	"""
+end
+
+# ╔═╡ 1611afbd-f13c-4532-aec9-6404b33e3f15
+begin 
+
+	is_lower_time_dependent = is_lower_dirichle || is_lower_neuman
+	(lbc_small_name,low_x_data_name, low_x_data) = 
+		if is_lower_time_dependent 
+			("t","Time,s", t_dummy) 
+		else 
+			("T","Temperature, ᵒC", T_dummy)
+		end
+	low_x_data = is_lower_time_dependent ? t_dummy : T_dummy
+	BC_dwn_f = PW.ScaledPolynomial(PolyType,lower_bc_pars, extrema(low_x_data)...)
+	p_lbc = Plots.plot(low_x_data,BC_dwn_f.(low_x_data),title="lower BC:"*string(lower_bc_type),label= nothing,linewidth = 4)
+	xlabel!(p_lbc,low_x_data_name)
+	ylabel!(p_lbc,"lower BC")
+	p_lbc
 end
 
 # ╔═╡ 84bfb85d-def3-4a08-be60-01de2d68be36
@@ -142,74 +196,28 @@ md" Use plotly backend for surf $(@bind is_use_plotly CheckBox(default = false))
 	"""
 end
 
-# ╔═╡ aea2088f-c782-4cd7-8158-2a8e077da42f
-begin 
-	PolyType = BernsteinSymPolyWrapper{length(lam_pars),Float64}
-	T_dummy = SVector{N}(collect(range(Tinit,Tmax,N)))
-	V_temp = VanderMatrix(T_dummy,PolyType)
-end;
-
-# ╔═╡ ea882e26-5972-443f-a7ac-3075701b90fe
-begin 
-	N_t_dummy_points = 100
-	
-	t_dummy_range = range(0,tmax, N_t_dummy_points)
-	t_dummy = SVector{length(t_dummy_range)}(collect(t_dummy_range));
-	V_time = VanderMatrix(t_dummy,PolyType)
-end;
-
-# ╔═╡ da943c51-3f33-4f10-bc3d-9129f76399df
-begin 
-
-	is_upper_time_dependent = is_upper_dirichle || is_upper_neuman
-	(ubc_small_name,up_x_data_name, up_x_data) = 
-		if is_upper_time_dependent 
-			("t","Time,s", t_dummy) 
-		else 
-			("T","Temperature, ᵒC", T_dummy)
-		end
-	V_upper_bc = is_upper_time_dependent ? V_time : V_temp
-	upper_bc_values = Vector(V_upper_bc*SVector(upper_bc_pars)) 
-	p_ubc = Plots.plot(Vector(up_x_data),Vector(upper_bc_values),title="upper BC:"*string(upper_bc_type),label= nothing,linewidth = 4)
-	xlabel!(p_ubc,up_x_data_name)
-	ylabel!(p_ubc,"upper BC")
-
-
-	ubc_pars = Polynomials.fit(Polynomial{Float64},Vector(up_x_data),upper_bc_values,3)
-	BC_up_f = Polynomials.ImmutablePolynomial( ubc_pars)
-
-	p_ubc
-	
+# ╔═╡ 331ee2df-931b-4267-8795-1fe402c7fdaa
+@bind T_range PlutoUI.combine() do Child 
+md"""
+	``T_{min} \ ^oC``= $(
+		Child(Slider(-200:0.01:1000,default=20,show_value = true))
+	) \
+	``T_{max} \ ^oC`` = $(
+		Child(Slider(0:0.01:2000,default=2000,show_value = true))
+	)\
+	"""
 end
 
-# ╔═╡ 1611afbd-f13c-4532-aec9-6404b33e3f15
-begin 
+# ╔═╡ 1aa299fa-73f9-4a15-9f47-3a0d6c09c014
+lam_T_range = range(T_range...,length = 100);
 
-	is_lower_time_dependent = is_lower_dirichle || is_lower_neuman
-	(lbc_small_name,low_x_data_name, low_x_data) = 
-		if is_lower_time_dependent 
-			("t","Time,s", t_dummy) 
-		else 
-			("T","Temperature, ᵒC", T_dummy)
-		end
-	V_lower_bc = is_lower_time_dependent ? V_time : V_temp
-	lower_bc_values = Vector(V_lower_bc*SVector(lower_bc_pars)) 
-	p_lbc = Plots.plot(Vector(low_x_data),Vector(lower_bc_values),title="lower BC:"*string(lower_bc_type),label= nothing,linewidth = 4)
-	xlabel!(p_lbc,low_x_data_name)
-	ylabel!(p_lbc,"lower BC")
-
-
-	lbc_pars = Polynomials.fit(Polynomial{Float64},Vector(low_x_data),lower_bc_values,3)
-	BC_dwn_f = Polynomials.ImmutablePolynomial( lbc_pars)
-
-	p_lbc
-	
-end
+# ╔═╡ a52a00c3-8dc2-43cf-9cf2-b7070636c0b3
+lam_fun = PW.ScaledPolynomial(PolyType,lam_pars, T_range...);
 
 # ╔═╡ 8f6d3be5-ffb5-41d5-8e50-f4353193c53c
 begin 
-	lam_values = Vector(V_temp*SVector(lam_pars)) 
-	p_lam = Plots.plot(Vector(T_dummy),Vector(lam_values),title="thermal conductivity",label= nothing,linewidth = 4)
+	lam_values = lam_fun.(lam_T_range)
+	p_lam = Plots.plot(lam_T_range,lam_values,title="thermal conductivity",label= nothing,linewidth = 4)
 	xlabel!(p_lam,"Temperature, ᵒC")
 	ylabel!(p_lam,"Thermal conductivity, W/(m*K)")
 end
@@ -222,8 +230,9 @@ md"""
 
 # ╔═╡ e4aac0a1-d9c0-4e20-8f86-151090a9651f
 begin 
-	lam_prs = Polynomials.fit(Polynomial{Float64},Vector(T_dummy),lam_values,3)
-	lam_fun = Polynomials.ImmutablePolynomial( lam_prs ) # теплопроводность
+	
+	lam_prs = Polynomials.fit(Polynomial{Float64},lam_T_range,lam_values,3)
+	
 	lam_der = Polynomials.ImmutablePolynomial( derivative(lam_prs))#;% производная теплопроводности
 end;
 
@@ -292,7 +301,7 @@ end
 md" Use bench? $(@bind bench CheckBox(default = false))"
 
 # ╔═╡ 0ed065e8-4f97-46ba-bf07-eb02fb2ae9d6
-!bench || @benchmark fd_solver(Cp_fun, lam_fun,lam_der, H, tmax,initT_f,BC_up_f,BC_dwn_f,M,N; upper_bc_type = upper_bc_type(), lower_bc_type = lower_bc_type())
+!bench || @benchmark fd_solver(problem,solver_type)
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -1798,10 +1807,10 @@ version = "1.13.0+0"
 # ╠═9386589f-1767-46a8-8a60-ec3f44a0970d
 # ╠═ada6d5ce-ac5e-4de8-b9fe-4394be6a34ca
 # ╠═ba9efa8d-054c-42a4-99a4-31319c87c54b
-# ╟─6c87fcb7-55e6-44f4-8978-12e74b9cfdbf
+# ╠═1936a00f-69f3-48e4-9176-6b2186e40c2c
+# ╠═6c87fcb7-55e6-44f4-8978-12e74b9cfdbf
 # ╟─4316370d-583d-4b48-8632-d17bc34209bd
-# ╟─aea2088f-c782-4cd7-8158-2a8e077da42f
-# ╟─ea882e26-5972-443f-a7ac-3075701b90fe
+# ╠═ea882e26-5972-443f-a7ac-3075701b90fe
 # ╠═914a5c0b-7b86-474f-8e73-55f135a559d0
 # ╟─d6145328-5f43-4148-8911-232c9fed39c4
 # ╟─eeb3d1a0-be52-444d-aa82-89c639d5aece
@@ -1811,19 +1820,22 @@ version = "1.13.0+0"
 # ╟─1611afbd-f13c-4532-aec9-6404b33e3f15
 # ╟─8c0b27e0-7f0b-4921-a679-ceda2ad46e82
 # ╟─ec6e4678-a807-47f6-845d-dc529f38e80c
+# ╟─84713c58-fe6f-472b-a856-7677beb43218
 # ╟─84bfb85d-def3-4a08-be60-01de2d68be36
 # ╟─8f6d3be5-ffb5-41d5-8e50-f4353193c53c
-# ╟─0eae0fd4-8b5d-448a-b935-e06d469f080b
 # ╟─3acc0be7-dabc-4577-917d-26530cf192bd
-# ╟─84713c58-fe6f-472b-a856-7677beb43218
+# ╟─0eae0fd4-8b5d-448a-b935-e06d469f080b
+# ╟─331ee2df-931b-4267-8795-1fe402c7fdaa
+# ╟─1aa299fa-73f9-4a15-9f47-3a0d6c09c014
+# ╟─a52a00c3-8dc2-43cf-9cf2-b7070636c0b3
 # ╟─8992ffda-fcbb-4994-9acb-1080056903b7
 # ╟─e4aac0a1-d9c0-4e20-8f86-151090a9651f
 # ╟─d9e8f0ee-6563-4ea5-8d12-ec58c9bbc39a
 # ╟─b9a4856c-cd3a-4b2e-9b46-4850a77c9c4f
 # ╠═d8e97e88-da66-48d7-b5cd-4c1b3d9a4c4c
-# ╠═7f309001-2d39-4e34-911f-a9594d224d30
-# ╠═9fbe7c0d-90b7-4348-8b22-d8058452a02b
-# ╠═7a22e820-13df-4e56-8507-d1b089fe7f52
+# ╟─7f309001-2d39-4e34-911f-a9594d224d30
+# ╟─9fbe7c0d-90b7-4348-8b22-d8058452a02b
+# ╟─7a22e820-13df-4e56-8507-d1b089fe7f52
 # ╟─0ed065e8-4f97-46ba-bf07-eb02fb2ae9d6
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002

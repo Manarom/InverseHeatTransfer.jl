@@ -1,23 +1,48 @@
-# PolynomialWrappers
-using LinearAlgebra,Interpolations,Polynomials,LegendrePolynomials,StaticArrays,RecipesBase
+module PolynomialWrappers
+    using LinearAlgebra,Interpolations,Polynomials,LegendrePolynomials,StaticArrays,RecipesBase
 
-const POLY_NAMES_TYPES_DICT = Base.ImmutableDict(
-    :trig => :TrigPolyWrapper, 
-    :leg => :LegPolyWrapper,
-    :stand => :StandPolyWrapper ,
-    :chebT => :ChebPolyWrapper,
-    :bernstein => :BernsteinPolyWrapper,
-    :bernsteinsym => :BernsteinSymPolyWrapper
-)
-abstract type AbstractPolyWrapper{P,V,T} end
-for (_poly_name, _PolyType) in  POLY_NAMES_TYPES_DICT
-    x = String(_poly_name)
-    @eval struct $_PolyType{P,T} <: AbstractPolyWrapper{P,T,Symbol($x)}
-        coeffs::MVector{P,T}
+    const POLY_NAMES_TYPES_DICT = Base.ImmutableDict(
+        :trig => :TrigPolyWrapper, 
+        :leg => :LegPolyWrapper,
+        :stand => :StandPolyWrapper ,
+        :chebT => :ChebPolyWrapper,
+        :bernstein => :BernsteinPolyWrapper,
+        #:bernsteinsym => :BernsteinSymPolyWrapper
+    )
+    abstract type AbstractPolyWrapper{P,V,T} end
+ 
+    for (_poly_name, _PolyType) in  POLY_NAMES_TYPES_DICT
+        x = String(_poly_name)
+        @eval struct $_PolyType{P,T} <: AbstractPolyWrapper{P,T,Symbol($x)}
+            coeffs::MVector{P,T}
+        end
     end
-end
-
-const SUPPORTED_POLYNOMIAL_TYPES = Base.ImmutableDict([k=>eval(d) for (k,d) in  POLY_NAMES_TYPES_DICT]...)
+    struct BernsteinSymPolyWrapper{N,T} <: AbstractPolyWrapper{N,T,:bernsteinsym}
+        coeffs::MVector{N,T}
+        binoms::SVector{N,T}
+        function BernsteinSymPolyWrapper(coeffs::NTuple{N,T}) where {N,T} 
+            binoms = SVector{N,T}(binomial(N - 1, i) for i=0 : N - 1)
+            new{N,T}(MVector(coeffs),binoms)
+        end
+    end
+    struct ScaledPolynomial{Ptype,T} 
+        poly::Ptype
+        xmin::T
+        xmax::T
+        function ScaledPolynomial(::Type{PolyType}, coeffs::Union{NTuple{P,T}, AbstractVector{T}}, xmin::T, xmax::T) where {PolyType <: AbstractPolyWrapper, P,T}
+            poly = PolyType(coeffs)
+            Ptype = typeof(poly)
+            @assert xmin < xmax "xmin must be smaller than xmax"
+            new{Ptype,T}(poly,xmin,xmax)
+        end
+    end
+    (sp::ScaledPolynomial{P,T})(x::T) where {P,T} = normalize_x(x,sp) |> sp.poly
+    function normalize_x(x::T, p::ScaledPolynomial{P,T}) where {P,T}
+        x_min = p.xmin
+        x_max = p.xmax
+        return - 1.0 + 2.0 * (x - x_min)/(x_max - x_min) 
+    end
+    const SUPPORTED_POLYNOMIAL_TYPES = Base.ImmutableDict([k=>eval(d) for (k,d) in  POLY_NAMES_TYPES_DICT]...)
                 #=:stand=> StandPolyWrapper,#Standard basis polynomials from Polynomials.Polynomial,
                 :chebT=> ChebPolyWrapper,# Chebyshev polynomials from Polynomials.ChebyshevT,
                 :trig => TrigPolyWrapper, # Self-made primitive type for trigonometric functions
@@ -39,8 +64,15 @@ end
 struct BernsteinPolyWrapper{P,T} <: AbstractPolyWrapper{P,T,:bernstein}
     coeffs::MVector{P,T}
 end=#
+
+"""
+    Generalized constructors
+"""
 (::Type{P})(x::Vector{T}) where {P<:AbstractPolyWrapper,T} = P{length(x),T}(MVector{length(x)}(x))
 (::Type{P})(x::NTuple{N,T}) where {P<:AbstractPolyWrapper,T,N} = P{N,T}(MVector(x))
+
+
+
 poly_name(::P) where P<: AbstractPolyWrapper{N,T,V} where {N,T,V} = V
 poly_name(::Type{P}) where P<: AbstractPolyWrapper{N,T,V} where {N,T,V} = V
 poly_degree(::AbstractPolyWrapper{N}) where {N} = N - 1
@@ -65,15 +97,43 @@ end
 """
 
 """
-function eval_poly(::BernsteinPolyWrapper{D},k::Int,x::Number) where D # D - number of polynomial coefficients
+function eval_poly(::BernsteinPolyWrapper{D},k::Int,x::Number) where D  # D - number of polynomial coefficients
     d = D - 1 # polynomial degree
     return binomial(d,k)* ^(1.0 - x, d - k) * x^k
 end
-function eval_poly(::BernsteinSymPolyWrapper{D,T},k::Int,x::Number,a::T=-1.0,b::T=1.0) where {D,T} # D - number of polynomial coefficients
-    d = D - 1 # polynomial degree
-    s = b - a
-    return binomial(d,k)* ^((b - x)/s, d - k) * ^((x - a)/s,k)
+#function eval_poly(::BernsteinSymPolyWrapper{D,T},k::Int,x::Number,a::T=-1.0,b::T=1.0) where {D,T}
+#=
+function eval_poly(p::BernsteinSymPolyWrapper{D,T}, k::Int, x::T) where {D,T} # D - number of polynomial coefficients
+    #d = D - 1 # polynomial degree
+    #s = b - a
+    b = p.binoms[k + 1] 
+    u = (one(T) - x) * 0.5    #
+    v = (x + one(T)) * 0.5
+    return b * ^(u , D - (1 + k)) * ^(v , k)
 end
+=#
+
+function eval_poly(p::BernsteinSymPolyWrapper{D,T}, k::Int, x::T) where {D,T}
+    k < D  || error("incorrect polynomial degree")
+    @inbounds begin
+        binom = p.binoms[k + 1] #
+        u = (one(T) - x) * 0.5    # 
+        v = (x + one(T)) * 0.5
+        
+        # Power without ^ : Horner's for log(n) muls
+        upow = one(T)
+        @simd for _ in 1:(D - 1 - k)
+            upow *= u
+        end
+        vpow = one(T)
+        @simd for _ in 1:k
+            vpow *= v
+        end
+        
+        return binom * upow * vpow
+    end
+end
+
 """
     bern_max(::BernsteinPolyWrapper{D},k::Int)
 
@@ -96,7 +156,7 @@ end
     make it consistent with Polynomials.jl 
     TrigPolyWrapper simple type for trigonometric function polynomils
 """
-function (poly::Union{LegPolyWrapper{N},TrigPolyWrapper{N},BernsteinPolyWrapper{N},BernsteinSymPolyWrapper{N}})(x::Number) where N
+function (poly::Union{LegPolyWrapper{N,T},TrigPolyWrapper{N,T},BernsteinPolyWrapper{N,T},BernsteinSymPolyWrapper{N,T}})(x::T) where {N,T}
     #LegendrePolynomials.Pl(x,l) - computes Legendre polynomial of degree l at point x 
     #=res = 0.0
     for i ∈ 1:N
@@ -307,7 +367,7 @@ function fill_box_constraint!(lb,ub,::VanderMatrix{N, CN, T, NxCN, CNxCN, P},
     fill!(lb,first(val_bounds))
     fill!(ub,last(val_bounds))
 end
-@recipe function f(m::AbstractPolyWrapper)
+@recipe function f(m::Union{AbstractPolyWrapper,ScaledPolynomial})
     minorgrid--> true
     gridlinewidth-->2
     dpi-->600
@@ -333,4 +393,5 @@ end
             (V.xi, c)
         end
     end
+end
 end
