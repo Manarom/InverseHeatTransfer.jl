@@ -36,6 +36,13 @@ module PolynomialWrappers
             new{Ptype,T}(poly,xmin,xmax)
         end
     end
+    function refill!(sp::ScaledPolynomial{Ptype,T},new_coeffs::NTuple{N,T}) where {Ptype <: AbstractPolyWrapper{N}} where {N,T}
+        copyto!(sp.poly.coeffs,new_coeffs)
+    end
+    function refill!(sp::ScaledPolynomial{Ptype,T},new_coeffs::NTuple{N,T}, flag) where {Ptype <: AbstractPolyWrapper{N}} where {N,T}
+        v = @view sp.poly.coeffs[flag]
+        copyto!(v , new_coeffs)
+    end    
     (sp::ScaledPolynomial{P,T})(x::T) where {P,T} = normalize_x(x,sp) |> sp.poly
     function normalize_x(x::T, p::ScaledPolynomial{P,T}) where {P,T}
         x_min = p.xmin

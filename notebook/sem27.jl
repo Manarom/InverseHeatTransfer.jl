@@ -95,6 +95,23 @@ begin
 	def_val_lbc = !is_lower_dirichle ? 0 : 0
 end;
 
+# ╔═╡ da943c51-3f33-4f10-bc3d-9129f76399df
+begin 
+
+	is_upper_time_dependent = is_upper_dirichle || is_upper_neuman
+	(ubc_small_name,up_x_data_name, up_x_data) = 
+		if is_upper_time_dependent 
+			("t","Time,s", t_dummy) 
+		else 
+			("T","Temperature, ᵒC", T_dummy)
+		end
+	up_x_data = is_upper_time_dependent ? t_dummy : T_dummy
+	(min1,max1) =  extrema(up_x_data)
+	BC_up_f = PW.ScaledPolynomial(PolyType, (0.0,0.0,0.0,0.0), min1,max1)
+
+	
+end
+
 # ╔═╡ 36e2c7b2-0cb0-4684-8d01-03e107349cb2
 @bind  upper_bc_pars PlutoUI.combine() do Child
 	md"""
@@ -115,24 +132,29 @@ end;
 	"""
 end
 
-# ╔═╡ da943c51-3f33-4f10-bc3d-9129f76399df
+# ╔═╡ 3a88786c-cefd-4daa-bc71-1d7cf04b9a2e
 begin 
-
-	is_upper_time_dependent = is_upper_dirichle || is_upper_neuman
-	(ubc_small_name,up_x_data_name, up_x_data) = 
-		if is_upper_time_dependent 
-			("t","Time,s", t_dummy) 
-		else 
-			("T","Temperature, ᵒC", T_dummy)
-		end
-	up_x_data = is_upper_time_dependent ? t_dummy : T_dummy
-	(min1,max1) =  extrema(up_x_data)
-	BC_up_f = PW.ScaledPolynomial(PolyType,upper_bc_pars, min1,max1)
+	upper_bc_pars
+	
 	p_ubc = Plots.plot(up_x_data,BC_up_f.(up_x_data),title="upper BC:"*string(upper_bc_type),label= nothing,linewidth = 4)
 	xlabel!(p_ubc,up_x_data_name)
 	ylabel!(p_ubc,"upper BC")
 	p_ubc
-	
+end
+
+# ╔═╡ 1611afbd-f13c-4532-aec9-6404b33e3f15
+begin 
+
+	is_lower_time_dependent = is_lower_dirichle || is_lower_neuman
+	(lbc_small_name,low_x_data_name, low_x_data) = 
+		if is_lower_time_dependent 
+			("t","Time,s", t_dummy) 
+		else 
+			("T","Temperature, ᵒC", T_dummy)
+		end
+	low_x_data = is_lower_time_dependent ? t_dummy : T_dummy
+	BC_dwn_f = PW.ScaledPolynomial(PolyType,(0.0,0.0,0.0,0.0), extrema(low_x_data)...)
+
 end
 
 # ╔═╡ 8c0b27e0-7f0b-4921-a679-ceda2ad46e82
@@ -155,18 +177,9 @@ end
 	"""
 end
 
-# ╔═╡ 1611afbd-f13c-4532-aec9-6404b33e3f15
+# ╔═╡ a554174d-82d6-4acd-89a9-bc21aca78e7d
 begin 
-
-	is_lower_time_dependent = is_lower_dirichle || is_lower_neuman
-	(lbc_small_name,low_x_data_name, low_x_data) = 
-		if is_lower_time_dependent 
-			("t","Time,s", t_dummy) 
-		else 
-			("T","Temperature, ᵒC", T_dummy)
-		end
-	low_x_data = is_lower_time_dependent ? t_dummy : T_dummy
-	BC_dwn_f = PW.ScaledPolynomial(PolyType,lower_bc_pars, extrema(low_x_data)...)
+	lower_bc_pars
 	p_lbc = Plots.plot(low_x_data,BC_dwn_f.(low_x_data),title="lower BC:"*string(lower_bc_type),label= nothing,linewidth = 4)
 	xlabel!(p_lbc,low_x_data_name)
 	ylabel!(p_lbc,"lower BC")
@@ -242,9 +255,6 @@ begin
 	@eval initT_f(_) = $Tinit # starting 
 end
 
-# ╔═╡ b9a4856c-cd3a-4b2e-9b46-4850a77c9c4f
-problem = Main.OneDHeatTransfer.HeatTransferProblem(Cp_fun, lam_fun,lam_der,initT_f, H,N, tmax,M,BC_up_f,upper_bc_type(),BC_dwn_f,lower_bc_type(),Float64)
-
 # ╔═╡ d8e97e88-da66-48d7-b5cd-4c1b3d9a4c4c
 fd_solver =Main.OneDHeatTransfer.unified_fd_solver!
 
@@ -256,9 +266,13 @@ solver_type = Main.OneDHeatTransfer.FDSolverScheme(Main.OneDHeatTransfer.BFD1(),
 
 # ╔═╡ 9fbe7c0d-90b7-4348-8b22-d8058452a02b
 begin 
+	problem = Main.OneDHeatTransfer.HeatTransferProblem(Cp_fun, lam_fun,lam_der,initT_f, H,N, tmax,M,BC_up_f,upper_bc_type(),BC_dwn_f,lower_bc_type(),Float64)
+	lower_bc_pars
+	PW.refill!(BC_up_f, upper_bc_pars)
+	PW.refill!(BC_dwn_f,lower_bc_pars)
 	fd_solver(problem,solver_type)
 	TCN = problem.T
-end;
+end
 
 # ╔═╡ ec6e4678-a807-47f6-845d-dc529f38e80c
 begin 
@@ -1816,25 +1830,26 @@ version = "1.13.0+0"
 # ╟─eeb3d1a0-be52-444d-aa82-89c639d5aece
 # ╟─4d348c80-1035-4561-85e2-02c9bf12486a
 # ╟─da943c51-3f33-4f10-bc3d-9129f76399df
+# ╠═3a88786c-cefd-4daa-bc71-1d7cf04b9a2e
 # ╟─36e2c7b2-0cb0-4684-8d01-03e107349cb2
 # ╟─1611afbd-f13c-4532-aec9-6404b33e3f15
+# ╟─a554174d-82d6-4acd-89a9-bc21aca78e7d
+# ╟─9fbe7c0d-90b7-4348-8b22-d8058452a02b
 # ╟─8c0b27e0-7f0b-4921-a679-ceda2ad46e82
 # ╟─ec6e4678-a807-47f6-845d-dc529f38e80c
-# ╟─84713c58-fe6f-472b-a856-7677beb43218
+# ╟─3acc0be7-dabc-4577-917d-26530cf192bd
+# ╠═84713c58-fe6f-472b-a856-7677beb43218
 # ╟─84bfb85d-def3-4a08-be60-01de2d68be36
 # ╟─8f6d3be5-ffb5-41d5-8e50-f4353193c53c
-# ╟─3acc0be7-dabc-4577-917d-26530cf192bd
 # ╟─0eae0fd4-8b5d-448a-b935-e06d469f080b
 # ╟─331ee2df-931b-4267-8795-1fe402c7fdaa
-# ╟─1aa299fa-73f9-4a15-9f47-3a0d6c09c014
-# ╟─a52a00c3-8dc2-43cf-9cf2-b7070636c0b3
+# ╠═1aa299fa-73f9-4a15-9f47-3a0d6c09c014
+# ╠═a52a00c3-8dc2-43cf-9cf2-b7070636c0b3
 # ╟─8992ffda-fcbb-4994-9acb-1080056903b7
-# ╟─e4aac0a1-d9c0-4e20-8f86-151090a9651f
+# ╠═e4aac0a1-d9c0-4e20-8f86-151090a9651f
 # ╟─d9e8f0ee-6563-4ea5-8d12-ec58c9bbc39a
-# ╟─b9a4856c-cd3a-4b2e-9b46-4850a77c9c4f
 # ╠═d8e97e88-da66-48d7-b5cd-4c1b3d9a4c4c
 # ╟─7f309001-2d39-4e34-911f-a9594d224d30
-# ╟─9fbe7c0d-90b7-4348-8b22-d8058452a02b
 # ╟─7a22e820-13df-4e56-8507-d1b089fe7f52
 # ╠═0ed065e8-4f97-46ba-bf07-eb02fb2ae9d6
 # ╟─00000000-0000-0000-0000-000000000001
