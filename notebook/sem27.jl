@@ -56,7 +56,7 @@ end;
 
 # ╔═╡ 4316370d-583d-4b48-8632-d17bc34209bd
 md"""
-	time nods = $(@bind M Slider(2:10:50000, default = 3000, show_value = true))
+	time nods = $(@bind M Slider(2:10:50000, default = 50, show_value = true))
 	"""
 
 # ╔═╡ ea882e26-5972-443f-a7ac-3075701b90fe
@@ -301,7 +301,7 @@ end
 md" Use bench? $(@bind bench CheckBox(default = false))"
 
 # ╔═╡ 0ed065e8-4f97-46ba-bf07-eb02fb2ae9d6
-!bench || @benchmark fd_solver(problem,solver_type)
+!bench || @benchmark fd_solver($problem,$solver_type)
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -1809,7 +1809,7 @@ version = "1.13.0+0"
 # ╠═ba9efa8d-054c-42a4-99a4-31319c87c54b
 # ╠═1936a00f-69f3-48e4-9176-6b2186e40c2c
 # ╠═6c87fcb7-55e6-44f4-8978-12e74b9cfdbf
-# ╟─4316370d-583d-4b48-8632-d17bc34209bd
+# ╠═4316370d-583d-4b48-8632-d17bc34209bd
 # ╠═ea882e26-5972-443f-a7ac-3075701b90fe
 # ╠═914a5c0b-7b86-474f-8e73-55f135a559d0
 # ╟─d6145328-5f43-4148-8911-232c9fed39c4
@@ -1836,6 +1836,6 @@ version = "1.13.0+0"
 # ╟─7f309001-2d39-4e34-911f-a9594d224d30
 # ╟─9fbe7c0d-90b7-4348-8b22-d8058452a02b
 # ╟─7a22e820-13df-4e56-8507-d1b089fe7f52
-# ╟─0ed065e8-4f97-46ba-bf07-eb02fb2ae9d6
+# ╠═0ed065e8-4f97-46ba-bf07-eb02fb2ae9d6
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
