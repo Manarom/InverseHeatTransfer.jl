@@ -96,6 +96,12 @@ for d in SCHEME_NAMES
     cur_scheme = eval(d)
     AVAILABLE_SCHEMES[d] = cur_scheme
 end
+function (::Type{FDSolverScheme{T,X,N,P}})() where {T <: AbstractTimeScheme,
+                                         X <: AbstractCoordinateScheme,
+                                         N <: AbstractNonLinearPart,
+                                         P <: AbstractNonLinearPart} 
+    FDSolverScheme(T(),X(),N(),P())
+end
 
 include("ExplicitSolver.jl")
 
@@ -291,6 +297,9 @@ struct HeatTransferProblem{D, CF,LF,LDF,ITF, G, BCU, BCD,TMATtype, CacheType} # 
         return new{DT, CF, LF, LDF, ITF, G, BCU, BCD, TMATtype, CacheType}(C_f, L_f, Ld_f, initT_f, g, bc_up, bc_dwn, T, cache)
     end
 end
+
+tvalue(p::HeatTransferProblem, m::Int)=  tvalue(p.grid,m)
+xvalue(p::HeatTransferProblem, m::Int) =  xvalue(p.grid,m)
 timestep(p::HeatTransferProblem, m::Int = 1) = timestep(p.grid,m)
 xstep(p::HeatTransferProblem, m::Int = 1) = xstep(p.grid,m)
 thermal_diffusivity(p::HeatTransferProblem{D}, T::D ) where D = p.L_f(T)/p.C_f(T)
@@ -300,8 +309,8 @@ thermal_capacity(p::HeatTransferProblem{D}, T::D ) where D = p.C_f(T)
 lower_boundary_condition(p::HeatTransferProblem{D}, t::D) where D  = p.bc_dwn(t)
 upper_boundary_condition(p::HeatTransferProblem{D}, t::D) where D  = p.bc_up(t)
 # BoundaryFunction{D, BF, V, <: NeumanBC , <: UpperBC}
-lower_bc_type(p::HeatTransferProblem{D, CF,LF,LDF,ITF, G, BCU, BCD }) where {D, CF,LF,LDF,ITF, G, BCU, BCD  <: BoundaryFunction{D, BF, V, BC_type}} where { BF, V, BC_type}  = BC_type
-upper_bc_type(p::HeatTransferProblem{D, CF,LF,LDF,ITF, G, BCU }) where {D, CF, LF, LDF, ITF, G, BCU <: BoundaryFunction{D, BF, V, BC_type}} where { BF, V, BC_type}  = BC_type
+lower_bc_type(::HeatTransferProblem{D, CF,LF,LDF,ITF, G, BCU, BCD }) where {D, CF,LF,LDF,ITF, G, BCU, BCD  <: BoundaryFunction{D, BF, V, BC_type}} where { BF, V, BC_type}  = BC_type
+upper_bc_type(::HeatTransferProblem{D, CF,LF,LDF,ITF, G, BCU }) where {D, CF, LF, LDF, ITF, G, BCU <: BoundaryFunction{D, BF, V, BC_type}} where { BF, V, BC_type}  = BC_type
 """
     unified_fd_solver!( problem::HeatTransferProblem{DT, CF, LF, LDF, ITF, G, BCU, BCD, TMATtype},
                                     solver_scheme::FDSolverScheme{TS, CS, NLS, PS} = BFD1_IMP_EXP_EXP) where {DT, CF,LF,LDF,ITF, 
@@ -396,7 +405,8 @@ end
 function evaluate_virtual_node( Fm::T, phim::T, T2::T, T0::T) where T
     return Fm * phim * (T2 - T0)^2
 end
-include("bfd1_imp_exp_exp.jl")
+include("bfd1_imp_exp_exp.jl") # fully implicit solver
+include("bfd1_cn_exp_exp.jl") # crank-nicolson solver
  #= FDSolverScheme(::T,::X,::N,::P) where {T <: AbstractTimeScheme,
                                          X <: AbstractCoordinateScheme,
                                          N <: AbstractNonLinearPart,

@@ -140,7 +140,8 @@ end
                                     F::AbstractVector{T}, Fp1::AbstractVector{T}, a0, 
                                     am1, a, ap1)  where T
 
-fills the vector b <= M*c + b as M = Tridiagonal(Fm1*am1, a0 + a*F, Fp1*ap1)
+fills the vector b <= M*c + b 
+as M = Tridiagonal(Fm1*am1, a0 + a*F, Fp1*ap1)
 Only `b` is modified
 """
 function tridiag_muladd!(b::AbstractVector{T},c::AbstractVector{T}, Fm1::AbstractVector{T},
@@ -166,6 +167,24 @@ end
 tridiag_sum(Fm1, F, Fp1, a0, am1, a, ap1) = a0 + am1*Fm1   +  a*F + ap1*Fp1
 
 
+"""
+    tridiag_ldiv!( dl::AbstractVector{T}, d::AbstractVector{T}, du::AbstractVector{T}, rhs::AbstractVector{T}) where T
+
+Solves the ``Mx = rhs`` using Thomas algorithm
+
+Where ``M`` is a tridiagoanl matrix, provided as three vectors
+of its diagonals of the corresponding size
+The solution is filled into ``rhs``
+
+# Arguments 
+- dl - lower diagonal (N-1)
+- d - main diagonal (N)
+- du - upper diagonal (N-1)
+- rhs - righthand side (N)
+
+!!!Matrix diagonals ``dl,du, d`` and ``rhs`` are to be modified
+
+"""
 function tridiag_ldiv!( dl::AbstractVector{T}, d::AbstractVector{T}, du::AbstractVector{T}, rhs::AbstractVector{T}) where T
     n = length(rhs)
     (n == length(d) && n == length(dl) + 1 && n == length(du) + 1) || error(DimensionMismatch("All d and rhs must be of the same size and dl and du must be one element smaller"))
@@ -184,10 +203,39 @@ function tridiag_ldiv!( dl::AbstractVector{T}, d::AbstractVector{T}, du::Abstrac
     
     return rhs
 end
+
+"""
+    tridiag_ldiv!(M::Tridiagonal{T,Vector{T}}, rhs::AbstractVector{T}) where T
+
+Where ``M`` is a tridiagoanl matrix
+The solution is filled into ``rhs``
+
+
+!!!Both matrix ``M`` and the ``rhs`` are to be modified
+"""
 tridiag_ldiv!(M::Tridiagonal{T,Vector{T}}, rhs::AbstractVector{T}) where T = tridiag_ldiv!(M.dl,M.d,M.du, rhs)
 
-function column_sym_tridiag_ldiv!(rhs::AbstractVector{T}, work::AbstractVector{T}, F::AbstractVector{T}, a1::T, a0::T, a::T) where T
-    n = length(rhs)
+"""
+    column_sym_tridiag_ldiv!(rhs::AbstractVector{T}, work::AbstractVector{T}, F::AbstractVector{T}, a1::T, a0::T, a::T) where T
+
+Solves the ``Mx = rhs`` using Thomas algorithm 
+where ``M`` is a tridiagoanl matrix with columnwise symmetry
+``M = Tridiagonal(Fm1*am1, a0 + a*F, Fp1*ap1)``
+filling the result into ``rhs`` 
+
+# Arguments 
+- rhs - righthand side
+- work - intermediate vector storage of the same size as F
+- F - a vector with the same size as he main diagonal of ``M``
+- a1, a0, a - coefficients
+
+!!!``F, work`` and ``rhs`` are to be modified
+"""
+function column_sym_tridiag_ldiv!(rhs::AbstractVector{T}, 
+    work::AbstractVector{T}, F::AbstractVector{T},
+     a1::T, a0::T, a::T) where T
+    
+     n = length(rhs)
     (n == length(work) && n == length(F) ) || error(DimensionMismatch("All `F`, `rhs` and `work` must be of the same size"))
     @inbounds @fastmath for i in 1 : n 
         work[i] = a1 *  F[i] # upper diagonal indexing

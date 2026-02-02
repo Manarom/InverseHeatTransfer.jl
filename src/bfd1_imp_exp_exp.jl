@@ -33,10 +33,10 @@ end
 ``[1, 0, ...] T⁺ = T⁺``
 
 """
-function apply_bc!(LHS, b,  bc_fun::BoundaryFunction{D, BF, V, <: DirichletBC , <: UpperBC}, _ , _ , _ , m::Int , ::BFD1_IMP_EXP_EXP, _)   where {D , BF , V}
+function apply_bc!(LHS, b,  bc_fun::BoundaryFunction{D, BF, V, <: DirichletBC , <: UpperBC}, _ , _ , _ , m::Int , ::BFD1_IMP_EXP_EXP, problem::HeatTransferProblem)   where {D , BF , V}
             LHS.d[1] = 1.0
             LHS.du[1] = 0.0
-            b[1] = bc_fun(m + 1) # 1st order BC upper, evaluating bc for Tm+1
+            b[1] = bc_fun(tvalue(problem,m + 1)) # 1st order BC upper, evaluating bc for Tm+1
             return nothing
 end
 #------------------------------------DirichletBC--LOWER-------------------------------------------
@@ -46,10 +46,11 @@ end
     `apply_bc!(LHS, b, bc_fun,  F, Tm, phi ,  m,  solver_scheme, problem)`
     ``` [..., 0 , 1] T⁺ = T⁺ ```
 """
-function apply_bc!(LHS, b,  bc_fun::BoundaryFunction{D, BF, V, <: DirichletBC , <: LowerBC}, _ , _ ,_,  m::Int, ::BFD1_IMP_EXP_EXP, _)   where {D , BF , V}
+function apply_bc!(LHS, b,  bc_fun::BoundaryFunction{D, BF, V, <: DirichletBC , <: LowerBC}, _ , _ ,_,  m::Int, ::BFD1_IMP_EXP_EXP, problem::HeatTransferProblem)   where {D , BF , V}
             LHS.d[end] = 1.0
             LHS.dl[end] = 0.0
-            b[end] = bc_fun(m + 1) # 1st order BC upper, evaluating bc for Tm+1
+            #b[end] = bc_fun(m + 1) # 1st order BC upper, evaluating bc for Tm+1
+            b[end] = bc_fun(tvalue(problem,m + 1)) # 1st order BC upper, evaluating bc for Tm+1
             return nothing
 end
 
@@ -75,8 +76,13 @@ function apply_bc!(LHS, b,  bc_fun::BoundaryFunction{D, BF, V, <: NeumanBC , <: 
             LHS.d[1] = 1 + 2.0 * f
 
             
-            qp1 = bc_fun(m + 1)
-            q = bc_fun(m)
+            #qp1 = bc_fun(m + 1)
+            #q = bc_fun(m)
+            tmp1 = tvalue(problem, m + 1)
+            tm = tvalue(problem, m )
+            qp1 = bc_fun(tmp1)
+            q = bc_fun(tm)
+
             b[1] = Tm[1] - 2.0 * f * dx_div_λ * qp1 + 4.0 * f * ϕ * (dx_div_λ * q)^2.0 
             return nothing
 end
@@ -100,8 +106,12 @@ function apply_bc!(LHS, b,  bc_fun::BoundaryFunction{D, BF, V, <: NeumanBC , <: 
             LHS.d[end] = 1 + 2.0 * f
 
             
-            qp1 = bc_fun(m + 1)
-            q = bc_fun(m)
+            #qp1 = bc_fun(m + 1)
+            #q = bc_fun(m)
+            tmp1 = tvalue(problem, m + 1) # next time
+            tm = tvalue(problem, m ) # current time
+            qp1 = bc_fun(tmp1)
+            q = bc_fun(tm)
             b[end] = Tm[end] - 2.0 * f * dx_div_λ * qp1 + 4.0 * f * ϕ * (dx_div_λ * q)^2.0 
 
             return nothing
@@ -116,7 +126,8 @@ end
     ```[(1 +  2F) , -2F , 0, ...] T⁺ =  T - 2F*Δx*q⁺/λ + 4F*ϕ*(Δx*q/λ)² ```
 
 """
-function apply_bc!(LHS, b,  bc_fun::BoundaryFunction{D, BF, V, <: RobinBC , <: UpperBC}, F , Tm , phi,  m::Int, ::BFD1_IMP_EXP_EXP, problem::HeatTransferProblem)   where {D , BF , V}
+function apply_bc!(LHS, b,  bc_fun::BoundaryFunction{D, BF, V, <: RobinBC , <: UpperBC}, F , Tm , phi, 
+                 m::Int, ::BFD1_IMP_EXP_EXP, problem::HeatTransferProblem)   where {D , BF , V}
             error("to do later")
             f = F[1]
             ϕ = phi[1]

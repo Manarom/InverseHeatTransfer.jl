@@ -10,13 +10,47 @@ module PolynomialWrappers
         #:bernsteinsym => :BernsteinSymPolyWrapper
     )
     abstract type AbstractPolyWrapper{P,V,T} end
- 
+    """
+    derivative_coefficients(::T) where T <: AbstractPolyWrapper
+
+returns NTuple of polynomial derivatives coefficients 
+"""
+derivative_coefficients(::T) where T <: AbstractPolyWrapper = throw(error("not implemented on $(T)"))
+
+"""
+    derivative_coefficients!(::AbstractVector{T}, ::P) where {T, P <: AbstractPolyWrapper{N,T}} where {N}
+
+Fills in-place the vector polynomial coefficients derivative 
+
+"""
+function derivative_coefficients!(a::AbstractVector{T}, poly::P) where {T, P <: AbstractPolyWrapper{N,T}} where {N}
+    @assert length(a) == N - 1 "Incorrect vector size"
+    copyto!(a,derivative_coefficients(poly))
+end
+
+function derivative!(p1::AbstractPolyWrapper,p2::AbstractPolyWrapper) 
+    check_derivative_size_consistency(p1,p2)
+    derivative_coefficients!(p1.coeffs, p2)
+end
+coeffs(p::AbstractPolyWrapper) = getfield(p,:coeffs)
+
+
+
+    function check_derivative_size_consistency(::P, ::Q) where {P <: AbstractPolyWrapper{N,V1,R1}, Q <: AbstractPolyWrapper{M,V2,R2}} where {N, M,V1,V2,R1,R2} 
+        @assert R1 == R2 "Polynomials must be of the same type"
+        @assert N == M - 1 "Inconsistent size of coefficients vector, first argument polynomial should have N - 1 coefficients with respect to the second one"
+    end    
     for (_poly_name, _PolyType) in  POLY_NAMES_TYPES_DICT
         x = String(_poly_name)
         @eval struct $_PolyType{P,T} <: AbstractPolyWrapper{P,T,Symbol($x)}
             coeffs::MVector{P,T}
         end
+        @eval function derivative(p::T) where {T<: $_PolyType{N,Q}} where {N,Q}
+            p  |> derivative_coefficients  |> $_PolyType
+        end
+
     end
+
     struct BernsteinSymPolyWrapper{N,T} <: AbstractPolyWrapper{N,T,:bernsteinsym}
         coeffs::MVector{N,T}
         binoms::SVector{N,T}
@@ -25,6 +59,20 @@ module PolynomialWrappers
             new{N,T}(MVector(coeffs),binoms)
         end
     end
+    function derivative(p::T) where {T<: BernsteinSymPolyWrapper{N,Q}} where {N,Q}
+            p  |> derivative_coefficients  |> BernsteinSymPolyWrapper
+    end
+    # derivatives StandardBasis
+    derivative_coefficients(p::StandPolyWrapper{N,T}) where {N,T} = ntuple(i -> i * p.coeffs[i + 1], N - 1)
+    function derivative_coefficients(p::BernsteinSymPolyWrapper{N,T}) where {N,T}
+        ntuple(i -> (N - 1)*(p.coeffs[i + 1] - p.coeffs[i])*0.5, N - 1)
+    end
+    """
+        Generalized constructors
+    """
+    (::Type{P})(x::Vector{T}) where {P<:AbstractPolyWrapper,T} = P{length(x),T}(MVector{length(x)}(x))
+    (::Type{P})(x::NTuple{N,T}) where {P<:AbstractPolyWrapper,T,N} = P{N,T}(MVector(x))
+
     struct ScaledPolynomial{Ptype,T} 
         poly::Ptype
         xmin::T
@@ -72,11 +120,7 @@ struct BernsteinPolyWrapper{P,T} <: AbstractPolyWrapper{P,T,:bernstein}
     coeffs::MVector{P,T}
 end=#
 
-"""
-    Generalized constructors
-"""
-(::Type{P})(x::Vector{T}) where {P<:AbstractPolyWrapper,T} = P{length(x),T}(MVector{length(x)}(x))
-(::Type{P})(x::NTuple{N,T}) where {P<:AbstractPolyWrapper,T,N} = P{N,T}(MVector(x))
+
 
 
 
@@ -90,7 +134,8 @@ parnumber(::AbstractPolyWrapper{N,T,V}) where {N,T,V} = N
 """
     Function to evaluate polynomials
 """
-eval_poly(poly::StandPolyWrapper,x) = Polynomials.Polynomial(poly.coeffs)(x)
+eval_poly(p::StandPolyWrapper,x) = evalpoly(x, p.coeffs)
+
 eval_poly(poly::ChebPolyWrapper,x) = Polynomials.ChebyshevT(poly.coeffs)(x)
 eval_poly(::LegPolyWrapper,degree,x) = LegendrePolynomials.Pl(x,degree)
 function eval_poly(::TrigPolyWrapper,degree,x) 

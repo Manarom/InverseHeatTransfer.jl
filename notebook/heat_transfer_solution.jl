@@ -51,12 +51,13 @@ begin
 	Ro = 2700# density
 	H = 15e-3# layer thickness in m
 	PolyType = PW.BernsteinSymPolyWrapper
-
+	@eval Cp_fun(_) = $Cp*$Ro# capacity
+	@eval initT_f(_) = $Tinit # starting 
 end;
 
 # ╔═╡ 4316370d-583d-4b48-8632-d17bc34209bd
 md"""
-	time nods = $(@bind M Slider(2:10:50000, default = 50, show_value = true))
+	time nods = $(@bind M Slider(2:1:5000, default = 50, show_value = true))
 	"""
 
 # ╔═╡ ea882e26-5972-443f-a7ac-3075701b90fe
@@ -66,9 +67,6 @@ begin
 	t_dummy = collect(t_dummy_range);
 	T_dummy = collect(range(Tinit,Tmax,N))
 end;
-
-# ╔═╡ 914a5c0b-7b86-474f-8e73-55f135a559d0
-Main.OneDHeatTransfer
 
 # ╔═╡ d6145328-5f43-4148-8911-232c9fed39c4
 md"""
@@ -87,14 +85,6 @@ begin
 	def_val_ubc = !is_upper_dirichle  ? 1e6/2 : 1e3/2
 end;
 
-# ╔═╡ 4d348c80-1035-4561-85e2-02c9bf12486a
-begin 
-	is_lower_dirichle =  lower_bc_type == Main.OneDHeatTransfer.DirichletBC
-	is_lower_neuman =  lower_bc_type == Main.OneDHeatTransfer.NeumanBC
-	lbc_mult = !is_lower_dirichle ? 1e6 : 1e3
-	def_val_lbc = !is_lower_dirichle ? 0 : 0
-end;
-
 # ╔═╡ da943c51-3f33-4f10-bc3d-9129f76399df
 begin 
 
@@ -110,7 +100,45 @@ begin
 	BC_up_f = PW.ScaledPolynomial(PolyType, (0.0,0.0,0.0,0.0), min1,max1)
 
 	
+end;
+
+# ╔═╡ 4d348c80-1035-4561-85e2-02c9bf12486a
+begin 
+	is_lower_dirichle =  lower_bc_type ==OHT.DirichletBC
+	is_lower_neuman =  lower_bc_type == OHT.NeumanBC
+	lbc_mult = !is_lower_dirichle ? 1e6 : 1e3
+	def_val_lbc = !is_lower_dirichle ? 0 : 0
+end;
+
+# ╔═╡ 1611afbd-f13c-4532-aec9-6404b33e3f15
+begin 
+
+	is_lower_time_dependent = is_lower_dirichle || is_lower_neuman
+	(lbc_small_name,low_x_data_name, low_x_data) = 
+		if is_lower_time_dependent 
+			("t","Time,s", t_dummy) 
+		else 
+			("T","Temperature, ᵒC", T_dummy)
+		end
+	low_x_data = is_lower_time_dependent ? t_dummy : T_dummy
+	BC_dwn_f = PW.ScaledPolynomial(PolyType,(0.0,0.0,0.0,0.0), extrema(low_x_data)...)
+
+end;
+
+# ╔═╡ d8e97e88-da66-48d7-b5cd-4c1b3d9a4c4c
+begin 
+	fd_solver =OHT.unified_fd_solver!
+	solver_type_type = OHT.AVAILABLE_SCHEMES[solver_name]
+	solver_type = solver_type_type()
+	#solver_type.OHT.	
+		# = Main.OneDHeatTransfer.FDSolverScheme(Main.OneDHeatTransfer.BFD1(),
+                                  #Main.OneDHeatTransfer.IMP(),
+                                   #Main.OneDHeatTransfer.EXP_NL(),
+                                   #Main.OneDHeatTransfer.EXP_NL()) =#
 end
+
+# ╔═╡ fbae7bcd-a85c-4a8d-a24b-67c92fe380a2
+solver_type
 
 # ╔═╡ 36e2c7b2-0cb0-4684-8d01-03e107349cb2
 @bind  upper_bc_pars PlutoUI.combine() do Child
@@ -130,31 +158,6 @@ end
 		Child(Slider(ubc_mult*(-1:0.01:1), default = def_val_ubc, show_value = true))
 	)\
 	"""
-end
-
-# ╔═╡ 3a88786c-cefd-4daa-bc71-1d7cf04b9a2e
-begin 
-	upper_bc_pars
-	
-	p_ubc = Plots.plot(up_x_data,BC_up_f.(up_x_data),title="upper BC:"*string(upper_bc_type),label= nothing,linewidth = 4)
-	xlabel!(p_ubc,up_x_data_name)
-	ylabel!(p_ubc,"upper BC")
-	p_ubc
-end
-
-# ╔═╡ 1611afbd-f13c-4532-aec9-6404b33e3f15
-begin 
-
-	is_lower_time_dependent = is_lower_dirichle || is_lower_neuman
-	(lbc_small_name,low_x_data_name, low_x_data) = 
-		if is_lower_time_dependent 
-			("t","Time,s", t_dummy) 
-		else 
-			("T","Temperature, ᵒC", T_dummy)
-		end
-	low_x_data = is_lower_time_dependent ? t_dummy : T_dummy
-	BC_dwn_f = PW.ScaledPolynomial(PolyType,(0.0,0.0,0.0,0.0), extrema(low_x_data)...)
-
 end
 
 # ╔═╡ 8c0b27e0-7f0b-4921-a679-ceda2ad46e82
@@ -177,14 +180,11 @@ end
 	"""
 end
 
-# ╔═╡ a554174d-82d6-4acd-89a9-bc21aca78e7d
-begin 
-	lower_bc_pars
-	p_lbc = Plots.plot(low_x_data,BC_dwn_f.(low_x_data),title="lower BC:"*string(lower_bc_type),label= nothing,linewidth = 4)
-	xlabel!(p_lbc,low_x_data_name)
-	ylabel!(p_lbc,"lower BC")
-	p_lbc
-end
+# ╔═╡ 8992ffda-fcbb-4994-9acb-1080056903b7
+md"""
+	camera angle α $(@bind α Slider(-180:180,default = 0))
+	camera angle β $(@bind β Slider(-180:180,default = 0))
+	"""
 
 # ╔═╡ 84bfb85d-def3-4a08-be60-01de2d68be36
 md" Use plotly backend for surf $(@bind is_use_plotly CheckBox(default = false))"
@@ -221,11 +221,11 @@ md"""
 	"""
 end
 
-# ╔═╡ 1aa299fa-73f9-4a15-9f47-3a0d6c09c014
-lam_T_range = range(T_range...,length = 100);
-
-# ╔═╡ a52a00c3-8dc2-43cf-9cf2-b7070636c0b3
-lam_fun = PW.ScaledPolynomial(PolyType,lam_pars, T_range...);
+# ╔═╡ b7cab05e-c24f-4268-ba7b-f361c1e9076d
+begin 
+	lam_T_range = range(T_range...,length = 100)
+	lam_fun = PW.ScaledPolynomial(PolyType,lam_pars, T_range...)
+end;
 
 # ╔═╡ 8f6d3be5-ffb5-41d5-8e50-f4353193c53c
 begin 
@@ -235,65 +235,40 @@ begin
 	ylabel!(p_lam,"Thermal conductivity, W/(m*K)")
 end
 
-# ╔═╡ 8992ffda-fcbb-4994-9acb-1080056903b7
-md"""
-	camera angle α $(@bind α Slider(-180:180,default = 0))
-	camera angle β $(@bind β Slider(-180:180,default = 0))
-	"""
-
 # ╔═╡ e4aac0a1-d9c0-4e20-8f86-151090a9651f
 begin 
-	
+	lam_pars
 	lam_prs = Polynomials.fit(Polynomial{Float64},lam_T_range,lam_values,3)
-	
 	lam_der = Polynomials.ImmutablePolynomial( derivative(lam_prs))#;% производная теплопроводности
 end;
 
-# ╔═╡ d9e8f0ee-6563-4ea5-8d12-ec58c9bbc39a
-begin 
-	@eval Cp_fun(_) = $Cp*$Ro# capacity
-	@eval initT_f(_) = $Tinit # starting 
-end
-
-# ╔═╡ d8e97e88-da66-48d7-b5cd-4c1b3d9a4c4c
-fd_solver =Main.OneDHeatTransfer.unified_fd_solver!
-
-# ╔═╡ 7f309001-2d39-4e34-911f-a9594d224d30
-solver_type = Main.OneDHeatTransfer.FDSolverScheme(Main.OneDHeatTransfer.BFD1(),
-                                  Main.OneDHeatTransfer.IMP(),
-                                   Main.OneDHeatTransfer.EXP_NL(),
-                                   Main.OneDHeatTransfer.EXP_NL())
+# ╔═╡ 38976547-9399-49f1-b83e-0833327ea0ed
+	problem = Main.OneDHeatTransfer.HeatTransferProblem(Cp_fun, 					lam_fun,lam_der,initT_f, H,N, tmax,M,BC_up_f,upper_bc_type(),BC_dwn_f,lower_bc_type(),Float64);
 
 # ╔═╡ 9fbe7c0d-90b7-4348-8b22-d8058452a02b
 begin 
-	problem = Main.OneDHeatTransfer.HeatTransferProblem(Cp_fun, lam_fun,lam_der,initT_f, H,N, tmax,M,BC_up_f,upper_bc_type(),BC_dwn_f,lower_bc_type(),Float64)
+	
 	lower_bc_pars
+	upper_bc_pars
 	PW.refill!(BC_up_f, upper_bc_pars)
 	PW.refill!(BC_dwn_f,lower_bc_pars)
-	fd_solver(problem,solver_type)
-	TCN = problem.T
-end
+    fd_solver(problem,solver_type)
 
-# ╔═╡ ec6e4678-a807-47f6-845d-dc529f38e80c
-begin 
-	NN = 9
-	step  = M ÷ NN
-	coord = Main.OneDHeatTransfer.xstep(problem)*(0:N-1)
-	time =  Main.OneDHeatTransfer.timestep(problem)*(0:M-1)
-	ppp = Plots.plot(grid = true,gridlinewidth=3,gridstyle = :dot,minorgrid=true,legend_position = :best,legend_title = "time:")
-	for k in 1:step:M
-		Plots.plot!(ppp,1e3*coord,TCN[:,k], label = string(round(time[k],digits = 2)),linewidth = 3,linealpha = 0.8)
-	end
-	xlabel!(ppp,"Coordinate")
-	ylabel!(ppp,"Temperature")
-	surf_view = @view TCN[:,1:step:M]
-	ppp
-end
+	# lower BC plot
+	p_lbc = Plots.plot(low_x_data,BC_dwn_f.(low_x_data),title="lower BC:"*string(lower_bc_type),label= nothing,linewidth = 4)
+	xlabel!(p_lbc,low_x_data_name)
+	ylabel!(p_lbc,"lower BC")
+	# upper BC plot
+	p_ubc = Plots.plot(up_x_data,BC_up_f.(up_x_data),title="upper BC:"*string(upper_bc_type),label= nothing,linewidth = 4)
+	xlabel!(p_ubc,up_x_data_name)
+	ylabel!(p_ubc,"upper BC")
 
-# ╔═╡ 84713c58-fe6f-472b-a856-7677beb43218
-if !is_use_plotly
-	Plots.plot(surf_view,st = :surface,camera=(α, β),grid = true,framestyle = :box, cmap=:hot)
-end
+	
+	TCN = problem.T 
+end;
+
+# ╔═╡ 3a88786c-cefd-4daa-bc71-1d7cf04b9a2e
+p_ubc
 
 # ╔═╡ 3acc0be7-dabc-4577-917d-26530cf192bd
 if is_use_plotly 
@@ -304,11 +279,37 @@ if is_use_plotly
     autosize=true,
     margin=attr(l=0, r=0, b=0, t=50),  # Minimize margins
     scene=attr(
-        camera=attr(eye=attr(x=1.5, y=1.5, z=1.2)),  # Your rotation
-        aspectmode="cube"  # Or "data" to fit surface bounds
+        camera=attr(eye=attr(x=1.5, y=1.5, z=1.2)),  
+        aspectmode="cube"  
     )
 )
 	p_ly = PlutoPlotly.plot(tr)
+	
+end
+
+# ╔═╡ a554174d-82d6-4acd-89a9-bc21aca78e7d
+p_lbc
+
+# ╔═╡ ec6e4678-a807-47f6-845d-dc529f38e80c
+begin 
+	NN = 9
+	step  = M ÷ NN
+	coord = Main.OneDHeatTransfer.xstep(problem)*(0:N-1)
+	time =  Main.OneDHeatTransfer.timestep(problem)*(0:M-1)
+	bknd = is_use_plotly ?  Plots : Plots
+	ppp = bknd.plot(grid = true,gridlinewidth=3,gridstyle = :dot,minorgrid=true,legend_position = :best,legend_title = "time:")
+	for k in 1:step:M
+		bknd.plot!(ppp,1e3*coord,TCN[:,k], label = string(round(time[k],digits = 2)),linewidth = 3,linealpha = 0.8)
+	end
+	xlabel!(ppp,"Coordinate")
+	ylabel!(ppp,"Temperature")
+	surf_view = @view TCN[:,1:step:M]
+	ppp
+end
+
+# ╔═╡ 84713c58-fe6f-472b-a856-7677beb43218
+if !is_use_plotly 
+	Plots.plot(surf_view,st = :surface,camera=(α, β),grid = true,framestyle = :box, cmap=:hot)
 end
 
 # ╔═╡ 7a22e820-13df-4e56-8507-d1b089fe7f52
@@ -316,6 +317,15 @@ md" Use bench? $(@bind bench CheckBox(default = false))"
 
 # ╔═╡ 0ed065e8-4f97-46ba-bf07-eb02fb2ae9d6
 !bench || @benchmark fd_solver($problem,$solver_type)
+
+# ╔═╡ 5e7504fd-29f1-41a3-b940-5921c471a4f5
+problem
+
+# ╔═╡ 802f203a-8f5b-4a64-a26b-4fe7f812ff56
+solver_type
+
+# ╔═╡ 3f7a81bf-6cd4-43b4-b5db-8b891f4e4722
+
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -1825,32 +1835,33 @@ version = "1.13.0+0"
 # ╠═6c87fcb7-55e6-44f4-8978-12e74b9cfdbf
 # ╠═4316370d-583d-4b48-8632-d17bc34209bd
 # ╠═ea882e26-5972-443f-a7ac-3075701b90fe
-# ╠═914a5c0b-7b86-474f-8e73-55f135a559d0
-# ╟─d6145328-5f43-4148-8911-232c9fed39c4
 # ╟─eeb3d1a0-be52-444d-aa82-89c639d5aece
 # ╟─4d348c80-1035-4561-85e2-02c9bf12486a
 # ╟─da943c51-3f33-4f10-bc3d-9129f76399df
+# ╟─d6145328-5f43-4148-8911-232c9fed39c4
+# ╠═1611afbd-f13c-4532-aec9-6404b33e3f15
+# ╠═d8e97e88-da66-48d7-b5cd-4c1b3d9a4c4c
+# ╠═fbae7bcd-a85c-4a8d-a24b-67c92fe380a2
 # ╠═3a88786c-cefd-4daa-bc71-1d7cf04b9a2e
 # ╟─36e2c7b2-0cb0-4684-8d01-03e107349cb2
-# ╟─1611afbd-f13c-4532-aec9-6404b33e3f15
+# ╟─3acc0be7-dabc-4577-917d-26530cf192bd
 # ╟─a554174d-82d6-4acd-89a9-bc21aca78e7d
+# ╟─38976547-9399-49f1-b83e-0833327ea0ed
 # ╟─9fbe7c0d-90b7-4348-8b22-d8058452a02b
 # ╟─8c0b27e0-7f0b-4921-a679-ceda2ad46e82
-# ╟─ec6e4678-a807-47f6-845d-dc529f38e80c
-# ╟─3acc0be7-dabc-4577-917d-26530cf192bd
+# ╟─8992ffda-fcbb-4994-9acb-1080056903b7
 # ╠═84713c58-fe6f-472b-a856-7677beb43218
 # ╟─84bfb85d-def3-4a08-be60-01de2d68be36
 # ╟─8f6d3be5-ffb5-41d5-8e50-f4353193c53c
 # ╟─0eae0fd4-8b5d-448a-b935-e06d469f080b
+# ╟─ec6e4678-a807-47f6-845d-dc529f38e80c
 # ╟─331ee2df-931b-4267-8795-1fe402c7fdaa
-# ╠═1aa299fa-73f9-4a15-9f47-3a0d6c09c014
-# ╠═a52a00c3-8dc2-43cf-9cf2-b7070636c0b3
-# ╟─8992ffda-fcbb-4994-9acb-1080056903b7
+# ╠═b7cab05e-c24f-4268-ba7b-f361c1e9076d
 # ╠═e4aac0a1-d9c0-4e20-8f86-151090a9651f
-# ╟─d9e8f0ee-6563-4ea5-8d12-ec58c9bbc39a
-# ╠═d8e97e88-da66-48d7-b5cd-4c1b3d9a4c4c
-# ╟─7f309001-2d39-4e34-911f-a9594d224d30
 # ╟─7a22e820-13df-4e56-8507-d1b089fe7f52
 # ╠═0ed065e8-4f97-46ba-bf07-eb02fb2ae9d6
+# ╠═5e7504fd-29f1-41a3-b940-5921c471a4f5
+# ╠═802f203a-8f5b-4a64-a26b-4fe7f812ff56
+# ╠═3f7a81bf-6cd4-43b4-b5db-8b891f4e4722
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002

@@ -14,7 +14,8 @@ plot(range(200.0,1000,30),lam_der.(range(200.0,1000.0,30)))
 #plot(linspace(200,1000,30),lam_der(linspace(200,1000,30)));title("Производная теплопроводности, Вт/(м*К^2)")
 
 N = 50#;% число точек сетки по координате
-M = 50#;% число точек сетки по времени
+M = 50000#;% число точек сетки по времени
+M_explicit = 50000
 Tmax = 1000.0#; % максимальная температура
 tmax = 100.0#; % режим нагрева
 Tinit = 20.0#; % начальная температура
@@ -36,32 +37,45 @@ l_BC_type = OneDHeatTransfer.NeumanBC()
 (T,) = OneDHeatTransfer.BFD1_exp_exp_exp(Cp_fun, lam_fun,lam_der, 
                         H, tmax,initT_f,
                         BC_up_f,BC_dwn_f,
-                        M,N, upper_bc_type = u_BC_type, lower_bc_type = l_BC_type)
+                        M_explicit,
+                        N, 
+                        upper_bc_type = u_BC_type, lower_bc_type = l_BC_type)
 
 
 plot(T,st=:surface)
 
 #(T2,g,bc_up,bc_dwn) = OneDHeatTransfer.BFD1_imp_exp_exp(Cp_fun, lam_fun,lam_der, H, tmax,initT_f,BC_up_f,BC_dwn_f,M,N)
 
-#
+#implicit solver 
 
-p = OneDHeatTransfer.HeatTransferProblem(Cp_fun,lam_fun,lam_der,initT_f, 
+p_imp = OneDHeatTransfer.HeatTransferProblem(Cp_fun,lam_fun,lam_der,initT_f, 
+                            H,N, tmax,M,
+                            BC_up_f, u_BC_type,
+                            BC_dwn_f, l_BC_type, Float64)
+
+s_imp = OneDHeatTransfer.BFD1_IMP_EXP_EXP()
+    
+OneDHeatTransfer.unified_fd_solver!(p_imp,s_imp)
+plot(p_imp.T, st=:surface)
+plot(p_imp.T .- T,st=:surface)
+# testing crank nicolson
+p_cn = OneDHeatTransfer.HeatTransferProblem(Cp_fun,lam_fun,lam_der,initT_f, 
                            H,N, tmax,M,
                             BC_up_f, u_BC_type,
                             BC_dwn_f, l_BC_type, Float64)
 
-s = OneDHeatTransfer.FDSolverScheme(OneDHeatTransfer.BFD1(),
-                                   OneDHeatTransfer.IMP(),
-                                   OneDHeatTransfer.EXP_NL(),
-                                   OneDHeatTransfer.EXP_NL())
+s_cn = OneDHeatTransfer.BFD1_CN_EXP_EXP()
+
+#FDSolverScheme(OneDHeatTransfer.BFD1(),
+ #                                  OneDHeatTransfer.CN(),
+ #                                  OneDHeatTransfer.EXP_NL(),
+ #                                  OneDHeatTransfer.EXP_NL())
     
-OneDHeatTransfer.unified_fd_solver!(p,s)
-plot(p.T,st=:surface)
-plot(p.T .- T,st=:surface)
-
-
+OneDHeatTransfer.unified_fd_solver!(p_cn,s_cn)
+plot(p_cn.T,st=:surface)
+plot(p_cn.T .- p_imp.T,st=:surface)
 
 #@benchmark OneDHeatTransfer.BFD1_exp_exp_exp($Cp_fun, $lam_fun,$lam_der, H, tmax,$initT_f,$BC_up_f,$BC_dwn_f,M,N)
-@benchmark OneDHeatTransfer.unified_fd_solver!($p,$s)
-
+@benchmark OneDHeatTransfer.unified_fd_solver!($p_imp,$s_imp)
+@benchmark OneDHeatTransfer.unified_fd_solver!($p_cn,$s_cn)
 #BFD1_imp_exp_exp(Cp_fun, lam_fun,lam_der, H, tmax,initT_f,BC_up_f,BC_dwn_f,M,N)

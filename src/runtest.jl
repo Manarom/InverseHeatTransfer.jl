@@ -3,7 +3,7 @@
 include("finite_difference_functions.jl")
 using LinearAlgebra,BenchmarkTools
 using Test
-@testset begin 
+#@testset begin 
 N = 100
 f = rand(N)
 b = rand(N)
@@ -113,4 +113,4 @@ M = Tridiagonal(collect(fm1), collect(f), collect(fp1))
     print("column_sym_tridiag_ldiv!")
     @btime  OneDHeatTransfer.column_sym_tridiag_ldiv!($rhs_sym_tridiag, $(copy(Fbase)), $(copy(Fbase)), a1, a0, a)
 
-end
+#end
