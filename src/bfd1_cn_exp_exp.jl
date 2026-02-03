@@ -1,7 +1,7 @@
 
 #=
             fill_LHS!(LHS, Fm1, F, Fp1, m, solver_scheme, problem)
-            fill_RHS!(b, D, Tm, Tmm1, Fm1, F, Fp1, phi, solver_scheme, problem)
+            fill_RHS!(b, D, Tm, Tmm1, Fm1, F, Fp1, m, phi, solver_scheme, problem)
             apply_bc!(LHS, b, bc_fun,  F, Tm, phi ,  m,  solver_scheme, problem)
             ldiv!(Tmp1,LHS,b) # solving
 =#
@@ -13,16 +13,17 @@ LHS for `m + 1`'th time step
 """
 function fill_LHS!(LHS, Fm1, F, Fp1, _ , ::BFD1_CN_EXP_EXP, _ ) 
     fill_tridiag!(LHS, Fm1, F, Fp1, 1.0, -0.5, 1.0, -0.5)
+    return nothing
 end
 """
-    fill_RHS!(b, D, Tm, _ , _ , F, _ , phi, ::BFD1_CN_EXP_EXP, _ )
+    fill_RHS!(b, D, Tm, Tmm1, Fm1, F, Fp1, m, phi, solver_scheme, problem)
 
 
 `MT +  F*ϕ*(Tn+1 - Tn-1)² `
 M - tridiagonal with stencil
 M = `[... , 0.5*F, (1 - F),  0.5*F , ...]T `
 """
-function fill_RHS!(b, D, Tm, _ , _ , F, _ , phi, ::BFD1_CN_EXP_EXP, _ ) 
+function fill_RHS!(b, D, Tm, _ , _ , F, _ , _, phi, ::BFD1_CN_EXP_EXP, _ ) 
             mul!(b,D,Tm) 
             @. b = b^2
             @. b *= F*phi
@@ -36,39 +37,6 @@ function fill_RHS!(b, D, Tm, _ , _ , F, _ , phi, ::BFD1_CN_EXP_EXP, _ )
             column_sym_tridiag_muladd!(b, Tm, F, a0, a, a1) # b = b + M*Tm , M = [..., a1*F, a0 + a*F , a1*F ,...]
             return nothing
 end
-
-
-#-----------------------------------DirichletBC---UPPER-------------------------------------------
-"""
-    apply_bc!(LHS, b,  bc_fun::BoundaryFunction{D, BF, V, <: DirichletBC , <: UpperBC}, _ , _ , _ , m::Int , ::BFD1_CN_EXP_EXP, problem::HeatTransferProblem)   where {D , BF , V}
-
-`apply_bc!(LHS, b, bc_fun,  F, Tm, phi ,  m,  solver_scheme, problem)`
-
-``[1, 0, ...] T⁺ = T⁺``
-
-"""
-function apply_bc!(LHS, b,  bc_fun::BoundaryFunction{D, BF, V, <: DirichletBC , <: UpperBC}, _ , _ , _ , m::Int , ::BFD1_CN_EXP_EXP, problem::HeatTransferProblem)   where {D , BF , V}
-        LHS.d[1] = 1.0
-        LHS.du[1] = 0.0
-        b[1] = bc_fun(tvalue(problem,m + 1)) # 1st order BC upper, evaluating bc for Tm+1
-        return nothing
-end
-#------------------------------------DirichletBC--LOWER-------------------------------------------
-"""
-    apply_bc!(LHS, b,  bc_fun::BoundaryFunction{D, BF, V, <: DirichletBC , <: LowerBC}, _ , _ ,_,  m::Int, ::BFD1_CN_EXP_EXP, problem::HeatTransferProblem)   where {D , BF , V}
-
-    `apply_bc!(LHS, b, bc_fun,  F, Tm, phi ,  m,  solver_scheme, problem)`
-`` [..., 0 , 1] T⁺ = T⁺ ``
-"""
-function apply_bc!(LHS, b,  bc_fun::BoundaryFunction{D, BF, V, <: DirichletBC , <: LowerBC}, _ , _ ,_,  m::Int, ::BFD1_CN_EXP_EXP, problem::HeatTransferProblem)   where {D , BF , V}
-        LHS.d[end] = 1.0
-        LHS.dl[end] = 0.0
-        #b[end] = bc_fun(m + 1) # 1st order BC upper, evaluating bc for Tm+1
-        b[end] = bc_fun(tvalue(problem,m + 1)) # 1st order BC upper, evaluating bc for Tm+1
-        return nothing
-end
-
-
 
 #--------------------------------NeumanBC---UPPER----------------------------------------------
 """

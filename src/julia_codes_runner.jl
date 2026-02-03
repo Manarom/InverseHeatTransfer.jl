@@ -12,7 +12,7 @@ lam_der = Polynomials.ImmutablePolynomial( lam_der_poly)#T->lam_der_poly(T)#;% �
 plot(range(200.0,1000,30),lam_fun.(range(200.0,1000.0,30)))
 plot(range(200.0,1000,30),lam_der.(range(200.0,1000.0,30)))
 #plot(linspace(200,1000,30),lam_der(linspace(200,1000,30)));title("Производная теплопроводности, Вт/(м*К^2)")
-
+SHOW_BENCHMARKS = true
 N = 50#;% число точек сетки по координате
 M = 50000#;% число точек сетки по времени
 M_explicit = 50000
@@ -31,7 +31,7 @@ BC_up_f =  Polynomials.ImmutablePolynomial([Tinit, (Tmax - Tinit)/tmax, 1e-2])  
 #% решаем диффур
 
 u_BC_type = OneDHeatTransfer.DirichletBC()
-l_BC_type = OneDHeatTransfer.NeumanBC()
+l_BC_type = OneDHeatTransfer.DirichletBC()
 
 
 (T,) = OneDHeatTransfer.BFD1_exp_exp_exp(Cp_fun, lam_fun,lam_der, 
@@ -75,7 +75,31 @@ OneDHeatTransfer.unified_fd_solver!(p_cn,s_cn)
 plot(p_cn.T,st=:surface)
 plot(p_cn.T .- p_imp.T,st=:surface)
 
-#@benchmark OneDHeatTransfer.BFD1_exp_exp_exp($Cp_fun, $lam_fun,$lam_der, H, tmax,$initT_f,$BC_up_f,$BC_dwn_f,M,N)
-@benchmark OneDHeatTransfer.unified_fd_solver!($p_imp,$s_imp)
-@benchmark OneDHeatTransfer.unified_fd_solver!($p_cn,$s_cn)
+# testing BFD2_IMP_EXP_EXP
+p_bfd2_imp = OneDHeatTransfer.HeatTransferProblem(Cp_fun,lam_fun,lam_der,initT_f, 
+                           H,N, tmax,M,
+                            BC_up_f, u_BC_type,
+                            BC_dwn_f, l_BC_type, Float64)
+s_bfd2_imp = OneDHeatTransfer.BFD2_IMP_EXP_EXP()                            
+OneDHeatTransfer.unified_fd_solver!(p_bfd2_imp,s_bfd2_imp)
+plot(p_bfd2_imp.T,st=:surface)
+plot(p_bfd2_imp.T .- p_cn.T,st=:surface)
+
+# testing BFD2_CN_EXP_EXP
+p_bfd2_cn = OneDHeatTransfer.HeatTransferProblem(Cp_fun,lam_fun,lam_der,initT_f, 
+                           H,N, tmax,M,
+                            BC_up_f, u_BC_type,
+                            BC_dwn_f, l_BC_type, Float64)
+s_bfd2_cn = OneDHeatTransfer.BFD2_CN_EXP_EXP()                            
+OneDHeatTransfer.unified_fd_solver!(p_bfd2_cn,s_bfd2_cn)
+plot(p_bfd2_cn.T, st=:surface)
+plot(p_bfd2_cn.T .- p_bfd2_imp.T,st=:surface)
+
+if SHOW_BENCHMARKS
+    @benchmark OneDHeatTransfer.BFD1_exp_exp_exp($Cp_fun, $lam_fun,$lam_der, H, tmax,$initT_f,$BC_up_f,$BC_dwn_f,M,N)
+    @benchmark OneDHeatTransfer.unified_fd_solver!($p_imp,$s_imp)
+    @benchmark OneDHeatTransfer.unified_fd_solver!($p_cn,$s_cn)
+    @benchmark OneDHeatTransfer.unified_fd_solver!($p_bfd2_imp,$s_bfd2_imp)
+    @benchmark OneDHeatTransfer.unified_fd_solver!($p_bfd2_cn,$s_bfd2_cn)
+end
 #BFD1_imp_exp_exp(Cp_fun, lam_fun,lam_der, H, tmax,initT_f,BC_up_f,BC_dwn_f,M,N)
