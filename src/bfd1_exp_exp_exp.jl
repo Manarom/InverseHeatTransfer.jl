@@ -66,3 +66,45 @@ end
         end
         return (T,dx,dt)
     end
+
+    function unified_fd_solver!( problem::HeatTransferProblem{DT, CF, LF, LDF, ITF, G, BCU, BCD, TMATtype},
+                                    ::BFD1_EXP_EXP_EXP) where {DT, CF,LF,LDF,ITF, 
+                                    G <:UniformGrid{N,M}, 
+                                    BCU <:BoundaryFunction{DT, BF1, V1, upper_bc_type}, 
+                                    BCD <:BoundaryFunction{DT, BF2, V2, lower_bc_type}, 
+                                    TMATtype <: AbstractMatrix{DT}} where {N, M, BF1, V1, upper_bc_type, BF2, V2, lower_bc_type}
+
+   
+        T = problem.T
+        T1 = @view T[:,1]
+        
+        map!(problem.initT_f, T1, eachx(problem.grid))
+        dx = problem.grid.dx
+        dd = problem.grid.dt/(dx * dx)#
+        Fm, phi_m = problem.cache.F, problem.cache.phi
+        (BC_up_f, BC_dwn_f) = (problem.bc_up, problem.bc_dwn)
+        L_f = problem.L_f
+        C_f = problem.C_f
+        Ld_f = problem.Ld_f
+        for m = 1:M - 1 #% цикл по времени
+            Tm = @view T[:,m]
+
+            @inbounds @simd for ii in 1:N
+                ti = Tm[ii]
+                λ = L_f(ti) # λ
+                
+                Fm[ii] = dd*λ/C_f(ti) # Fm - (dx^-2)*dt*Cp/λ
+                phi_m[ii] = 0.25*Ld_f(ti)/λ #phi  - λ'/λ
+            end 
+            ti = tvalue(problem, m) # current time 
+            lam1 = L_f(Tm[1])
+            T[1, m + 1] = explicit_bc(UPPER_BC, upper_bc_type(), Tm, BC_up_f, ti , Fm[1], phi_m[1],lam1, dx)
+
+            @inbounds for n = 2 : N - 1 #% цикл по координате
+                T[n, m + 1] = explicit_iteration(Fm[n], phi_m[n], T[n - 1, m] , T[n , m], T[n + 1 , m])
+            end
+            lamN = L_f(Tm[end])
+            T[end, m + 1] = explicit_bc(LOWER_BC, lower_bc_type(), Tm, BC_dwn_f, ti , Fm[end], phi_m[end],lamN, dx)
+        end
+        return nothing
+    end

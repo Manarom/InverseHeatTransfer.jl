@@ -107,7 +107,7 @@ function (::Type{FDSolverScheme{T,X,N,P}})() where {T <: AbstractTimeScheme,
     FDSolverScheme(T(),X(),N(),P())
 end
 
-include("ExplicitSolver.jl")
+
 
 allocate_tridiagonal(N::Int, T::DataType) = Tridiagonal(Vector{T}(undef, N - 1),Vector{T}(undef, N),Vector{T}(undef, N - 1))
 
@@ -313,6 +313,7 @@ trange(p::HeatTransferProblem) = trange(p.grid)
 
 
 thermal_diffusivity(p::HeatTransferProblem{D}, T::D ) where D = p.L_f(T)/p.C_f(T)
+fourier_number(p::HeatTransferProblem{D},T, m::Int = 1) where D = thermal_diffusivity(p,T)*timestep(p,m)/(xstep(p,m)^2)
 thermal_conductivity(p::HeatTransferProblem{D}, T::D ) where D = p.L_f(T)
 thermal_conductivity_derivative(p::HeatTransferProblem{D}, T::D ) where D = p.Ld_f(T)
 heat_capacity(p::HeatTransferProblem{D}, T::D ) where D = p.C_f(T)
@@ -321,6 +322,8 @@ upper_boundary_condition(p::HeatTransferProblem{D}, t::D) where D  = p.bc_up(t)
 # BoundaryFunction{D, BF, V, <: NeumanBC , <: UpperBC}
 lower_bc_type(::HeatTransferProblem{D, CF,LF,LDF,ITF, G, BCU, BCD }) where {D, CF,LF,LDF,ITF, G, BCU, BCD  <: BoundaryFunction{D, BF, V, BC_type}} where { BF, V, BC_type}  = BC_type
 upper_bc_type(::HeatTransferProblem{D, CF,LF,LDF,ITF, G, BCU }) where {D, CF, LF, LDF, ITF, G, BCU <: BoundaryFunction{D, BF, V, BC_type}} where { BF, V, BC_type}  = BC_type
+
+
 """
     unified_fd_solver!( problem::HeatTransferProblem{DT, CF, LF, LDF, ITF, G, BCU, BCD, TMATtype},
                                     solver_scheme::FDSolverScheme{TS, CS, NLS, PS} = BFD1_IMP_EXP_EXP) where {DT, CF,LF,LDF,ITF, 
@@ -340,7 +343,7 @@ Unified solver for 1d heat transfer problems with various schemes
 
 """
 function unified_fd_solver!( problem::HeatTransferProblem{DT, CF, LF, LDF, ITF, G, BCU, BCD, TMATtype},
-                                    solver_scheme::FDSolverScheme{TS, CS, NLS, PS} = BFD1_IMP_EXP_EXP) where {DT, CF,LF,LDF,ITF, 
+                                    solver_scheme::FDSolverScheme{TS, CS, NLS, PS} = BFD2_IMP_EXP_EXP) where {DT, CF,LF,LDF,ITF, 
                                     G <:UniformGrid{N,M}, BCU, BCD, 
                                     TMATtype <: AbstractMatrix{DT},  
                                     TS <: AbstractTimeScheme,
@@ -350,27 +353,15 @@ function unified_fd_solver!( problem::HeatTransferProblem{DT, CF, LF, LDF, ITF, 
         #T = Matrix{DType}(undef,N,M)# columns - distribution, rows time
         T = problem.T
         T1 = @view T[:,1]
-
         map!(problem.initT_f, T1, eachx(problem.grid))
-
         dd = problem.grid.dt/(problem.grid.dx * problem.grid.dx)#
         F, phi, LHS, D = problem.cache.F, problem.cache.phi, problem.cache.LHS, problem.cache.D
-        # allocating vectors and matrices
-        #F = Vector{DT}(undef,N) # properties vector
         Fm1 = @view F[2 : end] 
         Fp1 = @view F[1 : end - 1]
-        # all allocations moved to the problem costructor
-        #phi = Vector{DT}(undef,N) # nonlinear coefficient vector λ'/λ
-        #lam = Vector{DT}(undef,N)
-        #LHS = allocate_tridiagonal(N,DT) # left-hand side matrix 
-        #D = central_finite_difference(N) # creates finite difference matrix for b vector evaluation
-        #(C_f, L_f, Ld_f) = (,, )
         (bc_up, bc_dwn) = (problem.bc_up, problem.bc_dwn)
-        #Tm = T1
-        Tmm1 = T1
-        # allocating left matrix
         
-        is_show = N <= 10
+        Tmm1 = T1
+        
         for m = 1 : M - 1 #% цикл по времени
             Tm = @view T[:,m] # Tm current time
             # filling current values of physical quantities
@@ -384,29 +375,16 @@ function unified_fd_solver!( problem::HeatTransferProblem{DT, CF, LF, LDF, ITF, 
             end 
 
             Tmp1 = @view T[:, m + 1] # Tm+1 next time 
-            !is_show || begin println("----------------------")
-                            @show m
-                        end
+
             fill_LHS!(LHS, Fm1, F, Fp1, m, solver_scheme, problem)
 
             fill_RHS!(Tmp1, D, Tm, Tmm1, Fm1, F, Fp1, m, phi, solver_scheme, problem)
-            if is_show
-                println("defore BC")
-                @info LHS
-                @info Tmp1
-            end
+
 
             apply_bc!(LHS, Tmp1, bc_up,  F, Tm, phi ,  m,  solver_scheme, problem)
 
             apply_bc!(LHS, Tmp1, bc_dwn, F, Tm, phi ,  m,  solver_scheme, problem)
 
-            if is_show
-                println("after BC")
-                @info LHS
-                @info Tmp1
-            end
-            #ldiv!(Tmp1 , LHS , b) # solving LHS*T = b
-            #ldiv!(LHS , b)
             tridiag_ldiv!(LHS,Tmp1)
             (TS <: BFD1) || (Tmm1 = Tm) # Tm-1 next time 
         end
@@ -416,11 +394,13 @@ function evaluate_virtual_node( Fm::T, phim::T, T2::T, T0::T) where T
     return Fm * phim * (T2 - T0)^2
 end
 
+include("bfd1_exp_exp_exp.jl")
 include("dirichlet_bc.jl")
 include("bfd1_imp_exp_exp.jl") # fully implicit solver
 include("bfd1_cn_exp_exp.jl") # crank-nicolson solver
 include("bfd2_imp_exp_exp.jl") # second order backward difference
 include("bfd2_cn_exp_exp.jl") # second order backward difference 
+
 """
 Bunch of functions to solve the non-linear transient heat transfer using finite difference
 

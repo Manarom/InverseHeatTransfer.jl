@@ -52,6 +52,7 @@ function tridiag_mul!(b::AbstractVector{T},
     bm1 = b[1]
 
     b[1] = (a0 + a * F[1]) * b[1] + ap1 * Fp1[1] * b[2]
+    # 
     @inbounds @fastmath for ii in 2 : N - 1
         b1, b2, b3 = bm1, b[ii], b[ii + 1]
         f1, f2, f3 = Fm1[ii - 1],F[ii],Fp1[ii] 
@@ -85,8 +86,8 @@ function column_sym_tridiag_mul!(b::AbstractVector{T}, F::AbstractVector{T}, a0,
     (N > 0 && N == length(b) ) || throw(DimensionMismatch("incosistent dimentions"))
     bm1 = b[1]
     b[1] = (a0 + a*F[1])*b[1] + a1*F[1]*b[2]
-
-    @inbounds @fastmath  for ii in 2 : N - 1
+    # @fastmath 
+    @inbounds @fastmath for ii in 2 : N - 1
         b1, b2, b3 = bm1, b[ii], b[ii + 1]
         f = F[ii]
         b[ii] = a1 * (b1 + b3) * f + b2 * ( a0 + a * f )
