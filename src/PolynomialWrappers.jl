@@ -1,6 +1,10 @@
 module PolynomialWrappers
     using LinearAlgebra,Interpolations,Polynomials,LegendrePolynomials,StaticArrays,RecipesBase
 
+    const LEFT_SCALER = -1.0
+    const RIGHT_SCALER = 1.0
+    scalers() = (LEFT_SCALER, RIGHT_SCALER)
+    scale_span() = RIGHT_SCALER - LEFT_SCALER
     const POLY_NAMES_TYPES_DICT = Base.ImmutableDict(
         :trig => :TrigPolyWrapper, 
         :leg => :LegPolyWrapper,
@@ -28,6 +32,11 @@ function derivative_coefficients!(a::AbstractVector{T}, poly::P) where {T, P <: 
     copyto!(a,derivative_coefficients(poly))
 end
 
+"""
+    derivative!(p1::AbstractPolyWrapper,p2::AbstractPolyWrapper)
+
+Fills p1 coefficients from p2 derivative in-place
+"""
 function derivative!(p1::AbstractPolyWrapper,p2::AbstractPolyWrapper) 
     check_derivative_size_consistency(p1,p2)
     derivative_coefficients!(p1.coeffs, p2)
@@ -36,7 +45,12 @@ coeffs(p::AbstractPolyWrapper) = getfield(p,:coeffs)
 
 
 
-    function check_derivative_size_consistency(::P, ::Q) where {P <: AbstractPolyWrapper{N,V1,R1}, Q <: AbstractPolyWrapper{M,V2,R2}} where {N, M,V1,V2,R1,R2} 
+    """
+    check_derivative_size_consistency(::P, ::Q) where {P <: AbstractPolyWrapper{N,V1,R1}, Q <: AbstractPolyWrapper{M,V2,R2}} where {N, M,V1,V2,R1,R2}
+
+Checks type and size consistency of the first argument to be filled from the second rgument derivative
+"""
+function check_derivative_size_consistency(::P, ::Q) where {P <: AbstractPolyWrapper{N,V1,R1}, Q <: AbstractPolyWrapper{M,V2,R2}} where {N, M,V1,V2,R1,R2} 
         @assert R1 == R2 "Polynomials must be of the same type"
         @assert N == M - 1 "Inconsistent size of coefficients vector, first argument polynomial should have N - 1 coefficients with respect to the second one"
     end    
@@ -54,21 +68,33 @@ coeffs(p::AbstractPolyWrapper) = getfield(p,:coeffs)
     struct BernsteinSymPolyWrapper{N,T} <: AbstractPolyWrapper{N,T,:bernsteinsym}
         coeffs::MVector{N,T}
         binoms::SVector{N,T}
+        """
+    BernsteinSymPolyWrapper(coeffs::NTuple{N,T}) where {N,T}
+
+Bernstein polynomials from coefficients tuple 
+
+
+"""
         function BernsteinSymPolyWrapper(coeffs::NTuple{N,T}) where {N,T} 
             binoms = SVector{N,T}(binomial(N - 1, i) for i=0 : N - 1)
             new{N,T}(MVector(coeffs),binoms)
         end
     end
-    function derivative(p::T) where {T<: BernsteinSymPolyWrapper{N,Q}} where {N,Q}
+    """
+    derivative(p::T) where {T<: BernsteinSymPolyWrapper{N,Q}} where {N,Q}
+
+Evaluates bernstein polynomial derivative creating new polynoial object 
+"""
+function derivative(p::T) where {T<: BernsteinSymPolyWrapper{N,Q}} where {N,Q}
             p  |> derivative_coefficients  |> BernsteinSymPolyWrapper
     end
     # derivatives StandardBasis
     derivative_coefficients(p::StandPolyWrapper{N,T}) where {N,T} = ntuple(i -> i * p.coeffs[i + 1], N - 1)
     function derivative_coefficients(p::BernsteinSymPolyWrapper{N,T}) where {N,T}
-        ntuple(i -> (N - 1)*(p.coeffs[i + 1] - p.coeffs[i])*0.5, N - 1)
+        ntuple(i -> (N - 1)*(p.coeffs[i + 1] - p.coeffs[i])/scale_span(), N - 1)
     end
     """
-        Generalized constructors
+        Generalized constructors for all polynomial wrappers
     """
     (::Type{P})(x::Vector{T}) where {P<:AbstractPolyWrapper,T} = P{length(x),T}(MVector{length(x)}(x))
     (::Type{P})(x::NTuple{N,T}) where {P<:AbstractPolyWrapper,T,N} = P{N,T}(MVector(x))
@@ -84,18 +110,36 @@ coeffs(p::AbstractPolyWrapper) = getfield(p,:coeffs)
             new{Ptype,T}(poly,xmin,xmax)
         end
     end
-    function refill!(sp::ScaledPolynomial{Ptype,T},new_coeffs::NTuple{N,T}) where {Ptype <: AbstractPolyWrapper{N}} where {N,T}
+    
+    """
+    refill!(sp::ScaledPolynomial{Ptype,T},new_coeffs::NTuple{N,T}) where {Ptype <: AbstractPolyWrapper{N}} where {N,T}
+
+Fills polynomial coefficients from `new_coeffs` 
+"""
+function refill!(sp::ScaledPolynomial{Ptype,T},new_coeffs::NTuple{N,T}) where {Ptype <: AbstractPolyWrapper{N}} where {N,T}
         copyto!(sp.poly.coeffs,new_coeffs)
     end
-    function refill!(sp::ScaledPolynomial{Ptype,T},new_coeffs::NTuple{N,T}, flag) where {Ptype <: AbstractPolyWrapper{N}} where {N,T}
+    """
+    refill!(sp::ScaledPolynomial{Ptype,T},new_coeffs::NTuple{N,T}, flag) where {Ptype <: AbstractPolyWrapper{N}} where {N,T}
+
+Fills polynomial coefficients by flag, here flag must be range, bitvector or other types which can be used for 
+indexing with the same length as the number of polynomial coefficients 
+"""
+function refill!(sp::ScaledPolynomial{Ptype,T},new_coeffs::NTuple{N,T}, flag) where {Ptype <: AbstractPolyWrapper{N}} where {N,T}
         v = @view sp.poly.coeffs[flag]
         copyto!(v , new_coeffs)
     end    
-    (sp::ScaledPolynomial{P,T})(x::T) where {P,T} = normalize_x(x,sp) |> sp.poly
+    """
+    (sp::ScaledPolynomial{P,T})(x::T) where {P,T}
+
+When calling ScaledPolynomial on argument, it normalizes its input than calls on normalized 
+"""
+(sp::ScaledPolynomial{P,T})(x::T) where {P,T} = normalize_x(x,sp) |> sp.poly
     function normalize_x(x::T, p::ScaledPolynomial{P,T}) where {P,T}
         x_min = p.xmin
         x_max = p.xmax
-        return - 1.0 + 2.0 * (x - x_min)/(x_max - x_min) 
+        return LEFT_SCALER + scale_span() * (x - x_min)/(x_max - x_min) 
+        #return -1.0 + 2.0 * (x - x_min)/(x_max - x_min) 
     end
     const SUPPORTED_POLYNOMIAL_TYPES = Base.ImmutableDict([k=>eval(d) for (k,d) in  POLY_NAMES_TYPES_DICT]...)
                 #=:stand=> StandPolyWrapper,#Standard basis polynomials from Polynomials.Polynomial,
@@ -169,8 +213,9 @@ function eval_poly(p::BernsteinSymPolyWrapper{D,T}, k::Int, x::T) where {D,T}
     k < D  || error("incorrect polynomial degree")
     @inbounds begin
         binom = p.binoms[k + 1] #
-        u = (one(T) - x) * 0.5    # 
-        v = (x + one(T)) * 0.5
+        s = scale_span() 
+        u = (one(T) - x) / s  # 
+        v = (x + one(T)) / s
         
         # Power without ^ : Horner's for log(n) muls
         upow = one(T)
@@ -195,7 +240,7 @@ function bern_max(::Type{BernsteinPolyWrapper{D,T}},k::Int) where {D,T}
     d = D - 1
     return (^(k,k)* ^(d, -T(d))*^(d-k,d-k)*binomial(d,k), k/d)
 end
-function bern_max(::Type{BernsteinSymPolyWrapper{D,T}},k::Int,a::T=-1.0,b::T=1.0) where {D,T}
+function bern_max(::Type{BernsteinSymPolyWrapper{D,T}}, k::Int, a::T = LEFT_SCALER, b::T = RIGHT_SCALER) where {D,T}
     d = D - 1
     s = b - a
     return (^(k,k)* ^(d,-T(d))*^(d-k,d-k)*binomial(d,k), s*k/d + a)
@@ -218,6 +263,25 @@ function (poly::Union{LegPolyWrapper{N,T},TrigPolyWrapper{N,T},BernsteinPolyWrap
     end
     return res =#
     return sum(ntuple(i -> poly.coeffs[i]*eval_poly(poly,i - 1,x),N))
+end
+
+function polyfit(::Type{PV},x::V,y::V, N::Int) where {PV <: AbstractPolyWrapper,V <:AbstractVector{T} } where {T}
+    @assert is_in_domain(x) "All values of x must be within $(LEFT_SCALER)...$(RIGHT_SCALER)"
+    M = length(x)
+    @assert length(y) == M "x and y must be of the same size"
+    Vand = MMatrix{M,N, T, M*N}(undef)
+    #p = PV(ntuple(i-> i == 1 ? one(T) : zero(T), N))
+    p = PV([i-> i == 1 ? one(T) : zero(T) for i in 1:N])
+    _fill_vander!(Vand,p,x)
+    #=for i = 1 : N
+        vi = @view Vand[:,i]
+        @. vi = p(x)
+    end=#
+    return Vand
+end
+function is_in_domain(v)
+    mn, mx = extrema(v)
+    return LEFT_SCALER <= mn && mx <= RIGHT_SCALER
 end
 """
     VanderMatrix{M <: SMatrix , R <: SMatrix, V <: SVector}
@@ -375,10 +439,10 @@ end
 """
     normalize_x(x::AbstractVector)
 
-Makes all elements of vector x to fit in range -1...1
+Makes all elements of vector x to fit in range $(LEFT_SCALER)...$(RIGHT_SCALER)
 returns normalized vector , xmin and xmax values
 All elements of x must be unique
-Makes all elements of vector x to fit in range -1...1
+Makes all elements of vector x to fit in range $(LEFT_SCALER)...$(RIGHT_SCALER)
 returns normalized vector , xmin and xmax values
 All elements of x must be unique
 
@@ -389,8 +453,8 @@ function normalize_x(x::AbstractVector)
 
     x_min = _x[1]
     x_max = _x[end]
-    a = 2.0/(x_max - x_min)
-    xi_converted  = @. a*(_x - x_min) - 1.0
+    a = scale_span()/(x_max - x_min)
+    xi_converted  = @. a*(_x - x_min) + LEFT_SCALER
     return (xi_converted ,x_min,x_max)
 end
 
@@ -398,9 +462,11 @@ end
     denormalize_x(normalized_x::AbstractVector, x_min,x_max)
 
 Creates normal vector from one created with [`normalize_x`](@ref)` function 
+Assumes `normalized_x` as a vector normalized to $(LEFT_SCALER)...$(RIGHT_SCALER)
+preformes the revers operation 
 """
 function denormalize_x(normalized_x::Number, x_min, x_max)
-    return 0.5*(normalized_x + 1.0)*(x_max - x_min) + x_min
+    return x_min + (normalized_x - LEFT_SCALER)*(x_max - x_min)/scale_span()
 end
 denormalize_x(V::VanderMatrix) = Vector(denormalize_x.(V.xi, V.x_first,V.x_last))
 function triplicate_columns(a::AbstractVector,T)
