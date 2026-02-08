@@ -1,18 +1,12 @@
 module PolynomialWrappers
     using LinearAlgebra,Interpolations,Polynomials,LegendrePolynomials,StaticArrays,RecipesBase
-
+    export BernsteinSymPolyWrapper,StandPolyWrapper, LegPolyWrapper,ChebPolyWrapper, ScaledPolynomial
     const LEFT_SCALER = -1.0
     const RIGHT_SCALER = 1.0
     scalers() = (LEFT_SCALER, RIGHT_SCALER)
     scale_span() = RIGHT_SCALER - LEFT_SCALER
-    const POLY_NAMES_TYPES_DICT = Base.ImmutableDict(
-        :trig => :TrigPolyWrapper, 
-        :leg => :LegPolyWrapper,
-        :stand => :StandPolyWrapper ,
-        :chebT => :ChebPolyWrapper,
-        :bernstein => :BernsteinPolyWrapper,
-        #:bernsteinsym => :BernsteinSymPolyWrapper
-    )
+    left_scaler() = LEFT_SCALER
+    right_scaler() = RIGHT_SCALER
     abstract type AbstractPolyWrapper{P,V,T} end
     """
     derivative_coefficients(::T) where T <: AbstractPolyWrapper
@@ -54,16 +48,30 @@ function check_derivative_size_consistency(::P, ::Q) where {P <: AbstractPolyWra
         @assert R1 == R2 "Polynomials must be of the same type"
         @assert N == M - 1 "Inconsistent size of coefficients vector, first argument polynomial should have N - 1 coefficients with respect to the second one"
     end    
+
+const POLY_NAMES_TYPES_DICT = Base.ImmutableDict(
+        :trig => :TrigPolyWrapper, 
+        :leg => :LegPolyWrapper,
+        :stand => :StandPolyWrapper ,
+        :chebT => :ChebPolyWrapper,
+        :bernstein => :BernsteinPolyWrapper,
+        #:bernsteinsym => :BernsteinSymPolyWrapper
+    )
     for (_poly_name, _PolyType) in  POLY_NAMES_TYPES_DICT
         x = String(_poly_name)
-        @eval struct $_PolyType{P,T} <: AbstractPolyWrapper{P,T,Symbol($x)}
-            coeffs::MVector{P,T}
+        @eval struct $_PolyType{N,T} <: AbstractPolyWrapper{N,T,Symbol($x)}
+            coeffs::MVector{N,T}
+            $_PolyType(x::Union{NTuple{N,T},M}) where M <: StaticVector{N,T} where {T,N} = new{N,T}(MVector(x))
         end
         @eval function derivative(p::T) where {T<: $_PolyType{N,Q}} where {N,Q}
             p  |> derivative_coefficients  |> $_PolyType
         end
 
     end
+    #=struct ChebPolyWrapper{N,T} <: AbstractPolyWrapper{N,T,:chebT}
+        coeffs::MVector{N,T}
+        poly::
+    end =#
 
     struct BernsteinSymPolyWrapper{N,T} <: AbstractPolyWrapper{N,T,:bernsteinsym}
         coeffs::MVector{N,T}
@@ -72,10 +80,8 @@ function check_derivative_size_consistency(::P, ::Q) where {P <: AbstractPolyWra
     BernsteinSymPolyWrapper(coeffs::NTuple{N,T}) where {N,T}
 
 Bernstein polynomials from coefficients tuple 
-
-
 """
-        function BernsteinSymPolyWrapper(coeffs::NTuple{N,T}) where {N,T} 
+        function BernsteinSymPolyWrapper(coeffs::Union{NTuple{N,T},M}) where M <: StaticVector{N,T} where {N,T} 
             binoms = SVector{N,T}(binomial(N - 1, i) for i=0 : N - 1)
             new{N,T}(MVector(coeffs),binoms)
         end
@@ -90,14 +96,16 @@ function derivative(p::T) where {T<: BernsteinSymPolyWrapper{N,Q}} where {N,Q}
     end
     # derivatives StandardBasis
     derivative_coefficients(p::StandPolyWrapper{N,T}) where {N,T} = ntuple(i -> i * p.coeffs[i + 1], N - 1)
+
     function derivative_coefficients(p::BernsteinSymPolyWrapper{N,T}) where {N,T}
         ntuple(i -> (N - 1)*(p.coeffs[i + 1] - p.coeffs[i])/scale_span(), N - 1)
     end
+
+
     """
         Generalized constructors for all polynomial wrappers
     """
     (::Type{P})(x::Vector{T}) where {P<:AbstractPolyWrapper,T} = P{length(x),T}(MVector{length(x)}(x))
-    (::Type{P})(x::NTuple{N,T}) where {P<:AbstractPolyWrapper,T,N} = P{N,T}(MVector(x))
 
     struct ScaledPolynomial{Ptype,T} 
         poly::Ptype
@@ -109,8 +117,34 @@ function derivative(p::T) where {T<: BernsteinSymPolyWrapper{N,Q}} where {N,Q}
             @assert xmin < xmax "xmin must be smaller than xmax"
             new{Ptype,T}(poly,xmin,xmax)
         end
+        ScaledPolynomial(p::P;xmin = left_scaler(), xmax = right_scaler()) where P <: AbstractPolyWrapper{N,T} where {N,T} = 
+                new{P,T}(p, xmin, xmax)
     end
-    
+        """
+    (sp::ScaledPolynomial{P,T})(x::T) where {P,T}
+
+When calling ScaledPolynomial on argument, it normalizes its input than calls on normalized 
+"""
+    (sp::ScaledPolynomial{P,T})(x::T) where {P,T} = scale_x_to_ξ(x, sp) |> sp.poly
+
+    left_scaler(p::ScaledPolynomial) = p.xmin
+    right_scaler(p::ScaledPolynomial) = p.xmax
+    scalers(p::ScaledPolynomial) = p.xmin,p.xmax
+    scale_span(p::ScaledPolynomial) = p.xmax - p.xmin
+    """
+    scale_x_to_ξ(x,x_min,x_max)
+
+Takes x supposing it is scaled from x_min to x_max and scales it 
+to default scaling from $(left_scaler()) to $(right_scaler())
+"""
+scale_x_to_ξ(x,x_min,x_max) = left_scaler() + scale_span() * (x - x_min)/(x_max - x_min) 
+scale_ξ_to_x(ξ, ξ_min, ξ_max) = ξ_min +  (ξ_max - ξ_min) * (ξ - left_scaler())/scale_span()
+
+scale_span_x_by_ξ(p::ScaledPolynomial) = scale_span(p)/scale_span()
+scale_span_ξ_by_x(p::ScaledPolynomial) = scale_span()/scale_span(p)
+scale_x_to_ξ(x, p::ScaledPolynomial) = scale_x_to_ξ(x, p.xmin, p.xmax)
+scale_ξ_to_x(ξ, p::ScaledPolynomial) = scale_ξ_to_x(ξ, p.xmin, p.xmax)
+
     """
     refill!(sp::ScaledPolynomial{Ptype,T},new_coeffs::NTuple{N,T}) where {Ptype <: AbstractPolyWrapper{N}} where {N,T}
 
@@ -129,50 +163,20 @@ function refill!(sp::ScaledPolynomial{Ptype,T},new_coeffs::NTuple{N,T}, flag) wh
         v = @view sp.poly.coeffs[flag]
         copyto!(v , new_coeffs)
     end    
-    """
-    (sp::ScaledPolynomial{P,T})(x::T) where {P,T}
 
-When calling ScaledPolynomial on argument, it normalizes its input than calls on normalized 
-"""
-(sp::ScaledPolynomial{P,T})(x::T) where {P,T} = normalize_x(x,sp) |> sp.poly
-    function normalize_x(x::T, p::ScaledPolynomial{P,T}) where {P,T}
-        x_min = p.xmin
-        x_max = p.xmax
-        return LEFT_SCALER + scale_span() * (x - x_min)/(x_max - x_min) 
-        #return -1.0 + 2.0 * (x - x_min)/(x_max - x_min) 
-    end
+
+
     const SUPPORTED_POLYNOMIAL_TYPES = Base.ImmutableDict([k=>eval(d) for (k,d) in  POLY_NAMES_TYPES_DICT]...)
-                #=:stand=> StandPolyWrapper,#Standard basis polynomials from Polynomials.Polynomial,
-                :chebT=> ChebPolyWrapper,# Chebyshev polynomials from Polynomials.ChebyshevT,
-                :trig => TrigPolyWrapper, # Self-made primitive type for trigonometric functions
-                :leg =>  LegPolyWrapper, # Legendre polynomials         
-                :bernstein => BernsteinPolyWrapper  =#
-#)
-#=struct TrigPolyWrapper{P,T} <: AbstractPolyWrapper{P,T,:trig}
-    coeffs::MVector{P,T}
-end
-struct LegPolyWrapper{P,T}  <: AbstractPolyWrapper{P,T,:leg}
-    coeffs::MVector{P,T}
-end
-struct StandPolyWrapper{P,T}  <: AbstractPolyWrapper{P,T,:stand} 
-    coeffs::MVector{P,T}
-end
-struct ChebPolyWrapper{P,T}  <: AbstractPolyWrapper{P,T,:chebT}
-    coeffs::MVector{P,T}
-end
-struct BernsteinPolyWrapper{P,T} <: AbstractPolyWrapper{P,T,:bernstein}
-    coeffs::MVector{P,T}
-end=#
 
+    poly_name(::P) where P<: AbstractPolyWrapper{N,T,V} where {N,T,V} = V
 
+    poly_name(::Type{P}) where P<: AbstractPolyWrapper{N,T,V} where {N,T,V} = V
 
+    poly_degree(::AbstractPolyWrapper{N}) where {N} = N - 1
 
+    poly_degree(::Type{P}) where P<:AbstractPolyWrapper{N} where {N} = N - 1
 
-poly_name(::P) where P<: AbstractPolyWrapper{N,T,V} where {N,T,V} = V
-poly_name(::Type{P}) where P<: AbstractPolyWrapper{N,T,V} where {N,T,V} = V
-poly_degree(::AbstractPolyWrapper{N}) where {N} = N - 1
-poly_degree(::Type{P}) where P<:AbstractPolyWrapper{N} where {N} = N - 1
-parnumber(::AbstractPolyWrapper{N,T,V}) where {N,T,V} = N
+    parnumber(::AbstractPolyWrapper{N,T,V}) where {N,T,V} = N
 
 
 """
@@ -180,14 +184,54 @@ parnumber(::AbstractPolyWrapper{N,T,V}) where {N,T,V} = N
 """
 eval_poly(p::StandPolyWrapper,x) = evalpoly(x, p.coeffs)
 
-eval_poly(poly::ChebPolyWrapper,x) = Polynomials.ChebyshevT(poly.coeffs)(x)
-eval_poly(::LegPolyWrapper,degree,x) = LegendrePolynomials.Pl(x,degree)
+function eval_poly(ch::ChebPolyWrapper{N,T}, x::S) where {N,T,S}
+        R = promote_type(T, S)
+        poly_degree(ch) == -1 && return zero(R)
+        poly_degree(ch) == 0 &&  return R(ch.coeffs[1]) 
+        
+        h = scale_span()
+        (a,b) = scalers()
+
+        ξ = 2 * (x - a) / h - one(T)  # Scale to [-1,1]
+    
+        # Clenshaw: start from highest coeffs
+        c0 = R(ch.coeffs[N-1])  # T_{N-2} coeff initially (or 0 if N=2)
+        c1 = R(ch.coeffs[N])    # T_{N-1} coeff
+    
+        @inbounds for k in (N-2):-1:1
+            tmp = ch.coeffs[k] - c1
+            c1 = c0 + 2ξ * c1
+            c0 = tmp
+        end
+        
+    return R(c0 + ξ * c1) 
+end
+function eval_poly(leg::LegPolyWrapper{N,T}, x::S) where {N,T,S}
+    R = promote_type(T, S)
+    n = N - 1
+    n <= 0 && return zero(R)
+    n == 0 &&  return R(leg.coeffs[1]) 
+    
+    h = scale_span()
+    (a,) = scalers()
+    x_norm = 2 * (x - a) / h - one(T)  # Scale to [-1,1]
+    
+    itr = LegendrePolynomials.LegendrePolynomialIterator(x_norm)
+    (s,state) = iterate(itr)
+    s *= leg.coeffs[1]
+    @inbounds for k in 1 : n
+        (v,state) = iterate(itr,state)
+        s += R(leg.coeffs[k + 1]) * v
+    end
+    return s
+end
+#eval_poly(::LegPolyWrapper,degree,x) = LegendrePolynomials.Pl(x,degree)
 function eval_poly(::TrigPolyWrapper,degree,x) 
      degree != 0 || return 1
      n = 1 + floor(degree/2) 
      return isodd(degree) ? sin(n*pi*x) : cos(n*pi*x)
 end
-function (poly::Union{StandPolyWrapper,ChebPolyWrapper})(x::Number)
+function (poly::Union{StandPolyWrapper,ChebPolyWrapper, LegPolyWrapper})(x::Number)
     return eval_poly(poly,x)
 end
 """
@@ -209,13 +253,20 @@ function eval_poly(p::BernsteinSymPolyWrapper{D,T}, k::Int, x::T) where {D,T} # 
 end
 =#
 
+"""
+    eval_poly(p::BernsteinSymPolyWrapper{D,T}, k::Int, x::T) where {D,T}
+
+Evaluates Bernstein polynomial k'th monomial value for x the index of the monomial
+goes from ``0 to D - 1``
+"""
 function eval_poly(p::BernsteinSymPolyWrapper{D,T}, k::Int, x::T) where {D,T}
-    k < D  || error("incorrect polynomial degree")
+    k < D && k >= 0 || error("incorrect polynomial degree")
     @inbounds begin
         binom = p.binoms[k + 1] #
         s = scale_span() 
-        u = (one(T) - x) / s  # 
-        v = (x + one(T)) / s
+        (a, b) = scalers()
+        u = (b - x) / s  # 
+        v = (x - a) / s
         
         # Power without ^ : Horner's for log(n) muls
         upow = one(T)
@@ -253,16 +304,15 @@ end
     make it consistent with Polynomials.jl 
     TrigPolyWrapper simple type for trigonometric function polynomils
 """
-function (poly::Union{LegPolyWrapper{N,T},TrigPolyWrapper{N,T},BernsteinPolyWrapper{N,T},BernsteinSymPolyWrapper{N,T}})(x::T) where {N,T}
+function (poly::Union{TrigPolyWrapper{N,T},BernsteinPolyWrapper{N,T},BernsteinSymPolyWrapper{N,T}})(x::T) where {N,T}
     #LegendrePolynomials.Pl(x,l) - computes Legendre polynomial of degree l at point x 
-    #=res = 0.0
-    for i ∈ 1:N
+    res = zero(T)
+    @inbounds for i ∈ 1 : N
         coeff = poly.coeffs[i]
-        coeff != 0.0 || continue
-        res += coeff*eval_poly(poly, i - 1,x)
+        res += coeff*eval_poly(poly, i - 1, x)
     end
-    return res =#
-    return sum(ntuple(i -> poly.coeffs[i]*eval_poly(poly,i - 1,x),N))
+    return res 
+    #return sum(ntuple(i -> poly.coeffs[i]*eval_poly(poly,i - 1,x),N))
 end
 
 function polyfit(::Type{PV},x::V,y::V, N::Int) where {PV <: AbstractPolyWrapper,V <:AbstractVector{T} } where {T}
