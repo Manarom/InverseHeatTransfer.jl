@@ -107,12 +107,12 @@ const POLY_NAMES_TYPES_DICT = Base.ImmutableDict(
         b = MVector{N - 1, T}(undef)
         # stensile c'i-1 = c'i+1 + 2(i - 1)*ci i = N,N-1,...,2
         if N ≥ 2
-            b[N - 1] = 2.0 * (N - 1) * p.coeffs[N]/s 
+           @inbounds  b[N - 1] = 2.0 * (N - 1) * p.coeffs[N]/s 
         end
         if N ≥ 3
-            b[N - 2] = 2.0 * (N - 2) * p.coeffs[N - 1]/s 
+           @inbounds   b[N - 2] = 2.0 * (N - 2) * p.coeffs[N - 1]/s 
         end
-        for k in N - 3 : -1 : 1
+        @inbounds   for k in N - 3 : -1 : 1
             b[k] = b[k + 2] +  2.0 * k * p.coeffs[k + 1]/s 
         end
         b[1] /= 2.0
@@ -122,12 +122,12 @@ const POLY_NAMES_TYPES_DICT = Base.ImmutableDict(
         s =  scale_span()/2.0
         b = zeros(MVector{N - 1, T})
         if N ≥ 2
-            b[N - 1] =  (2N - 3) * p.coeffs[N] / s # 0.5 * (N * (N - 1)) *
+            @inbounds  b[N - 1] =  (2N - 3) * p.coeffs[N] / s # 0.5 * (N * (N - 1)) *
         end
         if N ≥ 3
-            b[N - 2] =  (2N - 5) * p.coeffs[N-1] / s #  0.5 * ((N - 1) * (N - 2)) 
+            @inbounds  b[N - 2] =  (2N - 5) * p.coeffs[N-1] / s #  0.5 * ((N - 1) * (N - 2)) 
         end
-        for k = N - 3 : -1 : 1
+        @inbounds  for k = N - 3 : -1 : 1
             b[k] =  (2k - 1) * (b[k + 2] / (2k + 3) + p.coeffs[k + 1]/s)
         end
     
