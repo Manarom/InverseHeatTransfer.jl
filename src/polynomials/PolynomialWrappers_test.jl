@@ -11,14 +11,16 @@ show_subtitle(st,n = 1) = begin
     sh = mapreduce(_-> "==",*,1 : n)
     println("$sh > $(string(st))")
 end
+
 @testset "Polynomials" begin 
     #begin 
+        a = (0.1,-0.5,0.4,-1.0)
+        N = length(a)
         show_title("Testing polynomials evaluation:")
-        @test Polynomials.Polynomial((1.0,2.0,3.0))(0.5) ≈ PW.StandPolyWrapper((1.0,2.0,3.0))(0.5)
-        @test  Polynomials.ChebyshevT((1.0,2.0,3.0))(0.5) ≈ PW.ChebPolyWrapper((1.0,2.0,3.0))(0.5)
-        @test  LegendrePolynomials.Pl(0.5 , 3) ≈ PW.LegPolyWrapper((0.0, 0.0, 0.0, 1.0))(0.5)
-        @test  SpecialPolynomials.Bernstein{3}((0.0, 0.0, 0.0, 1.0))(0.5) ≈ PW.BernsteinPolyWrapper((0.0, 0.0, 0.0, 1.0))(0.5)
-
+        @test Polynomials.Polynomial(a)(0.5) ≈ PW.StandPoly(a)(0.5)
+        @test  Polynomials.ChebyshevT(a)(0.5) ≈ PW.ChebPoly(a)(0.5)
+        @test  LegendrePolynomials.Pl(0.5 , 3) ≈ PW.LegPoly((0.0, 0.0, 0.0, 1.0))(0.5)
+        @test  SpecialPolynomials.Bernstein{N - 1}(a)(0.5) ≈ PW.BernsteinPoly(a)(0.5)
 
         a = [1.0 , 22.0 , 3.0 , 4.56 , 3.51]
         N = length(a)
@@ -26,21 +28,21 @@ end
         show_subtitle("Testing polynomial derivative coefficients and benchmarking the evaluation speed")
         for (TestPolyType,CheckPolyType) in zip((SpecialPolynomials.Bernstein{N - 1},
                                 SpecialPolynomials.Chebyshev,
-                                SpecialPolynomials.Legendre ), (PW.BernsteinSymPolyWrapper, 
-                            PW.ChebPolyWrapper, PW.LegPolyWrapper))
+                                SpecialPolynomials.Legendre ), (PW.BernsteinSymPoly, 
+                            PW.ChebPoly, PW.LegPoly))
                 show_subtitle("Testing  $(CheckPolyType)", 2)
                 b_test = TestPolyType(a)
                 b_der_test = Polynomials.derivative(b_test)
                 b_pw = CheckPolyType(a)
                 b_der = PW.derivative(b_pw)
-                show_subtitle("$(TestPolyType) evaluation: ", 2)
+                show_subtitle("$(TestPolyType)(x) evaluation: ", 3)
                 @btime $b_test(0.5)
-                show_subtitle(" $(CheckPolyType) evaluation: ", 2)
+                show_subtitle(" $(CheckPolyType)(x) evaluation: ", 3)
                 @btime $b_pw(0.5)
                 
-                show_subtitle("$(TestPolyType) derivative evaluation: ")
+                show_subtitle("derivative( $(TestPolyType) ) evaluation: ",3)
                 @btime $Polynomials.derivative($b_test)
-                print(" $(CheckPolyType) derivative evaluation: ")
+                show_subtitle("derivative( $(CheckPolyType) ) evaluation: ",3)
                 @btime $PW.derivative($b_pw)
 
                 if ~(TestPolyType <: SpecialPolynomials.Bernstein)
@@ -54,13 +56,13 @@ end
         x = collect(range(-1.0,1.0,100))
         a = (1.0,22.0,3.0,4.56,3.51)
         show_title("Default scaling polynomial derivative evaluation test:")
-        for CheckPolyType in (PW.BernsteinSymPolyWrapper, PW.StandPolyWrapper, 
-                                    PW.ChebPolyWrapper, PW.LegPolyWrapper, PW.TrigPolyWrapper)
+        for CheckPolyType in (PW.BernsteinSymPoly, PW.StandPoly, 
+                                    PW.ChebPoly, PW.LegPoly, PW.TrigPoly)
 
             show_subtitle("Cheking the derivative for $CheckPolyType")
             pw_poly = CheckPolyType(a)
             pw_poly_vals = pw_poly.(x)
-            is_trig = CheckPolyType <: PW.TrigPolyWrapper
+            is_trig = CheckPolyType <: PW.TrigPoly
 
             s_fit = Polynomials.fit(Polynomials.Polynomial, x, pw_poly_vals, is_trig ? 20 : PW.poly_degree(pw_poly)) 
     
@@ -75,7 +77,7 @@ end
         a = (1.0,22.0,3.0,4.56,3.51)
         (x_scaled,x_min,x_max) = PW.scale_x_to_ξ(x_unscaled)
 
-        p_scaled = PW.ScaledPolynomial(PW.ChebPolyWrapper, a,  x_min, x_max)
+        p_scaled = PW.ScaledPolynomial(PW.ChebPoly, a,  x_min, x_max)
         y_values = p_scaled.(x_unscaled)
         p_scaled_der = PW.derivative(p_scaled)
         pp = Polynomials.fit(Polynomials.Polynomial,x_unscaled, y_values, length(a) - 1)
@@ -85,7 +87,7 @@ end
         plot!(x_unscaled, p_scaled_der.(x_unscaled))
 
         show_title("Scaled polynomial derivative evaluation test ")
-        for CheckPolyType in (PW.BernsteinSymPolyWrapper, PW.StandPolyWrapper, PW.ChebPolyWrapper , PW.LegPolyWrapper)
+        for CheckPolyType in (PW.BernsteinSymPoly, PW.StandPoly, PW.ChebPoly , PW.LegPoly)
             show_subtitle("Cheking the derivative for $CheckPolyType")
             p_scaled = PW.ScaledPolynomial(CheckPolyType, a,  x_min, x_max)
             y_values = p_scaled.(x_unscaled)

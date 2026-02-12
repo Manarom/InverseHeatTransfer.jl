@@ -255,3 +255,17 @@ function column_sym_tridiag_ldiv!(rhs::AbstractVector{T},
     
     return rhs
 end
+
+allocate_tridiagonal(N::Int, T::DataType) = Tridiagonal(Vector{T}(undef, N - 1),Vector{T}(undef, N),Vector{T}(undef, N - 1))
+
+"""
+    central_finite_difference(n)
+
+Returns central finite difference first order derivative matrix 
+"""
+function central_finite_difference(n)
+    if size(CentralDifference[],1) != n
+         CentralDifference[] = Tridiagonal(fill(-1.0, n - 1),fill(0.0, n), fill(1.0, n - 1))   
+    end  
+    return  CentralDifference[]
+end

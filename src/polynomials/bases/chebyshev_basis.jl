@@ -1,0 +1,81 @@
+
+
+function eval_poly(ch::ChebPoly{N,T}, x::S) where {N,T,S}
+        R = promote_type(T, S)
+        poly_degree(ch) == -1 && return zero(R)
+        poly_degree(ch) == 0 &&  return R(ch.coeffs[1]) 
+        
+        h = scale_span()
+        a = left_scaler()
+
+        ξ = 2 * (x - a) / h - one(T)  # Scale to [-1,1] 
+
+        c0 = R(ch.coeffs[N-1])  # T_{N-2} coeff initially (or 0 if N=2)
+        c1 = R(ch.coeffs[N])    # T_{N-1} coeff
+    
+        @inbounds for k in (N-2):-1:1
+            tmp = ch.coeffs[k] - c1
+            c1 = c0 + 2ξ * c1
+            c0 = tmp
+        end
+        
+    return R(c0 + ξ * c1) 
+end
+
+function derivative_coefficients(p::ChebPoly{N,T}) where {N,T}
+    s = scale_span()/2.0 # need to scale if the default basis is not -1...1
+    b = MVector{N - 1, T}(undef)
+    # stensile c'i-1 = c'i+1 + 2(i - 1)*ci i = N,N-1,...,2
+    if N ≥ 2
+        @inbounds  b[N - 1] = 2.0 * (N - 1) * p.coeffs[N]/s 
+    end
+    if N ≥ 3
+        @inbounds   b[N - 2] = 2.0 * (N - 2) * p.coeffs[N - 1]/s 
+    end
+    @inbounds   for k in N - 3 : -1 : 1
+        b[k] = b[k + 2] +  2.0 * k * p.coeffs[k + 1]/s 
+    end
+    b[1] /= 2.0
+    return b.data
+end
+
+(poly::ChebPoly)(x::Number) = eval_poly(poly,x)
+
+
+#=
+function cheb_coeffs(f, N)
+    x = @. cospi((0:N) / N)  # CGL points
+    y = f.(x)             # Function values
+    
+    # Real FFT (rfft handles the cosine transform property)
+    c = rfft(y)           # Length (N÷2+1) complex coeffs
+    
+    # Extract real Chebyshev coefficients (first N+1)
+    a = zeros(N+1)
+    a[1] = c[1] / 2       # T0 coefficient (DC component)
+    a[2:2:2min(N,div(N,2)+1)] .= real.(c[2:2:2min(N,div(N,2)+1)])  # Even
+    a[3:2:min(N,div(N,2)+1)] .= real.(c[3:2:min(N,div(N,2)+1)])   # Odd
+    
+    return a[1:min(N+1,length(a))] / N  # Normalize
+end
+=#
+
+function cheb_coefs(vals::AbstractArray{<:Number,N}) where {N}
+     # type-I DCT, except for size-1 dimensions where we want identity
+    kind = map(n -> n > 1 ? FFTW.REDFT00 : FFTW.DHT, size(vals))
+    coefs = FFTW.r2r(vals, kind)
+
+    # renormalize the result to obtain the conventional
+    # Chebyshev-polnomial coefficients
+    s = size(coefs)
+    coefs ./= prod(map(n -> n > 1 ? 2(n-1) : 1, s))
+    for dim = 1:N
+        if size(coefs, dim) > 1
+            coefs[CartesianIndices(ntuple(i -> i == dim ? (2:s[i]-1) : (1:s[i]), Val{N}()))] .*= 2
+        end
+    end
+
+    return coefs
+end
+
+#==#
