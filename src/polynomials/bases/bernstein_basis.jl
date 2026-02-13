@@ -45,7 +45,6 @@ bern_max_locations(p::BernsteinSymPoly{N}) where {N} = [bern_max(p,i)[2] for i i
 bern_max_values(p::BernsteinSymPoly{N}) where {N} = [bern_max(p,i)[1] for i in 0 : N-1]
 
 function eval_scaled_poly(poly::Union{BernsteinSymPoly{N,S},BernsteinPoly{N,S}},x::T,a::T,b::T) where {N,T,S}
-    
     R = promote_type(S, T)
     t = R( (x - a) / (b - a) )
     beta = MVector{N,R}(poly.coeffs)  # values in this vector are overridden

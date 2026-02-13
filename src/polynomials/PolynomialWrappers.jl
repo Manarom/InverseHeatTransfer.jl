@@ -133,8 +133,8 @@ const POLY_NAMES_TYPES_DICT = Base.ImmutableDict(
     When calling ScaledPolynomial on argument, it normalizes its input than calls on normalized 
     """
     (sp::ScaledPolynomial)(x) = eval_poly(sp, x)
-    eval_poly(p::ScaledPolynomial{P,T}, x::T)  where {P,T} = scale_x_to_ξ(x, sp) |> p.poly
-    eval_scaled_poly(p::ScaledPolynomial{P,T}, x::T, _, _) = scale_x_to_ξ(x, sp) |> eval_scaled_poly(p.poly,x,p.xmin,p.xmax)
+    eval_poly(p::ScaledPolynomial{P,T}, x::T)  where {P,T} = scale_x_to_ξ(x, p) |> p.poly
+    eval_scaled_poly(p::ScaledPolynomial{P,T}, x::T, _, _) where {P,T} = scale_x_to_ξ(x, p) |> eval_scaled_poly(p.poly,x,p.xmin,p.xmax)
 
     left_scaler(p::ScaledPolynomial) = p.xmin
     right_scaler(p::ScaledPolynomial) = p.xmax

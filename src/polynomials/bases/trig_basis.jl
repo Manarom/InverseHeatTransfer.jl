@@ -3,26 +3,26 @@
 function eval_scaled_monomial(::TrigPoly,degree,x,a,b) 
      degree != 0 || return 1
      n = 1 + floor(degree/2) 
-     return isodd(degree) ? sin(n * pi * (x -a)/(b - a)) : cos((n - 1) * pi * x/(b - a))
+     return isodd(degree) ? sin(n * pi * (x - a)/(b - a)) : cos((n - 1) * pi * (x - a)/(b - a))
 end
 
-endeval_monomial(p::TrigPoly,degree,x) = eval_scaled_monomial(p,degree,x,left_scaler(), right_scaler())
-
-function derivative_coefficients(p::TrigPoly{N,T}) where {N,T}
-                is_ends_with_sin = iseven(N)
-                b = is_ends_with_sin ? MVector{N + 1, T}(undef) :  MVector{N, T}(undef)  # if ends with sin, one extra term should be added
-    
-    fill!(b,zero(T))
+eval_monomial(p::TrigPoly,degree,x) = eval_scaled_monomial(p,degree,x,left_scaler(), right_scaler())
+derivative_coefficients(p::TrigPoly) = derivative_coefficients_scaled(p, left_scaler(),right_scaler())
+function derivative_coefficients_scaled(p::TrigPoly{N,T},a,b) where {N,T}
+    is_ends_with_sin = iseven(N)
+    buf = is_ends_with_sin ? MVector{N + 1, T}(undef) :  MVector{N, T}(undef)  # if ends with sin, one extra term should be added
+    fill!(buf,zero(T))
+    s = b - a
     @inbounds for k = 2 : N
         degree = k - 1
         n = 1 + floor(degree / 2)
         if isodd(k)  # cos((n-1)πx) → -(n-1)π sin(nπx)  
-            b[k - 1] =  - T(π) * (n-1)/scale_span() * p.coeffs[k] 
+            buf[k - 1] =  - T(π) * (n - 1) * p.coeffs[k] /s
         else  # sin(nπx) → +nπ cos(nπx)!            
-            b[k + 1] =   T(π) * n/scale_span() * p.coeffs[k]
+            buf[k + 1] =   T(π) * n * p.coeffs[k]/s
         end
     end
-    return b.data
+    return buf.data
 end
 
 """
@@ -48,11 +48,6 @@ function eval_scaled_poly(p::TrigPoly{N,D},x::T, a::T, b::T) where {N,D,T}
     return res 
 end
 
-
-"""
-    (poly::Union{TrigPoly{N,T},BernsteinPoly{N,T},BernsteinSymPoly{N,T}})(x::T) where {N,T}
-
-"""
 function (poly::TrigPoly{N,S})(x::T) where {N,T,S}
     #LegendrePolynomials.Pl(x,l) - computes Legendre polynomial of degree l at point x 
     R = promote_type(S,T)

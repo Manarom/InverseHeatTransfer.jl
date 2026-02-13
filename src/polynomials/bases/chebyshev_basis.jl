@@ -21,8 +21,9 @@ function eval_scaled_poly(ch::ChebPoly{N,T}, x::S, a, b) where {N,T,S}
     return R(c0 + ξ * c1) 
 end
 eval_poly(ch::ChebPoly, x) = eval_scaled_poly(ch,x,left_scaler(),right_scaler())
-function derivative_coefficients(p::ChebPoly{N,T}) where {N,T}
-    s = scale_span()/2.0 # need to scale if the default basis is not -1...1
+derivative_coefficients(p::ChebPoly)  = derivative_coefficients_scaled(p,left_scaler(),right_scaler())
+function derivative_coefficients_scaled(p::ChebPoly{N,T}, a , b) where {N,T}
+    s = (b - a)/2.0 # need to scale if the default basis is not -1...1
     b = MVector{N - 1, T}(undef)
     # stensile c'i-1 = c'i+1 + 2(i - 1)*ci i = N,N-1,...,2
     if N ≥ 2
@@ -39,25 +40,6 @@ function derivative_coefficients(p::ChebPoly{N,T}) where {N,T}
 end
 
 (poly::ChebPoly)(x::Number) = eval_poly(poly,x)
-
-
-#=
-function cheb_coeffs(f, N)
-    x = @. cospi((0:N) / N)  # CGL points
-    y = f.(x)             # Function values
-    
-    # Real FFT (rfft handles the cosine transform property)
-    c = rfft(y)           # Length (N÷2+1) complex coeffs
-    
-    # Extract real Chebyshev coefficients (first N+1)
-    a = zeros(N+1)
-    a[1] = c[1] / 2       # T0 coefficient (DC component)
-    a[2:2:2min(N,div(N,2)+1)] .= real.(c[2:2:2min(N,div(N,2)+1)])  # Even
-    a[3:2:min(N,div(N,2)+1)] .= real.(c[3:2:min(N,div(N,2)+1)])   # Odd
-    
-    return a[1:min(N+1,length(a))] / N  # Normalize
-end
-=#
 
 function cheb_coefs(vals::AbstractArray{<:Number,N}) where {N}
      # type-I DCT, except for size-1 dimensions where we want identity
