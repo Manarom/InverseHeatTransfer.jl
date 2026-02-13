@@ -1,23 +1,10 @@
-function derivative_coefficients(p::BernsteinSymPoly{N,T}) where {N,T}
-    ntuple(i -> (N - 1)*(p.coeffs[i + 1] - p.coeffs[i])/scale_span(), N - 1)
-end
-
-
-"""
-
-"""
-function eval_monomial(::BernsteinPoly{D,S},k::Int,x::T) where {D,T,S}  # D - number of polynomial coefficients
-    R = promote_type(T, S)
-    d = D - 1 # polynomial degree
-    return binomial(d,k)* ^(one(R) - x, d - k) * x^k
-end
 """
     eval_monomial(p::BernsteinSymPoly{D,T}, k::Int, x::T) where {D,T}
 
 Evaluates Bernstein polynomial k'th monomial value for x the index of the monomial
 goes from ``0 to D - 1``
 """
-function eval_scaled_monomial(p::BernsteinSymPoly{D,S}, k::Int, x::T, a::T, b::T) where {D,S, T}
+function eval_scaled_monomial(p::BernsteinSymPoly{D,S}, k::Int, x::T, a::T, b::T) where {D,S,T}
 
     @inbounds begin
         R = promote_type(T, S)
@@ -39,34 +26,26 @@ function eval_scaled_monomial(p::BernsteinSymPoly{D,S}, k::Int, x::T, a::T, b::T
     end
 end
 eval_monomial(p::BernsteinSymPoly{N}, k::Int, x::T) where {N,T} = eval_scaled_monomial(p, k, x, left_scaler(), right_scaler())
+eval_monomial(p::BernsteinPoly{D,S},k::Int,x::T) where {D,T,S}  = eval_scaled_monomial(p, k, x, T(0.0),T(1.0))
 """
     bern_max(::BernsteinPoly{D},k::Int)
 
 Returns Bernstein's monomial (maximum_value, maximum_location) tuple
 """
-function bern_max(::Type{BernsteinPoly{D,T}},k::Int) where {D,T}
-    d = D - 1
-    return (^(k, k) * ^(d, -T(d)) * ^(d - k , d - k) * binomial(d, k), k/d)
-end
+bern_max(::Type{BernsteinPoly{D,T}},k::Int) where {D,T} = bern_max(BernsteinSymPoly{D,T}, k, T(0.0),T(1.0))
+bern_max(::BB, k) where BB <: Union{BernsteinPoly{D,T}, BernsteinSymPoly{D,T}} where {D,T} = bern_max(BB, k)
+
 function bern_max(::Type{BernsteinSymPoly{D,T}}, k::Int, a::T = LEFT_SCALER, b::T = RIGHT_SCALER) where {D,T}
     d = D - 1
     s = b - a
     return (^(k, k) * ^(d, - T(d))*^(d - k, d - k) * binomial(d,k), s * k/d + a)
 end
-function bern_max(p::BernsteinSymPoly{D,T}, k) where {D,T}
-    d = D - 1
-    s = b - a
-    b = p.binoms[k + 1]
-    return (^(k, k) * ^(d, - T(d))*^(d - k, d - k) * b , s * k/d + a)
 
-end
 bern_max_locations(p::BernsteinSymPoly{N}) where {N} = [bern_max(p,i)[2] for i in 0 : N-1]
-
 bern_max_values(p::BernsteinSymPoly{N}) where {N} = [bern_max(p,i)[1] for i in 0 : N-1]
 
-eval_poly(p::BernsteinSymPoly{N,S}, x::T) where {N,T,S} = eval_scaled_poly(p,x, left_scaler(),right_scaler())
-
-function eval_scaled_poly(poly::BernsteinSymPoly{N,S},x::T,a::T,b::T) where {N,T,S}
+function eval_scaled_poly(poly::Union{BernsteinSymPoly{N,S},BernsteinPoly{N,S}},x::T,a::T,b::T) where {N,T,S}
+    
     R = promote_type(S, T)
     t = R( (x - a) / (b - a) )
     beta = MVector{N,R}(poly.coeffs)  # values in this vector are overridden
@@ -77,5 +56,11 @@ function eval_scaled_poly(poly::BernsteinSymPoly{N,S},x::T,a::T,b::T) where {N,T
     end
     return beta[1]
 end
+# BernsteinPoly   - standard for 
+left_scaler(::BernsteinPoly) = 0.0
+right_scaler(::BernsteinPoly) = 1.0
+(p:: BernsteinSymPoly{N,T})(x::T)  where {N,T} = eval_scaled_poly(p, x, T(left_scaler(p)),T(right_scaler(p)))
+(p:: BernsteinPoly{N,T})(x::T) where {N,T} = eval_scaled_poly(p, x, T(left_scaler(p)),T(right_scaler(p)))
+derivative_coefficients_scaled(p::BB,a,b) where {BB <: Union{BernsteinSymPoly{N,T},BernsteinPoly{N,T}}} where {N,T} = ntuple(i -> (N - 1)*(p.coeffs[i + 1] - p.coeffs[i])/(b - a), N - 1)
 
-(poly:: BernsteinSymPoly)(x::Number) = eval_poly(poly,x)
+derivative_coefficients(p::BB)  where {BB <: Union{BernsteinSymPoly{N,T},BernsteinPoly{N,T}}} where {N,T} = derivative_coefficients_scaled(p,left_scaler(p), right_scaler(p))

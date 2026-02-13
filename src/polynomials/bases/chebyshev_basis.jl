@@ -1,12 +1,11 @@
 
 
-function eval_poly(ch::ChebPoly{N,T}, x::S) where {N,T,S}
+function eval_scaled_poly(ch::ChebPoly{N,T}, x::S, a, b) where {N,T,S}
         R = promote_type(T, S)
         poly_degree(ch) == -1 && return zero(R)
         poly_degree(ch) == 0 &&  return R(ch.coeffs[1]) 
         
-        h = scale_span()
-        a = left_scaler()
+        h = b - a
 
         ξ = 2 * (x - a) / h - one(T)  # Scale to [-1,1] 
 
@@ -21,7 +20,7 @@ function eval_poly(ch::ChebPoly{N,T}, x::S) where {N,T,S}
         
     return R(c0 + ξ * c1) 
 end
-
+eval_poly(ch::ChebPoly, x) = eval_scaled_poly(ch,x,left_scaler(),right_scaler())
 function derivative_coefficients(p::ChebPoly{N,T}) where {N,T}
     s = scale_span()/2.0 # need to scale if the default basis is not -1...1
     b = MVector{N - 1, T}(undef)

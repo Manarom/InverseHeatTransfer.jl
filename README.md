@@ -45,3 +45,8 @@ Finite - difference schemes
 2.) Fullly implicit
 
 3.) Crank-Nicolson
+
+TODO:
+
+
+ - SpectralMethods + OrdinaryDiffEq
