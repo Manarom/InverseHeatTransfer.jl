@@ -61,5 +61,73 @@ right_scaler(::BernsteinPoly) = 1.0
 (p:: BernsteinSymPoly{N,T})(x::T)  where {N,T} = eval_scaled_poly(p, x, T(left_scaler(p)),T(right_scaler(p)))
 (p:: BernsteinPoly{N,T})(x::T) where {N,T} = eval_scaled_poly(p, x, T(left_scaler(p)),T(right_scaler(p)))
 derivative_coefficients_scaled(p::BB,a,b) where {BB <: Union{BernsteinSymPoly{N,T},BernsteinPoly{N,T}}} where {N,T} = ntuple(i -> (N - 1)*(p.coeffs[i + 1] - p.coeffs[i])/(b - a), N - 1)
-
 derivative_coefficients(p::BB)  where {BB <: Union{BernsteinSymPoly{N,T},BernsteinPoly{N,T}}} where {N,T} = derivative_coefficients_scaled(p,left_scaler(p), right_scaler(p))
+
+elevate_degree(p::R) where R <:BernsteinSymPoly{N,T} where {N,T} = p.coeffs |>bernstein_elevate_degree |> BernsteinSymPoly{N + 1, T}  
+
+function bernstein_elevate_degree(b::StaticVector{N,T}) where {N,T}
+    b_new = MVector{N + 1,T}(undef)
+    n = N - 1
+    b_new[1] = b[1]
+    for i in 1 : N - 1
+        a = i / (n + 1)
+        b_new[i + 1] = a *  b[i]  + (1 - a) * b[i + 1] 
+    end
+    b_new[end] = b[end]
+    return b_new
+end
+function bernstein_elevate_degree!(b, k::Int) 
+    for _ in 1 : k
+        bernstein_elevate_degree!(b)
+    end
+    return b 
+end 
+bernstein_elevate_degree(b::Vector) = copy(b) |> bernstein_elevate_degree!
+"""
+    bernstein_elevate_degree!(b::Vector)
+
+Elevates the degree of polynomial bernstein bsis by one,
+inout argument  - expantion coefficients 
+ΣCᵢBᴺᵢ  to ΣC'ᵢBᴺ⁺¹ᵢ 
+"""
+function bernstein_elevate_degree!(b::AbstractVector)
+    N = length(b)
+    resize!(b, N + 1)
+    n = N - 1
+    b[end] = b[end - 1]
+    b_i = b[1]
+    b_ip1 = b[1]
+    @inbounds for i in 1 : N - 1
+        a = i / (n + 1)
+        b_ip1 = b[i + 1]
+        b[i + 1] = a *  b_i  + (1 - a) * b_ip1
+        b_i = b_ip1 
+    end
+    return b
+end
+
+
+#=
+function trump_prautzsch_inplace!(b::Vector, n::Int, k::Int)
+    m = n + k
+    resize!(b, m+1); fill!(b[(n+2):end], 0)
+    
+    for s in 1:k
+        denom = n + k - s + 1
+        # Forward pass: new values only depend on untouched prior ones
+        for i in 1:(n+s+1)
+            j_low = max(0, i-1-k)  # 0-based adjust
+            j_high = min(n, i-1)
+            new_val = 0.0
+            for j in j_low:j_high
+                α = (j + k - s + 1) / denom
+                β = (n - j) / denom
+                # Access OLD b[i-1-(i-1-j)] etc. - indices stable during forward
+                new_val += α * b[i] + β * b[i+1]  # Pseudocode; exact mapping needed
+            end
+            b[i] = new_val  # Overwrite safe
+        end
+    end
+    return b
+end
+=#

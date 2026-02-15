@@ -1,9 +1,9 @@
 # runner for julia codes and benchmarking
 using BenchmarkTools,Plots,Polynomials
- plotly()
-#gr()
+ #plotly()
+gr()
 using AllocCheck#, Revise
-include("finite_difference_functions.jl")
+include("OneDHeatTransfer.jl")
 
 lam_pars = [0.44, 0.21e-2, 0.35e-4]
 lam_fun = Polynomials.ImmutablePolynomial(lam_pars) #T -> lam_poly(T) # теплопроводность

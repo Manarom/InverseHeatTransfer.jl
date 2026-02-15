@@ -47,13 +47,3 @@ function eval_scaled_poly(p::TrigPoly{N,D},x::T, a::T, b::T) where {N,D,T}
     end
     return res 
 end
-
-function (poly::TrigPoly{N,S})(x::T) where {N,T,S}
-    #LegendrePolynomials.Pl(x,l) - computes Legendre polynomial of degree l at point x 
-    R = promote_type(S,T)
-    res = zero(R)
-    @inbounds for i ∈ 1 : N
-        res += poly.coeffs[i] * eval_monomial(poly, i - 1, x) 
-    end
-    return res 
-end 

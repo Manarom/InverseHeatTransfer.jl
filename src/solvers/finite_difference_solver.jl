@@ -1,6 +1,6 @@
 
 
-using LinearAlgebra #,NonlinearSolvers, StaticArrays #, LaTeXStrings
+
 
 
 const USE_FASTMATH = true
