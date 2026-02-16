@@ -4,11 +4,11 @@
 Evaluates Bernstein polynomial k'th monomial value for x the index of the monomial
 goes from ``0 to D - 1``
 """
-function eval_scaled_monomial(p::BernsteinSymPoly{D,S}, k::Int, x::T, a::T, b::T) where {D,S,T}
+function eval_scaled_monomial(::BernsteinSymPoly{D,S}, k::Int, x::T, a::T, b::T) where {D,S,T}
 
     @inbounds begin
         R = promote_type(T, S)
-        binom = R(p.binoms[k + 1]) #
+        binom = binomial(D - 1, k) #R(p.binoms[k + 1]) #binomial(N - 1, i)
         s = b - a 
         u = R((b - x) / s)  # 
         v = R((x - a) / s)

@@ -10,7 +10,7 @@ firstt(::AbstractGrid) = 0.0
 lastx(g::AbstractGrid{N}) where {N} = xvalue(g,N)
 lastt(g::AbstractGrid{N,M}) where {N,M} = tvalue(g,M)
 
-xrange(g::AbstractGrid{N}) where N= range(firstx(g),lastx(g),length = N)
+xrange(g::AbstractGrid{N}) where N = range(firstx(g), lastx(g), length = N)
 trange(g::AbstractGrid{N,M}) where {N,M} = range(firstt(g),lastt(g),length = M)
 tpoints(::AbstractGrid{N,M}) where {N,M} = M
 xpoints(::AbstractGrid{N}) where {N}= N
@@ -58,3 +58,5 @@ timestep(g::UniformGrid, ::Int) = g.dt
 xstep(g::UniformGrid, ::Int) = g.dx 
 tvalue(g::UniformGrid, m::Int) = g.dt * (m - 1)
 xvalue(g::UniformGrid, n::Int) = g.dx * (n - 1)
+
+(::Type{UniformGrid{N,M,T}})(xmax::T,tmax::T) where {N,M,T} = UniformGrid(xmax,tmax,Val(N),Val(M))

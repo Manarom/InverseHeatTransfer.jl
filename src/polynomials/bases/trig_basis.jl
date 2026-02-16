@@ -26,7 +26,7 @@ function derivative_coefficients_scaled(p::TrigPoly{N,T},a,b) where {N,T}
 end
 
 """
-    (poly::Union{TrigPoly{N,T},BernsteinPoly{N,T},BernsteinSymPoly{N,T}})(x::T) where {N,T}
+    (poly::TrigPoly{N,S})(x::T) where {N,T,S}
 
 """
 function (poly::TrigPoly{N,S})(x::T) where {N,T,S}

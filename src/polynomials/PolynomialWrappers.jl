@@ -1,7 +1,7 @@
 module PolynomialWrappers
     using LinearAlgebra,Interpolations,Polynomials,LegendrePolynomials,StaticArrays,RecipesBase, FFTW
     import Base.Broadcast: broadcastable
-    export BernsteinSymPoly,StandPoly, LegPoly,ChebPoly, ScaledPolynomial
+    export BernsteinSymPoly,StandPoly, LegPoly,ChebPoly, ScaledPolynomial, AbstractPoly
     
     
     const LEFT_SCALER = -1.0
@@ -65,7 +65,11 @@ const POLY_NAMES_TYPES_DICT = Base.ImmutableDict(
     )
     for (_poly_name, _PolyType) in  POLY_NAMES_TYPES_DICT
         x = String(_poly_name)
-        if _poly_name != :bernsteinsym 
+         @eval struct $_PolyType{N,T} <: AbstractPoly{N,T,Symbol($x)}
+                coeffs::MVector{N,T}
+                $_PolyType(x::Union{NTuple{N,T},M}) where M <: StaticVector{N,T} where {T,N} = new{N,T}(MVector(x))
+        end
+        #= if _poly_name != :bernsteinsym 
             @eval struct $_PolyType{N,T} <: AbstractPoly{N,T,Symbol($x)}
                 coeffs::MVector{N,T}
                 $_PolyType(x::Union{NTuple{N,T},M}) where M <: StaticVector{N,T} where {T,N} = new{N,T}(MVector(x))
@@ -79,7 +83,7 @@ const POLY_NAMES_TYPES_DICT = Base.ImmutableDict(
                         new{N,T}(MVector(coeffs),binoms)
                     end
                 end
-        end  
+        end  =#
         @eval  function $_PolyType(x::AbstractVector{T}) where T 
                     N = length(x)
                     $_PolyType(SVector{N}(x))
@@ -219,6 +223,7 @@ const POLY_NAMES_TYPES_DICT = Base.ImmutableDict(
     function refill!(sp::AnyPoly,new_coeffs)
             #@assert parnumber(sp) == N "Incorrect number of coefficients "
             copyto!(coeffs(sp),new_coeffs)
+            return nothing
         end
         """
         refill!(sp::ScaledPolynomial{Ptype,T},new_coeffs::NTuple{N,T}, flag) where {Ptype <: AbstractPoly{N}} where {N,T}
@@ -229,6 +234,7 @@ const POLY_NAMES_TYPES_DICT = Base.ImmutableDict(
     function refill!(sp::AnyPoly,new_coeffs, flag)
             v = @view coeffs(sp)[flag]
             copyto!(v , new_coeffs)
+            return nothing
         end    
     Base.fill!(p::AnyPoly, v) = fill!(coeffs(p),v)
 
@@ -244,7 +250,7 @@ const POLY_NAMES_TYPES_DICT = Base.ImmutableDict(
     parnumber(::ScaledPolynomial{Poly}) where {Poly <: AbstractPoly{N}} where N = N
 
     function polyfit!(p::Union{AbstractPoly{N,T},ScaledPolynomial{PV}},x::V,y::V) where {PV <:AbstractPoly{N,T}, V <:AbstractVector{D} } where {N,T,D}
-        @assert is_in_domain(x) "All values of x must be within range"
+        @assert is_in_domain(p, x) "All values of x must be within range"
         M = length(x)
         @assert length(y) == M "x and y must be of the same size"
         Vand = Matrix{D}(undef, M, N)

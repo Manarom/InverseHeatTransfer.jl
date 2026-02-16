@@ -4,642 +4,17 @@
 using Markdown
 using InteractiveUtils
 
-# This Pluto notebook uses @bind for interactivity. When running this notebook outside of Pluto, the following 'mock version' of @bind gives bound variables a default value (instead of an error).
-macro bind(def, element)
-    #! format: off
-    return quote
-        local iv = try Base.loaded_modules[Base.PkgId(Base.UUID("6e696c72-6542-2067-7265-42206c756150"), "AbstractPlutoDingetjes")].Bonds.initial_value catch; b -> missing; end
-        local el = $(esc(element))
-        global $(esc(def)) = Core.applicable(Base.get, el) ? Base.get(el) : iv(el)
-        el
-    end
-    #! format: on
-end
-
-# ╔═╡ 5fe54406-20d7-4747-bcd4-c5c0f17af47a
+# ╔═╡ ffae1cd2-5a85-4c82-b389-693356889dab
 using Revise,AllocCheck, PrettyTables
 
-# ╔═╡ c7400800-f152-11f0-a386-29e067f9216c
-using PlutoUI,Polynomials,Interpolations, BenchmarkTools,PlutoPlotly,Interpolations,Polynomials,LegendrePolynomials,StaticArrays,RecipesBase,Plots, FFTW
+# ╔═╡ af080dfe-0b3c-11f1-bdad-95dfc06bfe56
+using PlutoUI,Polynomials,Interpolations, BenchmarkTools,PlutoPlotly,Interpolations,Polynomials,LegendrePolynomials,StaticArrays,RecipesBase,Plots, FFTW, Reexport
 
-# ╔═╡ 9386589f-1767-46a8-8a60-ec3f44a0970d
-solver_path = joinpath(@__DIR__,"..","src","solvers")
+# ╔═╡ f7499c58-9cf6-4409-b699-9c5eef1f3825
+solver_path = joinpath(@__DIR__,"..","src")
 
-# ╔═╡ a91ae0d5-6a90-472e-abd7-a5b02cf470fe
-polynomials_path = joinpath(@__DIR__,"..","src","polynomials")
-
-# ╔═╡ ada6d5ce-ac5e-4de8-b9fe-4394be6a34ca
-includet(joinpath(solver_path,"OneDHeatTransfer.jl"))
-
-# ╔═╡ ba9efa8d-054c-42a4-99a4-31319c87c54b
-includet(joinpath(polynomials_path,"PolynomialWrappers.jl"))
-
-# ╔═╡ 1936a00f-69f3-48e4-9176-6b2186e40c2c
-	begin 
-		PW = Main.PolynomialWrappers
-		OHT = Main.OneDHeatTransfer
-	end
-
-# ╔═╡ 6c87fcb7-55e6-44f4-8978-12e74b9cfdbf
-begin
-	#N = 50# coordinate grid
-	#M = 5000# time grid
-	Tmax = 2000.0# max temperature
-	tmax = 100.0# heating time
-	Tinit = 20.0# starting temperature
-	Cp = 1000.0# heat capacity
-	Ro = 2700.0# density
-	H = 15e-3# layer thickness in m
-	PolyType = PW.BernsteinSymPoly
-	#@eval Cp_fun(_) = $Cp*$Ro# capacity
-	#@eval initT_f(x) = $Tinit*cos(0*x*pi/$H) # starting 
-end;
-
-# ╔═╡ d6145328-5f43-4148-8911-232c9fed39c4
-md"""
-	Select solver: $(@bind solver_name  Select(collect(Main.OneDHeatTransfer.AVAILABLE_SCHEMES)))
-
-	"""
-
-# ╔═╡ d8e97e88-da66-48d7-b5cd-4c1b3d9a4c4c
-begin 
-	fd_solver =OHT.unified_fd_solver!
-	solver_type_type = OHT.AVAILABLE_SCHEMES[solver_name]
-	solver_type = solver_type_type()
-	#solver_type.OHT.	
-		# = Main.OneDHeatTransfer.FDSolverScheme(Main.OneDHeatTransfer.BFD1(),
-                                  #Main.OneDHeatTransfer.IMP(),
-                                   #Main.OneDHeatTransfer.EXP_NL(),
-                                   #Main.OneDHeatTransfer.EXP_NL()) =#
-end
-
-# ╔═╡ 57b23767-880e-4375-b9b4-bd0164df4a4b
-md"""
-
-	Select upper BC type: $(@bind upper_bc_type  Select(subtypes(Main.OneDHeatTransfer.AbstractBoundaryCondition)))
-	"""
-
-# ╔═╡ eeb3d1a0-be52-444d-aa82-89c639d5aece
-begin 
-	is_upper_dirichle =  upper_bc_type == OHT.DirichletBC
-	is_upper_neuman =  upper_bc_type == OHT.NeumanBC  
-	ubc_mult = !is_upper_dirichle ? 5e6 : Tmax
-	def_val_ubc = !is_upper_dirichle  ? 1e5/2 : 1e3
-end;
-
-# ╔═╡ 36e2c7b2-0cb0-4684-8d01-03e107349cb2
-@bind  upper_bc_pars PlutoUI.combine() do Child
-	md"""
-	upper BC(T) = a₀x³ + a₁x² + a₂x + a₃
-	
-	a0 = $(
-		Child(Slider(ubc_mult*(-1:0.01:1), default = 20.0, show_value = true))
-	) \
-	a1 = $(
-		Child(Slider(ubc_mult*(-1:0.01:1), default = def_val_ubc, show_value = true))
-	)\
-	a2 = $(
-		Child(Slider(ubc_mult*(-1:0.01:1), default = def_val_ubc, show_value = true))
-	)\
-	a3 = $(
-		Child(Slider(ubc_mult*(-1:0.01:1), default = def_val_ubc, show_value = true))
-	)\
-	a0 = $(
-		Child(Slider(ubc_mult*(-1:0.01:1), default = 20.0, show_value = true))
-	) \
-	a1 = $(
-		Child(Slider(ubc_mult*(-1:0.01:1), default = def_val_ubc, show_value = true))
-	)\
-	a2 = $(
-		Child(Slider(ubc_mult*(-1:0.01:1), default = def_val_ubc, show_value = true))
-	)\
-	a3 = $(
-		Child(Slider(ubc_mult*(-1:0.01:1), default = def_val_ubc, show_value = true))
-	)\
-	"""
-end
-
-# ╔═╡ 9db7fc50-8d3e-416b-8a57-2c819d6dc426
-md""" 
-Plot ditribution over $(@bind plot_type Select([:time,:coordinate], default = :coordinate))
-
-Abscissa max value $(@bind x_max_value Slider(0.1:0.1:tmax, default = tmax, show_value = true) )
-
-"""
-
-# ╔═╡ f9f5058d-6943-4d96-9821-eafd89100fc6
-md"""
-
-	Select lower BC type: $(@bind lower_bc_type  Select(subtypes(Main.OneDHeatTransfer.AbstractBoundaryCondition),default = subtypes(Main.OneDHeatTransfer.AbstractBoundaryCondition)[2]))
-
-	"""
-
-# ╔═╡ 4d348c80-1035-4561-85e2-02c9bf12486a
-begin 
-	is_lower_dirichle =  lower_bc_type ==OHT.DirichletBC
-	is_lower_neuman =  lower_bc_type == OHT.NeumanBC
-	lbc_mult = !is_lower_dirichle ? 5e5 : 1e3
-	def_val_lbc = !is_lower_dirichle ? 0 : 0
-end;
-
-# ╔═╡ 8c0b27e0-7f0b-4921-a679-ceda2ad46e82
-@bind  lower_bc_pars PlutoUI.combine() do Child
-	md"""
-	lower  BC(T) = a₀x³ + a₁x² + a₂x + a₃
-	
-	a0 = $(
-		Child(Slider(lbc_mult*(-1:0.01:1), default = def_val_lbc, show_value = true))
-	) \
-	a1 = $(
-		Child(Slider(lbc_mult*(-1:0.01:1), default = def_val_lbc, show_value = true))
-	)\
-	a2 = $(
-		Child(Slider(lbc_mult*(-1:0.01:1), default = def_val_lbc, show_value = true))
-	)\
-	a3 = $(
-		Child(Slider(lbc_mult*(-1:0.01:1), default = def_val_lbc, show_value = true))
-	)\
-	"""
-end
-
-# ╔═╡ e746f979-e39d-4838-8ae1-a64a1afed1f4
-@bind  initT_pars PlutoUI.combine() do Child
-	md"""
-	initial temperature distribution
-	``T(x) = a_0x^3 + a_1x^2 + a_2x + a_3``
-	
-	a0 = $(
-		Child(Slider(-100:1.0:2000,default=20.0,show_value = true))
-	) \
-	a1 = $(
-		Child(Slider(-100:1.0:2000,default=20.0,show_value = true))
-	)\
-	a2 = $(
-		Child(Slider(-100:1.0:2000,default=20.0,show_value = true))
-	)\
-	a3 = $(
-		Child(Slider(-100:1.0:2000,default=20.0,show_value = true))
-	)\
-	"""
-end
-
-# ╔═╡ ddc9ba47-c4f2-4c77-8a9c-c598b7eb322b
-@bind  c_pars PlutoUI.combine() do Child
-	md"""
-	``Cp(T) = a_0T^3 + a_1T^2 + a_2T + a_3``
-	
-	a0 = $(
-		Child(Slider(100:1:2000,default=600,show_value = true))
-	) \
-	a1 = $(
-		Child(Slider(100:1:2000,default=1100,show_value = true))
-	)\
-	a2 = $(
-		Child(Slider(100:1:2000,default=1200,show_value = true))
-	)\
-	a3 = $(
-		Child(Slider(100:1:2000,default=1200,show_value = true))
-	)\
-	"""
-end
-
-# ╔═╡ 4316370d-583d-4b48-8632-d17bc34209bd
-md"""
-	time nods = $(@bind M Slider(2:2:1000, default = 50, show_value = true))
-
-	coordinate nod number =  $(@bind N Slider(2:2:500, default = 50, show_value = true))
-	"""
-
-# ╔═╡ ea882e26-5972-443f-a7ac-3075701b90fe
-begin 
-	N_t_dummy_points = 100
-	t_dummy_range = range(0,tmax, N_t_dummy_points)
-	t_dummy = collect(t_dummy_range);
-	T_dummy = collect(range(Tinit,Tmax,N))
-	x_dummy = collect(range(0,H,N))
-end;
-
-# ╔═╡ da943c51-3f33-4f10-bc3d-9129f76399df
-begin 
-
-	is_upper_time_dependent = is_upper_dirichle || is_upper_neuman
-	(ubc_small_name,up_x_data_name, up_x_data) = 
-		if is_upper_time_dependent 
-			("t","Time,s", t_dummy) 
-		else 
-			("T","Temperature, ᵒC", T_dummy)
-		end
-	up_x_data = is_upper_time_dependent ? t_dummy : T_dummy
-	(min1,max1) =  extrema(up_x_data)
-	BC_up_f = PW.ScaledPolynomial(PolyType, ntuple( _-> 0.0, length(upper_bc_pars)), min1,max1)
-
-	
-end;
-
-# ╔═╡ 1611afbd-f13c-4532-aec9-6404b33e3f15
-begin 
-
-	is_lower_time_dependent = is_lower_dirichle || is_lower_neuman
-	(lbc_small_name,low_x_data_name, low_x_data) = 
-		if is_lower_time_dependent 
-			("t","Time,s", t_dummy) 
-		else 
-			("T","Temperature, ᵒC", T_dummy)
-		end
-	low_x_data = is_lower_time_dependent ? t_dummy : T_dummy
-	BC_dwn_f = PW.ScaledPolynomial(PolyType,(0.0,0.0,0.0,0.0), extrema(low_x_data)...)
-
-end;
-
-# ╔═╡ a4cd1c4f-f744-4ec1-bd4d-52a9e83a73ff
-begin 
-	initT_f = PW.ScaledPolynomial(PolyType, initT_pars, extrema(x_dummy)...)
-	init_values = initT_f.(x_dummy)
-	Plots.plot(1e3*x_dummy,init_values,title="Starting temperature",label= nothing,linewidth = 4)
-	xlabel!("Coordinate, mm")
-	ylabel!("Temperature distribution, ᵒC")
-end
-
-# ╔═╡ 0eae0fd4-8b5d-448a-b935-e06d469f080b
-@bind  lam_pars PlutoUI.combine() do Child
-	md"""
-	``\lambda(T) = a_0T^3 + a_1T^2 + a_2T + a_3``
-	
-	a0 = $(
-		Child(Slider(1e-3:0.01:100,default=17,show_value = true))
-	) \
-	a1 = $(
-		Child(Slider(1e-3:0.01:100,default=12,show_value = true))
-	)\
-	a2 = $(
-		Child(Slider(1e-3:0.01:100,default=8,show_value = true))
-	)\
-	a3 = $(
-		Child(Slider(1e-3:0.01:100,default=10,show_value = true))
-	)\
-	"""
-end
-
-# ╔═╡ 84bfb85d-def3-4a08-be60-01de2d68be36
-md" Use plotly backend for surf $(@bind is_use_plotly CheckBox(default = false))"
-
-# ╔═╡ 8992ffda-fcbb-4994-9acb-1080056903b7
-md"""
-	camera angle α $(@bind α Slider(-180:180,default = 0))
-	camera angle β $(@bind β Slider(-180:180,default = 0))
-	"""
-
-# ╔═╡ 331ee2df-931b-4267-8795-1fe402c7fdaa
-@bind T_range PlutoUI.combine() do Child 
-md"""
-	``T_{min} \ ^oC``= $(
-		Child(Slider(-200:1.0:1000,default=-200,show_value = true))
-	) \
-	``T_{max} \ ^oC`` = $(
-		Child(Slider(0:1.0:3000,default=2000,show_value = true))
-	)\
-	"""
-end
-
-# ╔═╡ b7cab05e-c24f-4268-ba7b-f361c1e9076d
-begin 
-	lam_T_range = range(T_range...,length = 100)
-	lam_fun = PW.ScaledPolynomial(PolyType,lam_pars, T_range...)
-end;
-
-# ╔═╡ ed45f038-ae2b-4888-8547-ab9638170842
-begin 
-	Cp_fun = PW.ScaledPolynomial(PolyType,ntuple( i->Ro*c_pars[i], 4), T_range...)
-	cp_values = Cp_fun.(lam_T_range)
-	p_cp = Plots.plot(lam_T_range,cp_values./Ro,title="Specific heat",label= nothing,linewidth = 4)
-	xlabel!(p_cp,"Temperature, ᵒC")
-	ylabel!(p_cp,"Specific heat , J/(kg*K)")
-end
-
-# ╔═╡ 8f6d3be5-ffb5-41d5-8e50-f4353193c53c
-begin 
-	lam_values = lam_fun.(lam_T_range)
-	p_lam = Plots.plot(lam_T_range,lam_values,title="thermal conductivity",label= nothing,linewidth = 4)
-	xlabel!(p_lam,"Temperature, ᵒC")
-	ylabel!(p_lam,"Thermal conductivity, W/(m*K)")
-end
-
-# ╔═╡ e4aac0a1-d9c0-4e20-8f86-151090a9651f
-begin 
-	lam_pars
-	lam_prs = Polynomials.fit(Polynomial{Float64},lam_T_range,lam_values,3)
-	lam_der = Polynomials.ImmutablePolynomial( derivative(lam_prs))#;% производная теплопроводности
-end;
-
-# ╔═╡ 38976547-9399-49f1-b83e-0833327ea0ed
-	problem = Main.OneDHeatTransfer.HeatTransferProblem(Cp_fun, 					lam_fun,lam_der,initT_f, H,N, tmax, M, BC_up_f, BC_dwn_f, Float64, upper_bc_type(),lower_bc_type());
-
-# ╔═╡ 9fbe7c0d-90b7-4348-8b22-d8058452a02b
-begin 
-	
-	lower_bc_pars
-	upper_bc_pars
-	PW.refill!(BC_up_f, upper_bc_pars)
-	PW.refill!(BC_dwn_f,lower_bc_pars)
-	
-    fd_solver(problem,solver_type)
-
-	# lower BC plot
-	p_lbc = Plots.plot(low_x_data,BC_dwn_f.(low_x_data),title="lower BC:"*string(lower_bc_type),label= nothing,linewidth = 4)
-	xlabel!(p_lbc,low_x_data_name)
-	ylabel!(p_lbc,"lower BC")
-	# upper BC plot
-	p_ubc = Plots.plot(up_x_data,BC_up_f.(up_x_data),title="upper BC:"*string(upper_bc_type),label= nothing,linewidth = 4)
-	xlabel!(p_ubc,up_x_data_name)
-	ylabel!(p_ubc,"upper BC")
-
-	
-	TCN = problem.T 
-end;
-
-# ╔═╡ 3a88786c-cefd-4daa-bc71-1d7cf04b9a2e
-p_ubc
-
-# ╔═╡ a554174d-82d6-4acd-89a9-bc21aca78e7d
-p_lbc
-
-# ╔═╡ ec6e4678-a807-47f6-845d-dc529f38e80c
-begin 
-	NN = 9
-	step  = M ÷ NN
-	coord = Main.OneDHeatTransfer.xrange(problem)
-	time =  Main.OneDHeatTransfer.trange(problem)
-	
-	Tinterp = linear_interpolation((coord, time), TCN)
-	bknd = is_use_plotly ?  Plots : Plots
-	is_plot_coordinate = plot_type == :coordinate
-	x_iterpolation = is_plot_coordinate ? range(0.0,minimum((tmax,x_max_value) ), length = 11) : range(0.0,minimum((H,x_max_value*1e-3)), length = 11)
-
-	if is_plot_coordinate
-		ppp = bknd.plot(grid = true,gridlinewidth=3,gridstyle = :dot,minorgrid=true,legend_position = :best,legend_title = "time:")
-		for t_cur in x_iterpolation
-			bknd.plot!(ppp,1e3*coord,Tinterp.(coord,t_cur), label = string(round(t_cur,digits = 2)),linewidth = 3,linealpha = 0.8)
-		end
-		xlabel!(ppp,"Coordinate, mm")
-		ylabel!(ppp,"Temperature")
-	else # plot distribution over time 
-		ppp = bknd.plot(grid = true,gridlinewidth=3,gridstyle = :dot,minorgrid=true,legend_position = :best,legend_title = "coord:")
-		for x_cur in x_iterpolation
-			bknd.plot!(ppp,time,Tinterp.(x_cur,time), label = string(round(1e3*x_cur,digits = 2)),linewidth = 3,linealpha = 0.8)
-		end		
-		xlabel!(ppp,"Time, s")
-		ylabel!(ppp,"Temperature")
-	end
-	surf_view = @view TCN[:,1:step:M]
-	ppp
-end
-
-# ╔═╡ 3acc0be7-dabc-4577-917d-26530cf192bd
-if is_use_plotly 
-	#plotly()
-	tr = PlutoPlotly.surface(z=TCN, colorscale="Heat")
-	layout = Layout(
-    width=800, 
-    height=600, 
-    autosize=true,
-    margin=attr(l=0, r=0, b=0, t=50),  # Minimize margins
-    scene=attr(
-        camera=attr(eye=attr(x=1.5, y=1.5, z=1.2)),  
-        aspectmode="cube"  
-    )
-)
-	 PlutoPlotly.plot(tr)
-else
-	#gr()
-	Plots.plot(surf_view,st = :surface,camera=(α, β),grid = true,framestyle = :box, cmap=:hot)
-end
-
-# ╔═╡ 7a22e820-13df-4e56-8507-d1b089fe7f52
-md" Use bench? $(@bind bench CheckBox(default = false))"
-
-# ╔═╡ 0ed065e8-4f97-46ba-bf07-eb02fb2ae9d6
-!bench || @benchmark fd_solver($problem,$solver_type)
-
-# ╔═╡ 5e7504fd-29f1-41a3-b940-5921c471a4f5
-problem
-
-# ╔═╡ 802f203a-8f5b-4a64-a26b-4fe7f812ff56
-solver_type
-
-# ╔═╡ 3f7a81bf-6cd4-43b4-b5db-8b891f4e4722
-md" Compare to reference? $(@bind reference_eval CheckBox(default = false))"
-
-# ╔═╡ 2742b8e1-4a9e-4021-87a2-c11ab15503cd
-md"""
-	camera angle α $(@bind αref Slider(-180:180,default = 45, show_value = true))
-
-	camera angle β $(@bind βref Slider(-180:180,default = 45, show_value = true))
-	"""
-
-# ╔═╡ e2f4dde1-e256-4980-81ee-a61d582f1b47
-md" 
-
-Benchmark all solvers (takes much time ) $(@bind is_bench_all CheckBox(default = false))
-
-Compare accuracy for all solvers $(@bind is_check_all CheckBox(default = false))
-"
-
-# ╔═╡ eae7841c-1b5b-497d-a67d-c7502f2d26ed
-if reference_eval 
-	fnames = [:mean_ΔT, :Tmax, :std_ΔT, :max_ΔT, :tmax,:xmax, :Fo]
-	md" Select quantity to plot $(@bind quant2plot Select(fnames, default = :max_ΔT))"
-end
-
-# ╔═╡ 79a82e5d-417a-4168-96a6-aed2f2190a8c
-md" Select benchmark output $(@bind bm_field Select([:time,:memory,:allocs,:gctime] ))"
-
-# ╔═╡ 18e22e41-1b9d-4e3b-a12d-92f943e8b17a
-md"""
-	xscale = $(@bind bm_xscale Select([:identity, :log10]))
-	yscale = $(@bind bm_yscale Select([:identity, :log10]))
-	"""
-
-# ╔═╡ 2cd30b6e-409a-4f5b-a53d-8ba3b7510b0a
-md" Select benchmark function $(@bind bm_fun Select([mean => :mean,maximum => :maximum] ))"
-
-# ╔═╡ 7017c716-8682-4a74-9bfe-7dc09879db16
-function evaluate_stat(problem,pref_T_interpolation,solver_name)
-	coord = OHT.xrange(problem)
-	time =  OHT.trange(problem)
-	Tref = similar(problem.T)
-	@inbounds for (i,x) in enumerate(coord)
-		for (j,t) in enumerate(time)
-			Tref[i,j]= pref_T_interpolation(x,t)
-		end
-	end
-	Tdiff = Tref .- problem.T	
-	meanT = mean(Tdiff)
-	stddT = std(Tdiff)
-	maxdT = maximum(abs,Tdiff)
-	out = findmax(abs,Tdiff)
-	tmax = time[out[2][2]]
-	xmax = 1e3*coord[out[2][1]]
-	Tmax = problem.T[out[2]]
-	Fo = OHT.fourier_number(problem,Tmax)
-	stat_str = md"""
-	for $(solver_name)  finite-difference scheme with 
-
-	Δt = $(OHT.timestep(problem))
-
-	Δx = $(1e3*OHT.xstep(problem))
-
-	average ΔT ± std is  $(meanT) ± $(stddT) 
-
-	max ΔT is $(maxdT) at 
-
-	t = $(tmax) s 
-
-	x = $(xmax) mm
-
-	"""
-	return (;stat_str = stat_str, Tref = Tref, ΔT = Tdiff, mean_ΔT = meanT, std_ΔT = stddT, max_ΔT = maxdT, tmax = tmax, xmax = xmax, name = solver_name, Tmax = Tmax, Fo = Fo)
-end
-
-# ╔═╡ e525b2ec-f4a7-4052-af2b-7a9b4fa4f520
-function interpolate_pref(p_ref)
-	x2int = OHT.xrange(p_ref)
-	y2int = OHT.trange(p_ref)
-	T_ref_int = cubic_spline_interpolation((x2int,y2int), p_ref.T)
-end
-
-# ╔═╡ 60506dec-faf8-4ce1-9d2f-d5ea816a7825
-if reference_eval
-	reference_problem = Main.OneDHeatTransfer.HeatTransferProblem(Cp_fun, 					lam_fun,lam_der,initT_f, H,500, tmax,50000,BC_up_f,upper_bc_type(),BC_dwn_f,lower_bc_type(),Float64);
-	reference_solver_type = OHT.BFD1_CN_EXP_EXP()
-	fd_solver(reference_problem, reference_solver_type)
-	T_ref_int = interpolate_pref(reference_problem)
-	stat_cur = evaluate_stat(problem, T_ref_int, solver_name)
-	Tdiff = stat_cur.ΔT
-	#=
-	if is_use_plotly 
-		tr2 = PlutoPlotly.surface(x = 1e3*coord, y = time, z=Tdiff, colorscale="Viridis")
-		layout2 = Layout(
-    		width=800, 
-    		height=600, 
-    		autosize=true,
-    		margin=attr(l=0, r=0, b=0, t=50),  # Minimize margins
-    		scene=attr(
-        		xaxis_title="coordinate",
-            	yaxis_title="time", 
-            	zaxis_title="T - Tref"
-
-    		)
-		)
-		p_res = PlutoPlotly.plot(tr2)
-	else
-		p_res = Plots.plot(1e3*coord, time,Tdiff, st = :surf, xlabel = "coordinate" , ylabel = "time", zlabel = "T - Tref",camera=(αref, βref),)
-	end
-	=#
-end
-
-# ╔═╡ 518d31b7-35d3-46e9-8ce4-fa634c1a036e
-!reference_eval|| md"""$(stat_cur.stat_str)"""
-
-# ╔═╡ 7ef0ec03-3c98-44d6-b237-1bf4deecf834
-if reference_eval 
-	Tref_bench = interpolate_pref(reference_problem)
-	#m_vect = [10,20]
-	m_vect = [5,10,50, 100,200, 300,600, 800,  1000, 2000, 5000, 10000]
-	m_number = length(m_vect)
-	schemes2compare = filter(t->t[1] != :BFD1_EXP_EXP_EXP, OHT.AVAILABLE_SCHEMES )
-	sol_number = length(schemes2compare)
-	row_number = length(m_vect)
-	stats = Matrix{Any}(missing,(m_number, sol_number))
-	sol_names = collect(keys(schemes2compare))
-	accuracy_matrix = Matrix{Float64}(undef,(row_number, sol_number))
-	bm_accuracy_matrix = Matrix{Float64}(undef,(row_number, sol_number))
-	table_columns = vcat(:m,:Δt,sol_names)
-end;
-
-# ╔═╡ db4e5649-8724-4a6f-a12e-acc3fccc2f89
-if is_check_all && reference_eval
-	for i in 1:m_number
-		mi = m_vect[i]
-		p_i = OHT.HeatTransferProblem(Cp_fun,lam_fun,lam_der,initT_f, H,N, tmax,mi, BC_up_f,upper_bc_type(), BC_dwn_f,lower_bc_type(),Float64)
-		for (j,(name,type)) in enumerate(schemes2compare)
-			OHT.unified_fd_solver!(p_i, type())
-			bm_cur = !is_bench_all ? nothing : @benchmark OHT.unified_fd_solver!($p_i, $(type())) seconds = 2
-			stats[i,j] = (evaluate_stat(p_i,Tref_bench, name), bm_cur)
-		end
-	end
-end
-
-# ╔═╡ d6c38053-4773-42e9-acd4-05ddb761c48a
-
-if (is_check_all && reference_eval) 
-	p_stat_M = Plots.plot(marker=true, markersize=8, markershape=:auto)
-	quant2plot_vect = Vector{Float64}(undef,row_number)
-	for j in 1 : sol_number # column  - solver type
-		for i in 1:row_number# row - M numbers
-			si = stats[i,j][1]
-			quant2plot_vect[i] =  getfield(si,quant2plot)
-		end
-		accuracy_matrix[:,j] .= quant2plot_vect
-		plot!(p_stat_M, m_vect, abs.(quant2plot_vect),yscale = :log10, xscale = :log10, label = string(sol_names[j]),marker=true, markersize=8, markershape= :auto, linewidth = 3)
-	end
-	xlabel!(p_stat_M, "Number of time steps")
-	ylabel!(p_stat_M,string(quant2plot))
-	title!(p_stat_M,"Maximum error in temperature estimation")
-	p_stat_M	
-end
-
-# ╔═╡ c13976ff-0f0b-448c-a97e-575d9020985d
-if (is_check_all && reference_eval)
-	dt_vect = tmax./(m_vect .- 1)
-		pretty_table(HTML,hcat(m_vect, dt_vect,accuracy_matrix),column_labels = table_columns, title = "$(quant2plot)")
-end
-
-# ╔═╡ 8a576b4f-5073-451f-b277-aa80284ad0ac
-if is_check_all && reference_eval && is_bench_all
-	bm_stat_M = Plots.plot(marker=true, markersize=8, markershape=:auto)
-	bench2plot_vect = Vector{Float64}(undef,row_number)
-	fun_on_bench = bm_fun
-	field_of_bench = bm_field
-	for j in 1 : size(stats,2) # column  - solver type
-		for i in 1:row_number# row - M numbers
-			bmi = stats[i,j][2] # benchmark obj
-			bench2plot_vect[i] =  getfield(fun_on_bench(bmi),field_of_bench)
-		end
-		bm_accuracy_matrix[:,j] .= bench2plot_vect
-		plot!(bm_stat_M, m_vect, bench2plot_vect, xscale = bm_xscale,yscale=bm_yscale, label = string(sol_names[j]),marker=true, markersize=8, markershape= :auto, linewidth = 3)
-	end
-	xlabel!(bm_stat_M, "Number of time steps")
-	ylabel!(bm_stat_M,string(bm_fun)*"_"*string(bm_field)*" nanoseconds")
-	title!(bm_stat_M,"Execution time")
-	bm_stat_M	
-end
-
-# ╔═╡ 6f0a8a7b-4fcd-45ff-bccd-bae01ed53748
-if is_check_all && reference_eval && is_bench_all
-		pretty_table(HTML,hcat(m_vect, dt_vect,bm_accuracy_matrix*1e-6),column_labels = table_columns, title = "$(bm_fun) $(bm_field) ,ms")
-end
-
-# ╔═╡ 91a53ea2-1576-4651-a015-68b7ada03c9a
-!(is_check_all && reference_eval && is_bench_all) || md"""
-	Show bench for:
-
-	solver : $(@bind show_bench_solver Select(sol_names))
-
-	M= : $(@bind show_bench_m Select(m_vect))
-	"""
-
-# ╔═╡ 8833c701-d50b-4561-bda9-a93df065a179
-if is_check_all && reference_eval && is_bench_all
-	mind = findfirst(isequal(show_bench_m),m_vect)
-	solind = findfirst(isequal(show_bench_solver), sol_names)
-	stats[mind,solind][2]
-end
-
-# ╔═╡ d5762b64-6db0-4460-afa7-ac7e0b36e448
-#=
-pretty_table(HTML,hcat(["Direct","EmPoint", "AutoDiff"],discr_values,grad_values,hess_values),header = ["calculated using:","discrepancy", "gradient", "hessian"],top_left_str= "Table of discrepancy and its derivatives values, calculated for T=$(TtryK),K" )
-
-=#
+# ╔═╡ 7a755b34-e869-4619-9376-ac8f210e58eb
+includet(joinpath(solver_path, "InverseHeatTransfer.jl"))
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -655,6 +30,7 @@ PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
 Polynomials = "f27b6e38-b328-58d1-80ce-0feddd5e7a45"
 PrettyTables = "08abe8d2-0d0c-5749-adfa-8a2ac140af0d"
 RecipesBase = "3cdcf5f2-1ef4-517c-9805-6587b60abb01"
+Reexport = "189a3867-3050-52da-a836-e630ba90ab69"
 Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 
@@ -664,13 +40,14 @@ BenchmarkTools = "~1.6.3"
 FFTW = "~1.10.0"
 Interpolations = "~0.16.2"
 LegendrePolynomials = "~0.4.5"
-Plots = "~1.41.4"
+Plots = "~1.41.5"
 PlutoPlotly = "~0.6.5"
-PlutoUI = "~0.7.78"
+PlutoUI = "~0.7.79"
 Polynomials = "~4.1.0"
-PrettyTables = "~3.1.2"
+PrettyTables = "~3.2.1"
 RecipesBase = "~1.3.4"
-Revise = "~3.13.1"
+Reexport = "~1.2.2"
+Revise = "~3.13.2"
 StaticArrays = "~1.9.16"
 """
 
@@ -680,7 +57,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.12.5"
 manifest_format = "2.0"
-project_hash = "8c2e1f4d0ef79e4326bc60de50e62c123759578c"
+project_hash = "420b48c9aaeaff55e37ff4a2f33f7755c9d275e8"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -912,10 +289,9 @@ uuid = "8ba89e20-285c-5b6f-9357-94700520ee1b"
 version = "1.11.0"
 
 [[deps.DocStringExtensions]]
-deps = ["LibGit2"]
-git-tree-sha1 = "b19534d1895d702889b219c382a6e18010797f0b"
+git-tree-sha1 = "7442a5dfe1ebb773c29cc2962a8980f47221d76c"
 uuid = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
-version = "0.8.6"
+version = "0.9.5"
 
 [[deps.Downloads]]
 deps = ["ArgTools", "FileWatching", "LibCURL", "NetworkOptions"]
@@ -1015,27 +391,27 @@ version = "3.4.1+0"
 
 [[deps.GPUCompiler]]
 deps = ["ExprTools", "InteractiveUtils", "LLVM", "Libdl", "Logging", "PrecompileTools", "Preferences", "Scratch", "Serialization", "TOML", "Tracy", "UUIDs"]
-git-tree-sha1 = "9c83131d543f8275059baecbf98f8af43bd44783"
+git-tree-sha1 = "966946d226e8b676ca6409454718accb18c34c54"
 uuid = "61eb1bfa-7361-4325-ad38-22787b887f55"
-version = "1.7.6"
+version = "1.8.2"
 
 [[deps.GR]]
 deps = ["Artifacts", "Base64", "DelimitedFiles", "Downloads", "GR_jll", "HTTP", "JSON", "Libdl", "LinearAlgebra", "Preferences", "Printf", "Qt6Wayland_jll", "Random", "Serialization", "Sockets", "TOML", "Tar", "Test", "p7zip_jll"]
-git-tree-sha1 = "f305bdb91e1f3fcc687944c97f2ede40585b1bd5"
+git-tree-sha1 = "ee0585b62671ce88e48d3409733230b401c9775c"
 uuid = "28b8d3ca-fb5f-59d9-8090-bfdbd6d07a71"
-version = "0.73.19"
+version = "0.73.22"
 
     [deps.GR.extensions]
-    GRIJuliaExt = "IJulia"
+    IJuliaExt = "IJulia"
 
     [deps.GR.weakdeps]
     IJulia = "7073ff75-c697-5162-941a-fcdaad2a7d2a"
 
 [[deps.GR_jll]]
 deps = ["Artifacts", "Bzip2_jll", "Cairo_jll", "FFMPEG_jll", "Fontconfig_jll", "FreeType2_jll", "GLFW_jll", "JLLWrappers", "JpegTurbo_jll", "Libdl", "Libtiff_jll", "Pixman_jll", "Qt6Base_jll", "Zlib_jll", "libpng_jll"]
-git-tree-sha1 = "de439fbc02b9dc0e639e67d7c5bd5811ff3b6f06"
+git-tree-sha1 = "7dd7173f7129a1b6f84e0f03e0890cd1189b0659"
 uuid = "d2c73de3-f751-5644-a686-071e5b155ba9"
-version = "0.73.19+1"
+version = "0.73.22+0"
 
 [[deps.GettextRuntime_jll]]
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "Libdl", "Libiconv_jll"]
@@ -1051,9 +427,9 @@ version = "9.55.1+0"
 
 [[deps.Glib_jll]]
 deps = ["Artifacts", "GettextRuntime_jll", "JLLWrappers", "Libdl", "Libffi_jll", "Libiconv_jll", "Libmount_jll", "PCRE2_jll", "Zlib_jll"]
-git-tree-sha1 = "6b4d2dc81736fe3980ff0e8879a9fc7c33c44ddf"
+git-tree-sha1 = "24f6def62397474a297bfcec22384101609142ed"
 uuid = "7746bdde-850d-59dc-9ae8-88ece973131d"
-version = "2.86.2+0"
+version = "2.86.3+0"
 
 [[deps.Graphite2_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
@@ -1191,9 +567,9 @@ version = "4.0.1+0"
 
 [[deps.LLVM]]
 deps = ["CEnum", "LLVMExtra_jll", "Libdl", "Preferences", "Printf", "Unicode"]
-git-tree-sha1 = "ce8614210409eaa54ed5968f4b50aa96da7ae543"
+git-tree-sha1 = "69e4739502b7ab5176117e97e1664ed181c35036"
 uuid = "929cbde3-209d-540e-8aea-75f648917ca0"
-version = "9.4.4"
+version = "9.4.6"
 
     [deps.LLVM.extensions]
     BFloat16sExt = "BFloat16s"
@@ -1308,9 +684,9 @@ version = "1.18.0+0"
 
 [[deps.Libmount_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "3acf07f130a76f87c041cfb2ff7d7284ca67b072"
+git-tree-sha1 = "97bbca976196f2a1eb9607131cb108c69ec3f8a6"
 uuid = "4b2f31a3-9ecc-558c-b454-b3730dcb73e9"
-version = "2.41.2+0"
+version = "2.41.3+0"
 
 [[deps.Libtiff_jll]]
 deps = ["Artifacts", "JLLWrappers", "JpegTurbo_jll", "LERC_jll", "Libdl", "XZ_jll", "Zlib_jll", "Zstd_jll"]
@@ -1320,9 +696,9 @@ version = "4.7.2+0"
 
 [[deps.Libuuid_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "2a7a12fc0a4e7fb773450d17975322aa77142106"
+git-tree-sha1 = "d0205286d9eceadc518742860bf23f703779a3d6"
 uuid = "38a345b3-de98-5d2b-a5d3-14cd9215e700"
-version = "2.41.2+0"
+version = "2.41.3+0"
 
 [[deps.LinearAlgebra]]
 deps = ["Libdl", "OpenBLAS_jll", "libblastrampoline_jll"]
@@ -1467,9 +843,9 @@ version = "0.5.6+0"
 
 [[deps.Opus_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "39a11854f0cba27aa41efaedf43c77c5daa6be51"
+git-tree-sha1 = "e2bb57a313a74b8104064b7efd01406c0a50d2ff"
 uuid = "91d4177d-7536-5919-b921-800302f37372"
-version = "1.6.0+0"
+version = "1.6.1+0"
 
 [[deps.OrderedCollections]]
 git-tree-sha1 = "05868e21324cede2207c6f0f466b4bfef6d5e7ee"
@@ -1546,9 +922,9 @@ version = "0.8.23"
 
 [[deps.Plots]]
 deps = ["Base64", "Contour", "Dates", "Downloads", "FFMPEG", "FixedPointNumbers", "GR", "JLFzf", "JSON", "LaTeXStrings", "Latexify", "LinearAlgebra", "Measures", "NaNMath", "Pkg", "PlotThemes", "PlotUtils", "PrecompileTools", "Printf", "REPL", "Random", "RecipesBase", "RecipesPipeline", "Reexport", "RelocatableFolders", "Requires", "Scratch", "Showoff", "SparseArrays", "Statistics", "StatsBase", "TOML", "UUIDs", "UnicodeFun", "Unzip"]
-git-tree-sha1 = "063ef757a1e0e15af77bbe92be92da672793fd4e"
+git-tree-sha1 = "1cc8ad0762e59e713ee3ef28f9b78b2c9f4ca078"
 uuid = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
-version = "1.41.4"
+version = "1.41.5"
 
     [deps.Plots.extensions]
     FileIOExt = "FileIO"
@@ -1580,9 +956,9 @@ version = "0.6.5"
 
 [[deps.PlutoUI]]
 deps = ["AbstractPlutoDingetjes", "Base64", "ColorTypes", "Dates", "Downloads", "FixedPointNumbers", "Hyperscript", "HypertextLiteral", "IOCapture", "InteractiveUtils", "Logging", "MIMEs", "Markdown", "Random", "Reexport", "URIs", "UUIDs"]
-git-tree-sha1 = "6122f9423393a2294e26a4efdf44960c5f8acb70"
+git-tree-sha1 = "3ac7038a98ef6977d44adeadc73cc6f596c08109"
 uuid = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
-version = "0.7.78"
+version = "0.7.79"
 
 [[deps.Polynomials]]
 deps = ["LinearAlgebra", "OrderedCollections", "RecipesBase", "Requires", "Setfield", "SparseArrays"]
@@ -1616,9 +992,15 @@ version = "1.5.1"
 
 [[deps.PrettyTables]]
 deps = ["Crayons", "LaTeXStrings", "Markdown", "PrecompileTools", "Printf", "REPL", "Reexport", "StringManipulation", "Tables"]
-git-tree-sha1 = "c5a07210bd060d6a8491b0ccdee2fa0235fc00bf"
+git-tree-sha1 = "be315b2e9d04dc1c354aed78116b5a8b73192995"
 uuid = "08abe8d2-0d0c-5749-adfa-8a2ac140af0d"
-version = "3.1.2"
+version = "3.2.1"
+
+    [deps.PrettyTables.extensions]
+    PrettyTablesTypstryExt = "Typstry"
+
+    [deps.PrettyTables.weakdeps]
+    Typstry = "f0ed7684-a786-439e-b1e3-3b82803b501e"
 
 [[deps.Printf]]
 deps = ["Unicode"]
@@ -1710,9 +1092,9 @@ version = "1.3.1"
 
 [[deps.Revise]]
 deps = ["CodeTracking", "FileWatching", "InteractiveUtils", "JuliaInterpreter", "LibGit2", "LoweredCodeUtils", "OrderedCollections", "Preferences", "REPL", "UUIDs"]
-git-tree-sha1 = "dfd6fab9aa325b382773b8930998ce84c2918e5e"
+git-tree-sha1 = "14d1bfb0a30317edc77e11094607ace3c800f193"
 uuid = "295af30f-e4ad-537b-8983-00126c2a3abe"
-version = "3.13.1"
+version = "3.13.2"
 weakdeps = ["Distributed"]
 
     [deps.Revise.extensions]
@@ -1777,9 +1159,9 @@ version = "1.12.0"
 
 [[deps.SpecialFunctions]]
 deps = ["IrrationalConstants", "LogExpFunctions", "OpenLibm_jll", "OpenSpecFun_jll"]
-git-tree-sha1 = "f2685b435df2613e25fc10ad8c26dddb8640f547"
+git-tree-sha1 = "5acc6a41b3082920f79ca3c759acbcecf18a8d78"
 uuid = "276daf66-3868-5448-9aa4-cd146d93841b"
-version = "2.6.1"
+version = "2.7.1"
 weakdeps = ["ChainRulesCore"]
 
     [deps.SpecialFunctions.extensions]
@@ -1837,9 +1219,9 @@ version = "0.4.2"
 
 [[deps.StructUtils]]
 deps = ["Dates", "UUIDs"]
-git-tree-sha1 = "9297459be9e338e546f5c4bedb59b3b5674da7f1"
+git-tree-sha1 = "28145feabf717c5d65c1d5e09747ee7b1ff3ed13"
 uuid = "ec057cc2-7a8d-4b58-b3b3-92acb9f63b42"
-version = "2.6.2"
+version = "2.6.3"
 
     [deps.StructUtils.extensions]
     StructUtilsMeasurementsExt = ["Measurements"]
@@ -1981,9 +1363,9 @@ version = "1.2.6+0"
 
 [[deps.Xorg_libX11_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libxcb_jll", "Xorg_xtrans_jll"]
-git-tree-sha1 = "b5899b25d17bf1889d25906fb9deed5da0c15b3b"
+git-tree-sha1 = "808090ede1d41644447dd5cbafced4731c56bd2f"
 uuid = "4f6342f7-b3d2-589e-9d20-edeb45f2b2bc"
-version = "1.8.12+0"
+version = "1.8.13+0"
 
 [[deps.Xorg_libXau_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
@@ -2005,9 +1387,9 @@ version = "1.1.6+0"
 
 [[deps.Xorg_libXext_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libX11_jll"]
-git-tree-sha1 = "a4c0ee07ad36bf8bbce1c3bb52d21fb1e0b987fb"
+git-tree-sha1 = "1a4a26870bf1e5d26cd585e38038d399d7e65706"
 uuid = "1082639a-0dae-5f34-9b06-72781eeb8cb3"
-version = "1.3.7+0"
+version = "1.3.8+0"
 
 [[deps.Xorg_libXfixes_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libX11_jll"]
@@ -2023,15 +1405,15 @@ version = "1.8.3+0"
 
 [[deps.Xorg_libXinerama_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libXext_jll"]
-git-tree-sha1 = "a5bc75478d323358a90dc36766f3c99ba7feb024"
+git-tree-sha1 = "0ba01bc7396896a4ace8aab67db31403c71628f4"
 uuid = "d1454406-59df-5ea1-beac-c340f2130bc3"
-version = "1.1.6+0"
+version = "1.1.7+0"
 
 [[deps.Xorg_libXrandr_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libXext_jll", "Xorg_libXrender_jll"]
-git-tree-sha1 = "aff463c82a773cb86061bce8d53a0d976854923e"
+git-tree-sha1 = "6c174ef70c96c76f4c3f4d3cfbe09d018bcd1b53"
 uuid = "ec84b674-ba8e-5d96-8ba1-2a689ba10484"
-version = "1.5.5+0"
+version = "1.5.6+0"
 
 [[deps.Xorg_libXrender_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libX11_jll"]
@@ -2047,9 +1429,9 @@ version = "1.17.1+0"
 
 [[deps.Xorg_libxkbfile_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libX11_jll"]
-git-tree-sha1 = "e3150c7400c41e207012b41659591f083f3ef795"
+git-tree-sha1 = "ed756a03e95fff88d8f738ebc2849431bdd4fd1a"
 uuid = "cc61e674-0454-545c-8b26-ed2c68acab7a"
-version = "1.1.3+0"
+version = "1.2.0+0"
 
 [[deps.Xorg_xcb_util_cursor_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_xcb_util_image_jll", "Xorg_xcb_util_jll", "Xorg_xcb_util_renderutil_jll"]
@@ -2171,9 +1553,9 @@ version = "1.28.1+0"
 
 [[deps.libpng_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Zlib_jll"]
-git-tree-sha1 = "6ab498eaf50e0495f89e7a5b582816e2efb95f64"
+git-tree-sha1 = "e015f211ebb898c8180887012b938f3851e719ac"
 uuid = "b53b4c65-9356-5827-b1ea-8c7a1a84506f"
-version = "1.6.54+0"
+version = "1.6.55+0"
 
 [[deps.libvorbis_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Ogg_jll"]
@@ -2223,67 +1605,9 @@ version = "1.13.0+0"
 """
 
 # ╔═╡ Cell order:
-# ╠═c7400800-f152-11f0-a386-29e067f9216c
-# ╠═5fe54406-20d7-4747-bcd4-c5c0f17af47a
-# ╠═9386589f-1767-46a8-8a60-ec3f44a0970d
-# ╠═a91ae0d5-6a90-472e-abd7-a5b02cf470fe
-# ╠═ada6d5ce-ac5e-4de8-b9fe-4394be6a34ca
-# ╠═ba9efa8d-054c-42a4-99a4-31319c87c54b
-# ╟─1936a00f-69f3-48e4-9176-6b2186e40c2c
-# ╟─6c87fcb7-55e6-44f4-8978-12e74b9cfdbf
-# ╟─ea882e26-5972-443f-a7ac-3075701b90fe
-# ╟─eeb3d1a0-be52-444d-aa82-89c639d5aece
-# ╟─4d348c80-1035-4561-85e2-02c9bf12486a
-# ╟─da943c51-3f33-4f10-bc3d-9129f76399df
-# ╟─1611afbd-f13c-4532-aec9-6404b33e3f15
-# ╟─d8e97e88-da66-48d7-b5cd-4c1b3d9a4c4c
-# ╟─d6145328-5f43-4148-8911-232c9fed39c4
-# ╟─57b23767-880e-4375-b9b4-bd0164df4a4b
-# ╟─3a88786c-cefd-4daa-bc71-1d7cf04b9a2e
-# ╟─36e2c7b2-0cb0-4684-8d01-03e107349cb2
-# ╟─9db7fc50-8d3e-416b-8a57-2c819d6dc426
-# ╟─f9f5058d-6943-4d96-9821-eafd89100fc6
-# ╟─a554174d-82d6-4acd-89a9-bc21aca78e7d
-# ╟─8c0b27e0-7f0b-4921-a679-ceda2ad46e82
-# ╟─a4cd1c4f-f744-4ec1-bd4d-52a9e83a73ff
-# ╟─e746f979-e39d-4838-8ae1-a64a1afed1f4
-# ╟─ed45f038-ae2b-4888-8547-ab9638170842
-# ╟─ddc9ba47-c4f2-4c77-8a9c-c598b7eb322b
-# ╟─8f6d3be5-ffb5-41d5-8e50-f4353193c53c
-# ╟─ec6e4678-a807-47f6-845d-dc529f38e80c
-# ╟─4316370d-583d-4b48-8632-d17bc34209bd
-# ╟─3acc0be7-dabc-4577-917d-26530cf192bd
-# ╟─38976547-9399-49f1-b83e-0833327ea0ed
-# ╟─0eae0fd4-8b5d-448a-b935-e06d469f080b
-# ╟─9fbe7c0d-90b7-4348-8b22-d8058452a02b
-# ╟─84bfb85d-def3-4a08-be60-01de2d68be36
-# ╟─8992ffda-fcbb-4994-9acb-1080056903b7
-# ╟─331ee2df-931b-4267-8795-1fe402c7fdaa
-# ╟─b7cab05e-c24f-4268-ba7b-f361c1e9076d
-# ╟─e4aac0a1-d9c0-4e20-8f86-151090a9651f
-# ╟─7a22e820-13df-4e56-8507-d1b089fe7f52
-# ╟─0ed065e8-4f97-46ba-bf07-eb02fb2ae9d6
-# ╟─5e7504fd-29f1-41a3-b940-5921c471a4f5
-# ╟─802f203a-8f5b-4a64-a26b-4fe7f812ff56
-# ╟─3f7a81bf-6cd4-43b4-b5db-8b891f4e4722
-# ╟─2742b8e1-4a9e-4021-87a2-c11ab15503cd
-# ╟─60506dec-faf8-4ce1-9d2f-d5ea816a7825
-# ╟─518d31b7-35d3-46e9-8ce4-fa634c1a036e
-# ╟─e2f4dde1-e256-4980-81ee-a61d582f1b47
-# ╟─7ef0ec03-3c98-44d6-b237-1bf4deecf834
-# ╟─eae7841c-1b5b-497d-a67d-c7502f2d26ed
-# ╟─db4e5649-8724-4a6f-a12e-acc3fccc2f89
-# ╟─d6c38053-4773-42e9-acd4-05ddb761c48a
-# ╟─c13976ff-0f0b-448c-a97e-575d9020985d
-# ╟─79a82e5d-417a-4168-96a6-aed2f2190a8c
-# ╟─18e22e41-1b9d-4e3b-a12d-92f943e8b17a
-# ╟─2cd30b6e-409a-4f5b-a53d-8ba3b7510b0a
-# ╟─8a576b4f-5073-451f-b277-aa80284ad0ac
-# ╟─6f0a8a7b-4fcd-45ff-bccd-bae01ed53748
-# ╟─91a53ea2-1576-4651-a015-68b7ada03c9a
-# ╟─8833c701-d50b-4561-bda9-a93df065a179
-# ╟─7017c716-8682-4a74-9bfe-7dc09879db16
-# ╟─e525b2ec-f4a7-4052-af2b-7a9b4fa4f520
-# ╠═d5762b64-6db0-4460-afa7-ac7e0b36e448
+# ╠═af080dfe-0b3c-11f1-bdad-95dfc06bfe56
+# ╠═ffae1cd2-5a85-4c82-b389-693356889dab
+# ╠═f7499c58-9cf6-4409-b699-9c5eef1f3825
+# ╠═7a755b34-e869-4619-9376-ac8f210e58eb
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
