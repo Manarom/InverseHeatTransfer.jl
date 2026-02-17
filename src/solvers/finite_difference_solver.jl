@@ -187,7 +187,7 @@ Unified solver for 1d heat transfer problems with various schemes
 
 """
 function unified_fd_solver!( problem::HeatTransferProblem{DT, CF, LF, LDF, ITF, G, BCU, BCD, TMATtype},
-                                    solver_scheme::FDSolverScheme{TS, CS, NLS, PS} = BFD2_IMP_EXP_EXP) where {DT, CF,LF,LDF,ITF, 
+                                    solver_scheme::FDSolverScheme{TS, CS, NLS, PS} = BFD2_IMP_EXP_EXP()) where {DT, CF,LF,LDF,ITF, 
                                     G <:UniformGrid{N,M}, BCU, BCD, 
                                     TMATtype <: AbstractMatrix{DT},  
                                     TS <: AbstractTimeScheme,

@@ -1,7 +1,11 @@
 module PolynomialWrappers
     using LinearAlgebra,Interpolations,Polynomials,LegendrePolynomials,StaticArrays,RecipesBase, FFTW
+    
     import Base.Broadcast: broadcastable
-    export BernsteinSymPoly,StandPoly, LegPoly,ChebPoly, ScaledPolynomial, AbstractPoly
+
+    export BernsteinSymPoly,StandPoly, LegPoly,ChebPoly, ScaledPolynomial, AbstractPoly, VanderMatrix
+
+    export polyfit!, polyfit, polyfit_unscaled!, polyfit_unscaled, vander
     
     
     const LEFT_SCALER = -1.0
@@ -69,21 +73,6 @@ const POLY_NAMES_TYPES_DICT = Base.ImmutableDict(
                 coeffs::MVector{N,T}
                 $_PolyType(x::Union{NTuple{N,T},M}) where M <: StaticVector{N,T} where {T,N} = new{N,T}(MVector(x))
         end
-        #= if _poly_name != :bernsteinsym 
-            @eval struct $_PolyType{N,T} <: AbstractPoly{N,T,Symbol($x)}
-                coeffs::MVector{N,T}
-                $_PolyType(x::Union{NTuple{N,T},M}) where M <: StaticVector{N,T} where {T,N} = new{N,T}(MVector(x))
-            end
-        else 
-            @eval struct $_PolyType{N,T} <: AbstractPoly{N,T,Symbol($x)}
-                    coeffs::MVector{N,T}
-                    binoms::SVector{N,T}
-                    function  $_PolyType(coeffs::Union{NTuple{N,T},M}) where M <: StaticVector{N,T} where {N,T} 
-                        binoms = SVector{N,T}(binomial(N - 1, i) for i in 0 : N - 1)
-                        new{N,T}(MVector(coeffs),binoms)
-                    end
-                end
-        end  =#
         @eval  function $_PolyType(x::AbstractVector{T}) where T 
                     N = length(x)
                     $_PolyType(SVector{N}(x))
@@ -249,15 +238,34 @@ const POLY_NAMES_TYPES_DICT = Base.ImmutableDict(
     parnumber(::AbstractPoly{N,T,V}) where {N,T,V} = N
     parnumber(::ScaledPolynomial{Poly}) where {Poly <: AbstractPoly{N}} where N = N
 
-    function polyfit!(p::Union{AbstractPoly{N,T},ScaledPolynomial{PV}},x::V,y::V) where {PV <:AbstractPoly{N,T}, V <:AbstractVector{D} } where {N,T,D}
+    function polyfit!(p::Union{AbstractPoly{N,T},ScaledPolynomial{PV}}, x::V , y::V) where {PV <:AbstractPoly{N,T}, V <:AbstractVector{D} } where {N,T,D}
         @assert is_in_domain(p, x) "All values of x must be within range"
         M = length(x)
         @assert length(y) == M "x and y must be of the same size"
         Vand = Matrix{D}(undef, M, N)
-        _fill_vander!(Vand,p,x)
+        _fill_vander!(Vand , p , x)
         refill!(p,Vand\y)
         return p
     end
+    function polyfit_unscaled!(p::AbstractPoly{N,T}, x::V , y::V) where { V <:AbstractVector{D} } where {N,T,D}
+        @assert is_in_domain(p, x) "All values of x must be within range"
+        M = length(x)
+        @assert length(y) == M "x and y must be of the same size"
+        (xmin , xmax) = extrema(x)
+        Vand = Matrix{D}(undef, M, N)
+        _fill_vander_unscaled!(Vand , p , x, xmin, xmax)
+        refill!(p,Vand\y)
+        return p
+    end
+    polyfit_unscaled(::Type{P}, x , y) where P <: AbstractPoly{N,T} where {N,T} =  polyfit_unscaled!(P() , x , y)
+    polyfit(::Type{P}, x , y) where P <: AbstractPoly{N,T} where {N,T} =  polyfit!(P() , x , y)
+    vander(p::AbstractPoly{N,T} , x) where {N,T}= begin 
+            M = length(x)
+            Vand = Matrix{T}(undef, M, N)
+            _fill_vander!(Vand , p , x)    
+            return Vand
+    end
+    vander(::Type{P} , x)  where P <: AbstractPoly{N,T} where {N,T} = vander(P() , x) 
     is_in_domain(v) = left_scaler() <= minimum(v) && maximum(v) <= right_scaler()
     is_in_domain(p::AnyPoly, v) =  left_scaler(p) <= minimum(v) && maximum(v) <= right_scaler(p)
 
@@ -349,6 +357,7 @@ const POLY_NAMES_TYPES_DICT = Base.ImmutableDict(
         end  
         return V
     end
+    
     function _fill_vander_unscaled!(V , p::AbstractPoly{N,T}, xi::AbstractVector{D} , xmin , xmax) where {N, T, D }
         @assert size(V,2) == N "wrong size"
         @assert size(V,1) == length(xi) "wrong size"
@@ -424,7 +433,7 @@ const POLY_NAMES_TYPES_DICT = Base.ImmutableDict(
     returns tuple with vector of polynomial coefficients, values of y_fitted at x points
     and the norm of goodness of fit  
     """
-    function polyfitn(V::VanderMatrix{N,CN,T},x::VT,y::VT) where {N,CN,T<:Number,VT<:Vector{T}}
+    function polyfit_unscaled(V::VanderMatrix{N,CN,T},x::VT,y::VT) where {N,CN,T<:Number,VT<:Vector{T}}
         yi =  !is_the_same_x(V,x) ? linear_interpolation(x,y)(scale_ξ_to_x(V)) : y
         (Q,R) = qr(V.v_unnorm)
         a =SVector{CN,T}(R\transpose(Q)*yi)# calculating pseudo-inverse

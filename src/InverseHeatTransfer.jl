@@ -1,5 +1,5 @@
 module InverseHeatTransfer
-    using LinearAlgebra, Reexport,StaticArrays
+    using LinearAlgebra , Reexport , StaticArrays , Interpolations, RecipesBase
     export HeatTransferProblem
     # Write your package code here.
     include(joinpath(".","solvers", "OneDHeatTransfer.jl"))
@@ -9,9 +9,10 @@ module InverseHeatTransfer
 
     abstract type AbstractInverseProblem end
     abstract type AbstractRegularization end
-    struct NoRegularization end
-    abstract type AbstractCovariance end
-    struct NoCovariance end    
+    struct NoRegularization <: AbstractRegularization end
+    abstract type AbstractCovariance  end
+    struct NoCovariance <: AbstractCovariance end    
+
     struct OptimizableVariable{N, DT, P,  B, V}
         p::P
         flag::B 
@@ -73,95 +74,201 @@ module InverseHeatTransfer
 
     struct SingleInverseProblem{DT <: Number, 
                                 TN , N , # TN - couples number, N - timesteps number
-                                TData,
                                 ProblemType <: HeatTransferProblem ,
                                 CV <: AbstractCovariance, 
-                                RG<: AbstractRegularization,
+                                RG <: AbstractRegularization,
                                 DV } 
         
-        thermocouple_locations::SVector{TN , DT} # coordinates of all thermocouples
-        thermocouple_indices::SVector{TN  , Int} # indices of internal thermocouples in problem TMAT  - temperature distribution matrix 
-        thermocouple_values::TData # values of measured temperatures over time , number of rows  - N, 
+        thermocouple_locations::Vector{DT} # coordinates of all thermocouples
+        thermocouple_indices::Vector{Int} # indices of internal thermocouples in problem TMAT  - temperature distribution matrix 
+        thermocouple_values::Matrix{DT} 
+        # values of measured temperatures over time , number of rows  - N, 
         # number of columns must be equal to the number of locations 
         total_thickness::DT
         direct_problem::ProblemType
         covariance::CV # covariance matrix
         regularization::RG # regularization matrix
-        Tdata_measured::Matrix{}
+        Tdata_measured::Matrix{DT}
         Tdata_evaluated::DV
-        residual_vector::Vector{DT} # raw residual vector
-        function SingleInverseProblem(time_data ,
-                                    temperatures , 
-                                    initial_distribution,
-                                    thermocouples_locations::AbstractVector{DT},
-                                    C::OptimizableVariable,
-                                    λ::OptimizableVariable, 
-                                    dλdT::OptimizableVariable,
-                                    thickness, 
-                                    xpoints_number::Int, 
-                                    tpoints_number::Int,
-                                    covariance::AbstractCovariance = NoCovariance(), 
-                                    regularization::AbstractRegularization= NoRegularization() 
-                                    ) where DT
+        residual::Matrix{DT} # raw residual vector
+        # jacobian::Matrix{}
+        """
+    SingleInverseProblem(
+                                        time_data ::Vector{DT},
+                                        temperatures ::Matrix{DT}, 
+                                        initial_distribution::Union{Number, OptimizableVariable, Matrix{DT}},
+                                        thermocouples_locations::AbstractVector{DT},
+                                        C::OptimizableVariable,
+                                        λ::OptimizableVariable, 
+                                        dλdT::OptimizableVariable,
+                                        thickness, 
+                                        xpoints_number::Int, 
+                                        tpoints_number::Int,
+                                        covariance::CV = NoCovariance(), 
+                                        regularization::RG = NoRegularization(),
+                                        upper_flux::Union{OptimizableVariable , Nothing} = nothing,
+                                        lower_flux::Union{OptimizableVariable , Nothing} = nothing,
+                                        ::Type{G} = UniformGrid,
+                                        thermocouple_location_relative_tolerance::Float64 = 1e-3
+
+                                    ) where {DT , G <: AbstractGrid, CV <: AbstractCovariance, RG <: AbstractRegularization}
+
+TBW
+"""
+function SingleInverseProblem(
+                                        time_data ::Vector{DT},
+                                        temperatures ::Matrix{DT}, 
+                                        initial_distribution::Union{Number, OptimizableVariable, Matrix{DT}},
+                                        thermocouples_locations::AbstractVector{DT},
+                                        C::OptimizableVariable,
+                                        λ::OptimizableVariable, 
+                                        dλdT::OptimizableVariable,
+                                        thickness, 
+                                        xpoints_number::Int, 
+                                        tpoints_number::Int,
+                                        covariance::CV = NoCovariance(), 
+                                        regularization::RG = NoRegularization(),
+                                        upper_flux::Union{OptimizableVariable , Nothing} = nothing,
+                                        lower_flux::Union{OptimizableVariable , Nothing} = nothing,
+                                        ::Type{G} = UniformGrid,
+                                        thermocouple_location_relative_tolerance::Float64 = -1.0
+
+                                    ) where {DT , G <: AbstractGrid, CV <: AbstractCovariance, RG <: AbstractRegularization}
             
-            
+            # if fluxes are provided than the problem will be formulated with Neuman BC 
+            is_upper_flux_provided = !isnothing(upper_flux) 
+            is_lower_flux_provided = !isnothing(lower_flux)
+
+            # if upper or lower heat flux is provided as an input, than we need less temperatures
+            temperatures_needed = 3 - is_upper_flux_provided - is_lower_flux_provided
             issorted(time_data) || error("Time data must be sorted in ascending order")
-            issorted(thermocouple_locations) || error("Thermocouple locations must be sorted in ascending order")
-            NT == length(thermocouple_locations) # number of couples points
-            NT < 3 && error("There should be at least three thermocouples to solve the inverse problem")
+            issorted(thermocouples_locations) || error("Thermocouple locations must be sorted in ascending order")
+            NT = length(thermocouples_locations) # number of couples points
+            all(Base.Fix2(<, thickness), thermocouples_locations) || error("Thermocouple locations should be smaller than the value of thickness")
+            NT < temperatures_needed && error("There should be at least $(temperatures_needed) thermocouples to solve the inverse problem")
             length(time_data) == size(temperatures, 1) || error("Number of rows in temperature data should be the same as the numbe rof time points")
             
             isa(initial_distribution, VecOrMat{DT}) && length(initial_distribution) != xpoints_number && error("Number of initial distribution vector must be ")
             
             NT == size(temperatures, 2) || error("Number of thermocouple locations must 
-                        be equal to the number of columns in temperatures matrix and the length of time vector ")
+                        be equal to the number of columns in temperatures matrix")
             
-            (tmin , tmax) = extrema(time_data)
-            @. time_data -= tmin
-            tmax -= tmin
+
+            # we need to solve the equation only in the region of interest, thus  
+            # only the part of the sample is covered with grid 
+            # thickness is the real thickness of the sample 
+            upper_grid_coordinate = is_upper_flux_provided ? 0.0 : thermocouples_locations[1]
+            lower_grid_coordinate = is_lower_flux_provided ? thickness : thermocouples_locations[end]
+            thickness_internal = lower_grid_coordinate - upper_grid_coordinate
+            (tmin,tmax) = extrema(time_data)
+            tmin != 0.0 && (@. time_data -=tmin)
+            grid = G(thickness_internal , tmax , Val(xpoints_number) , Val(tpoints_number))
+            # the first and the last index of temperature columns in temperatures matrix which are used 
+            first_index = is_upper_flux_provided ? 1 : 2
+            last_index  = is_lower_flux_provided ? NT : NT - 1
+
+            # here is the number of residual columns of the input data matrix which will be used for the discrepancy 
+            n_residual_columns = last_index - first_index + 1
+            thermocouple_indices = fill(0, (n_residual_columns,))
+            rtol = thermocouple_location_relative_tolerance <= 0.0 ? 1/(2*(xpoints_number - 1)) : thermocouple_location_relative_tolerance
             
-            #upper_bc_fun = Interpolations.linear_interpolation(time,)
-            #=
+            located_inds_number = locate_indices_on_grid!(thermocouple_indices , 
+                                    view(thermocouples_locations, first_index : last_index) ,
+                                     grid , upper_grid_coordinate , 
+                                     thickness * rtol )
 
-                HeatTransferProblem(C_f::CF, 
-                                        L_f::LF, 
-                                        Ld_f::LDF, 
-                                        initT_f::ITF,
-                                        grid::G,
-                                        bc_fun_up, upper_bc_type::AbstractBoundaryCondition,
-                                        bc_fun_dwn, lower_bc_type::AbstractBoundaryCondition) where {CF<:PhysicalPropertyFunction{DT},
-                                                           LF<:PhysicalPropertyFunction{DT},
-                                                           G <: AbstractGrid{N,M,D},
-                                                           LDF<: PhysicalPropertyFunction{DT},
-                                                           ITF <: InitialTFunction{DT}} where {D <: Number, DT <:Number, N, M} 
+            (located_inds_number != n_residual_columns) && error("Failed to attribute all thermocouple locations to the indices of grid, try to reduce the thermocouple location tolerance or the number of coordinate steps")
             
-            =#
-            T_loc = SVector{NT,DT}(thermocouples_locations) # thermocouple locations 
-            thickness_internal = T_loc[end] - T_loc[1]
-
-            grid = UniformGrid(thickness_internal , tmax , Val(xpoints_number) , Val(tpoints_number))
-
-            bc_fun_up = Interpolations.linear_interpolation(time_data , temperatures[:,1])
-            bc_fun_dwn = Interpolations.linear_interpolation(time_data , temperatures[:,end])
-
-            if isa(initial_distribution, Number)
-                initT_f = InitialTFunction(Returns(initial_distribution))
-            elseif isa(initial_distribution , VecOrMat)
-                initT_f = InitialTFunction(linear_interpolation( collect(xrange(grid)) , initial_distribution) )
+            # setting upper BC
+            (bc_fun_up, bc_up_type) = if !is_upper_flux_provided 
+                (Interpolations.linear_interpolation(time_data , temperatures[:,1]), DirichletBC())
             else
-                initT_f = InitialTFunction(initial_distribution)
+                (upper_flux, NeumanBC())
             end
-
+            # setting lower BC
+            (bc_fun_dwn, bc_dwn_type) = if !is_lower_flux_provided
+                (Interpolations.linear_interpolation(time_data , temperatures[:,end]), DirichletBC())
+            else
+                (lower_flux, NeumanBC())
+            end
+            # setting initial temperature distribution
+            x_grid = collect(xrange(grid)) 
+            if isa(initial_distribution, Number) # single scalar value
+                initT_f = InitialTFunction(Returns(initial_distribution), x_grid)
+            elseif isa(initial_distribution , VecOrMat)
+                initT_f = InitialTFunction(linear_interpolation( x_grid, initial_distribution), x_grid )
+            else # provided as callable
+                initT_f = InitialTFunction(initial_distribution , x_grid)
+            end
+            # setting physical properties
             C_f = PhysicalPropertyFunction(C)
             L_f = PhysicalPropertyFunction(λ)
             Ld_f = PhysicalPropertyFunction(dλdT)
-
-            pr = HeatTransferProblem(C_f , L_f , Ld_f , 
+            # setting the direct problem
+            direct_problem = HeatTransferProblem(C_f , L_f , Ld_f , 
                                                 initT_f ,
                                                 grid ,
-                                                bc_fun_up ,  DirichletBC(),
-                                                bc_fun_dwn , DirichletBC())
+                                                bc_fun_up ,  bc_up_type,
+                                                bc_fun_dwn , bc_dwn_type)
+            t_points = tpoints(grid)
+            TMAT = direct_problem.T
+            Tdata_evaluated = transpose(@view TMAT[thermocouple_indices , :])# direct problem stores temperature distribution over coordinate as columns
+            T_locations = collect(thermocouples_locations) # thermocouple locations  - coordinates 
+            # must extract the values of measured temperatures and interpolate them of grid
+            t_grid = collect(eachtime(grid))
+            Tdata_measured = Matrix{DT}(undef, t_points, n_residual_columns) 
+            interpolate_matrix!(Tdata_measured, time_data , temperatures , t_grid , first_index, last_index)
+            residual = @. Tdata_evaluated -  Tdata_measured
+
+            TN = temperatures_needed
+            N = t_points
+            ProblemType = typeof(direct_problem)
+            DV = typeof(Tdata_evaluated)
+
+            #={DT <: Number, 
+                                TN , N , # TN - couples number, N - timesteps number
+                                ProblemType <: HeatTransferProblem ,
+                                CV <: AbstractCovariance, 
+                                RG <: AbstractRegularization,
+                                DV } =#
+            new{DT, TN, N , ProblemType , CV , RG , DV}(        
+                                                        T_locations, # thermocouple_locations - total locations including those used in BC
+                                                        thermocouple_indices, # indices of thermocouples in the direct problem output matrix 
+                                                        copy(temperatures), # thermocouple_values -  just copy of the input data 
+                                                        thickness, # total_thickness total thickness of the sample includes the region of direct problem solution
+                                                        direct_problem, #direct_problem::ProblemType direct problem solution 
+                                                        covariance, # covariance matrix 
+                                                        regularization, # reularization matrix 
+                                                        Tdata_measured, # measured data used to evaluate the discrepancy
+                                                        Tdata_evaluated, # reference to the part of temperature distribution matrix which is used for discrepancy evaluation
+                                                        residual # matrix used to store the residual 
+                )
+
         end
+    end
+    function fill_residual!(p::SingleInverseProblem)
+        solve_problem!(p.direct_problem)
+        @. p.residual = p.Tdata_evaluated - p.Tdata_measured
+    end
+    function interpolate_matrix!(Mout, t , M , tnew , start_col = 1, stop_col = 0)
+        stop_col == 0 && (stop_col = size(M,2))
+        for (i , c) in enumerate(eachcol(M)[start_col : stop_col])
+            interpolator = linear_interpolation(t , c)
+            c_data = @view Mout[: , i] 
+            @. c_data = interpolator(tnew)
+        end       
+    end
+    function locate_indices_on_grid!(indices_vector , locations_vector , g::AbstractGrid , zero_shift , atol )
+        counter = 0
+        N = length(locations_vector)
+        for (i, xi) in enumerate(eachx(g))
+            N <= counter && return counter
+            if abs(locations_vector[counter + 1] + zero_shift - xi) <= atol
+                indices_vector[counter + 1] = i
+                counter += 1
+            end
+        end
+        return counter
     end
 """
     This type of problems include only physical properties modification, thus all problems 
@@ -178,5 +285,8 @@ has the same objects for  λ, λ' and cₚ, hence the problem can be simplified
             error("todo")
 
         end
+    end
+    @recipe function f(m::OptimizableVariable)
+        return (m.p)
     end
 end

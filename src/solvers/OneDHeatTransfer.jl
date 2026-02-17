@@ -5,8 +5,12 @@ module OneDHeatTransfer
         include("abstract_grid.jl")
         include(joinpath("..", "utils","TridiagFunctions.jl"))
 
-        export HeatTransferProblem, BFD1_EXP_EXP_EXP,BFD1_IMP_EXP_EXP,BFD1_CN_EXP_EXP , solve_problem!
+        export HeatTransferProblem , BFD1_EXP_EXP_EXP , BFD1_IMP_EXP_EXP , BFD1_CN_EXP_EXP , solve_problem!
+        export DirichletBC, NeumanBC
         export PhysicalPropertyFunction, BoundaryFunction, InitialTFunction
+        export AbstractGrid, AbstractGridIterator, UniformGrid, eachx, eachtime, trange, xrange, tpoints, xpoints
+
+
         struct ProblemCache{Vtype, Mtype, N, DT}
             F::Vtype
             phi::Vtype
@@ -160,7 +164,15 @@ function HeatTransferProblem(C_fun, L_fun, Ld_fun,
                                             bc_fun_up, upper_bc_type , 
                                             bc_fun_dwn, lower_bc_type)
             end
-        function copy_physics(p::HeatTransferProblem{DT, CF, LF, LDF, ITF, G},                                     
+        """
+    copy_physics(p::HeatTransferProblem{DT, CF, LF, LDF, ITF, G},                                     
+                            initT_fun,
+                            H::D, tmax::D, 
+                            bc_fun_up, bc_fun_dwn ) where {D, DT, CF, LF, LDF, ITF, G}
+
+This function creates HeatTransferProblem with the same physical properties, but new geometry, time, init distribution and BC's
+"""
+function copy_physics(p::HeatTransferProblem{DT, CF, LF, LDF, ITF, G},                                     
                             initT_fun,
                             H::D, tmax::D, 
                             bc_fun_up, bc_fun_dwn ) where {D, DT, CF, LF, LDF, ITF, G}
