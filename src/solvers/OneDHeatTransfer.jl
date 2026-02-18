@@ -1,12 +1,12 @@
 module OneDHeatTransfer
-        using LinearAlgebra
+        using LinearAlgebra, Interpolations
 
         include("function_wrappers.jl")
         include("abstract_grid.jl")
         include(joinpath("..", "utils","TridiagFunctions.jl"))
 
         export HeatTransferProblem , BFD1_EXP_EXP_EXP , BFD1_IMP_EXP_EXP , BFD1_CN_EXP_EXP , solve_problem!
-        export DirichletBC, NeumanBC
+        export DirichletBC, NeumanBC , temperature_field
         export PhysicalPropertyFunction, BoundaryFunction, InitialTFunction
         export AbstractGrid, AbstractGridIterator, UniformGrid, eachx, eachtime, trange, xrange, tpoints, xpoints
 
@@ -209,6 +209,14 @@ function copy_physics(p::HeatTransferProblem{DT, CF, LF, LDF, ITF, G},
         upper_bc_type(::HeatTransferProblem{D, CF,LF,LDF,ITF, G, BCU }) where {D, CF, LF, LDF, ITF, G, BCU <: BoundaryFunction{D, BF, V, BC_type}} where { BF, V, BC_type}  = BC_type
 
 
+        """
+    temperature_field(p::HeatTransferProblem)
+
+Returns temperature interpolator: T(x,t) , here x is coordinate, t  - time 
+"""
+function temperature_field(p::HeatTransferProblem)
+            return interpolate((collect(xrange(p)), collect(trange(p))), p.T , Gridded(Linear()))
+        end
         """
         Bunch of functions to solve the non-linear transient heat transfer using finite difference
 

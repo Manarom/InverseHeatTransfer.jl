@@ -13,6 +13,9 @@ module InverseHeatTransfer
     abstract type AbstractCovariance  end
     struct NoCovariance <: AbstractCovariance end    
 
+    const SupportedFlagType{N} = Union{Bool, AbstractVector{Bool}, NTuple{N,Bool}} where N
+    const ConstraintType{P} = Union{Nothing, ScaledPolynomial{P}} where P <: AbstractPoly
+
     struct OptimizableVariable{N, DT, P,  B, V}
         p::P
         flag::B 
@@ -20,12 +23,12 @@ module InverseHeatTransfer
         ub::V
         is_u_bounded::Base.RefValue{Bool}
         is_l_bounded::Base.RefValue{Bool}
-        function OptimizableVariable(p::ScaledPolynomial{P}; lb = nothing, ub = nothing, flag::Union{Bool, AbstractVector{Bool}, NTuple{N,Bool}} = true) where P <: AbstractPoly{N,T} where {N,T} 
+        function OptimizableVariable(p::Q ; lb::ConstraintType{P} = nothing, ub::ConstraintType{P} = nothing, flag::SupportedFlagType{N} = true) where Q <: ScaledPolynomial{P} where  P <: AbstractPoly{N,T} where {N,T} 
                 is_u_bounded = Ref(~isnothing(ub))
                 is_l_bounded = Ref(~isnothing(lb))
                 V = MVector{N,T}
-                ub = is_u_bounded[] ? V(ub) : V(undef)
-                lb = is_l_bounded[] ? V(lb) : V(undef)
+                _ub = is_u_bounded[] ? P(V(ub)) : P(V(undef))
+                _lb = is_l_bounded[] ? P(V(lb)) : P(V(undef))
                 B = MVector{N,Bool}
                 if isa(flag, Bool) 
                     flag_vec = B(undef)
@@ -33,15 +36,20 @@ module InverseHeatTransfer
                 else
                     flag_vec = B(flag)
                 end
-                return new{N, T, typeof(p),  B, V}(p, flag_vec, lb, ub, is_u_bounded, is_l_bounded)
+                return new{N, T, typeof(p),  B, V}(p, flag_vec, _lb, _ub, is_u_bounded, is_l_bounded)
         end
     end
+    #function OptimizableVariable()
+
+
+
     parnumber(::OptimizableVariable{N}) where N = N
     coeffs(o::OptimizableVariable) = PolynomialWrappers.coeffs(o.p)
     isoptimizable(ov::OptimizableVariable) = any(ov.flag)
     refresh!(ov::OptimizableVariable, x) = any(ov.flag) ?  PolynomialWrappers.refill!(ov.p , x , ov.flag)  : nothing
     refill!(ov::OptimizableVariable, x) = PolynomialWrappers.refill!(ov.p , x)
     (ov::OptimizableVariable)(x) = ov.p(x)
+    derivative!(ov_der::OptimizableVariable, ov::OptimizableVariable) = PolynomialWrappers.derivative!(ov_der.p, ov.p)
 
     function count_lower_bound_violations(ov::OptimizableVariable{N,DT}) where {N,DT}
         ov.is_l_bounded[] || return  0
@@ -125,7 +133,7 @@ function SingleInverseProblem(
                                         dλdT::OptimizableVariable,
                                         thickness, 
                                         xpoints_number::Int, 
-                                        tpoints_number::Int,
+                                        time_points_number::Union{Int,Nothing} = nothing,
                                         covariance::CV = NoCovariance(), 
                                         regularization::RG = NoRegularization(),
                                         upper_flux::Union{OptimizableVariable , Nothing} = nothing,
@@ -153,7 +161,6 @@ function SingleInverseProblem(
             NT == size(temperatures, 2) || error("Number of thermocouple locations must 
                         be equal to the number of columns in temperatures matrix")
             
-
             # we need to solve the equation only in the region of interest, thus  
             # only the part of the sample is covered with grid 
             # thickness is the real thickness of the sample 
@@ -161,7 +168,9 @@ function SingleInverseProblem(
             lower_grid_coordinate = is_lower_flux_provided ? thickness : thermocouples_locations[end]
             thickness_internal = lower_grid_coordinate - upper_grid_coordinate
             (tmin,tmax) = extrema(time_data)
-            tmin != 0.0 && (@. time_data -=tmin)
+            # @. time_data -=tmin
+            tmax = tmax - tmin
+            tpoints_number = isnothing(time_points_number) ? length(time_data) : time_points_number
             grid = G(thickness_internal , tmax , Val(xpoints_number) , Val(tpoints_number))
             # the first and the last index of temperature columns in temperatures matrix which are used 
             first_index = is_upper_flux_provided ? 1 : 2
@@ -170,12 +179,15 @@ function SingleInverseProblem(
             # here is the number of residual columns of the input data matrix which will be used for the discrepancy 
             n_residual_columns = last_index - first_index + 1
             thermocouple_indices = fill(0, (n_residual_columns,))
+
             rtol = thermocouple_location_relative_tolerance <= 0.0 ? 1/(2*(xpoints_number - 1)) : thermocouple_location_relative_tolerance
             
+            new_locations = thermocouples_locations[first_index : last_index] .- upper_grid_coordinate
             located_inds_number = locate_indices_on_grid!(thermocouple_indices , 
-                                    view(thermocouples_locations, first_index : last_index) ,
-                                     grid , upper_grid_coordinate , 
-                                     thickness * rtol )
+                                                            thermocouples_locations[first_index : last_index],
+                                                            grid , 
+                                                            upper_grid_coordinate , 
+                                                            thickness * rtol )
 
             (located_inds_number != n_residual_columns) && error("Failed to attribute all thermocouple locations to the indices of grid, try to reduce the thermocouple location tolerance or the number of coordinate steps")
             
@@ -225,12 +237,7 @@ function SingleInverseProblem(
             ProblemType = typeof(direct_problem)
             DV = typeof(Tdata_evaluated)
 
-            #={DT <: Number, 
-                                TN , N , # TN - couples number, N - timesteps number
-                                ProblemType <: HeatTransferProblem ,
-                                CV <: AbstractCovariance, 
-                                RG <: AbstractRegularization,
-                                DV } =#
+
             new{DT, TN, N , ProblemType , CV , RG , DV}(        
                                                         T_locations, # thermocouple_locations - total locations including those used in BC
                                                         thermocouple_indices, # indices of thermocouples in the direct problem output matrix 
@@ -263,7 +270,7 @@ function SingleInverseProblem(
         N = length(locations_vector)
         for (i, xi) in enumerate(eachx(g))
             N <= counter && return counter
-            if abs(locations_vector[counter + 1] + zero_shift - xi) <= atol
+            if abs(locations_vector[counter + 1] - zero_shift - xi) <= atol
                 indices_vector[counter + 1] = i
                 counter += 1
             end

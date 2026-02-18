@@ -1,6 +1,6 @@
 module PolynomialWrappers
     using LinearAlgebra,Interpolations,Polynomials,LegendrePolynomials,StaticArrays,RecipesBase, FFTW
-    
+
     import Base.Broadcast: broadcastable
 
     export BernsteinSymPoly,StandPoly, LegPoly,ChebPoly, ScaledPolynomial, AbstractPoly, VanderMatrix
@@ -137,10 +137,17 @@ const POLY_NAMES_TYPES_DICT = Base.ImmutableDict(
 
     function derivative(sp::ScaledPolynomial)
         p_der = derivative(sp.poly)
-        p_der.coeffs .*= scale_span_ξ_by_x(sp)
+        span = scale_span_ξ_by_x(sp)
+        p_der.coeffs .*= span
         return ScaledPolynomial(p_der , xmin = left_scaler(sp) , xmax = right_scaler(sp))
     end
-    
+    function derivative!(p_der::ScaledPolynomial, p::ScaledPolynomial)
+            (p_der.xmin == left_scaler(p) && p_der.xmax == right_scaler(p))|| error("polynomials must be of the same scaling")
+            span = scale_span_ξ_by_x(p)
+            derivative!(p_der.poly, p.poly)
+            p_der.poly.coeffs .*= span
+            return p_der
+    end
         """
         scale_x_to_ξ(x,x_min,x_max)
 
