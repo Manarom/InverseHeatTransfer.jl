@@ -1,6 +1,8 @@
 module InverseHeatTransfer
     using LinearAlgebra , Reexport , StaticArrays , Interpolations, RecipesBase
-    export HeatTransferProblem
+    import FunctionWrappers
+    
+    export OptimizableVariable, SingleInverseProblem
     # Write your package code here.
     include(joinpath(".","solvers", "OneDHeatTransfer.jl"))
     @reexport using .OneDHeatTransfer
@@ -14,71 +16,95 @@ module InverseHeatTransfer
     struct NoCovariance <: AbstractCovariance end    
 
     const SupportedFlagType{N} = Union{Bool, AbstractVector{Bool}, NTuple{N,Bool}} where N
-    const ConstraintType{P} = Union{Nothing, ScaledPolynomial{P}} where P <: AbstractPoly
+    #=struct BinaryPredicate{D}  
+        f::FunctionWrappers.FunctionWrapper{Bool,Tuple{D,D}} 
+    end
+    
+    (f::BinaryPredicate{D})(x::D,y::D) where D = f.f(x,y)=# #this was slow
 
-    struct OptimizableVariable{N, DT, P,  B, V}
+    struct OptimizableVariable{N, DT, P,  B, V, FL,FU}
         p::P
         flag::B 
         lb::V
         ub::V
         is_u_bounded::Base.RefValue{Bool}
         is_l_bounded::Base.RefValue{Bool}
-        function OptimizableVariable(p::Q ; lb::ConstraintType{P} = nothing, ub::ConstraintType{P} = nothing, flag::SupportedFlagType{N} = true) where Q <: ScaledPolynomial{P} where  P <: AbstractPoly{N,T} where {N,T} 
-                is_u_bounded = Ref(~isnothing(ub))
-                is_l_bounded = Ref(~isnothing(lb))
-                V = MVector{N,T}
-                _ub = is_u_bounded[] ? P(V(ub)) : P(V(undef))
-                _lb = is_l_bounded[] ? P(V(lb)) : P(V(undef))
-                B = MVector{N,Bool}
-                if isa(flag, Bool) 
-                    flag_vec = B(undef)
-                    fill!(flag_vec,flag)
-                else
-                    flag_vec = B(flag)
-                end
-                return new{N, T, typeof(p),  B, V}(p, flag_vec, _lb, _ub, is_u_bounded, is_l_bounded)
+        lb_violation_fun::FL
+        ub_violation_fun::FU
+        function OptimizableVariable(p::P, flag::B, lb::V, ub::V, 
+                                 iu::Ref{Bool}, il::Ref{Bool}, 
+                                 f1::F1, f2::F2) where {P, B <: MVector{N,Bool}, V, F1, F2} where N
+            # Здесь можно добавить проверки размеров, если нужно
+            new{N, DT, P, B, V, F1, F2}(p, flag, lb, ub, iu, il, f1, f2)
         end
     end
-    #function OptimizableVariable()
+    const OV = OptimizableVariable
+    # default methods
+    parnumber(::OV{N}) where N = N
+    isoptimizable(ov::OV) = any(ov.flag)
+    (ov::OV)(x) = ov.p(x)
+    change_flag(o::OV; new_flag = true) = isa(new_flag, Bool) ? fill!(o.flag, new_flag) : copyto!(o.flag, new_flag)
+    refill!(ov::OV, x) = copyto!(coeffs(ov), x)
+    modify!(::OV, x) = copyto!(fview_coeffs(ov), x)
+    count_violations(c, b, f) = count(f(i,k) for (i,k) in zip(c,b))
+    count_lower_bound_violations(ov::OV) = (is_l_bounded[] && any(ov.flag)) ? count_violations(fview_coeffs(ov),fview_lb_coeffs(ov), lb_violation_fun) : 0
+    count_upper_bound_violations(ov::OV)= (is_l_bounded[] && any(ov.flag)) ? count_violations(fview_coeffs(ov),fview_ub_coeffs(ov), ub_violation_fun) : 0
+    count_bound_violations(o::OV) = count_lower_bound_violations(o) + count_upper_bound_violations(o)
+    fview_coeffs(ov::OV) = view(coeffs(ov), ov.flag)
+    fview_lb_coeffs(ov::OV) = view(lb_coeffs(ov), ov.flag)
+    fview_ub_coeffs(ov::OV) = view(ub_coeffs(ov), ov.flag)
+    extract_params(ov::OV) = copy(coeffs(ov))
+    extract_optimizable_params(ov::OV) = copy(fview_coeffs(ov))
+    # interface
+    # necessary
+    coeffs(::OV{N,DT,P}) where {N,DT,P}  = error("OptimizableVariable wrappers around $(P) is not implemenented")
+    lb_coeffs(::OV{N,DT,P})  where {N,DT,P}  = error("OptimizableVariable wrappers around $(P) is not implemenented")
+    ub_coeffs(::OV{N,DT,P}) where {N,DT,P}  = error("OptimizableVariable wrappers around $(P) is not implemenented")
+    # not necessary
+    derivative!(::OV, ::OV)  = error("OptimizableVariable wrappers around is not implemented")
 
 
-
-    parnumber(::OptimizableVariable{N}) where N = N
-    coeffs(o::OptimizableVariable) = PolynomialWrappers.coeffs(o.p)
-    isoptimizable(ov::OptimizableVariable) = any(ov.flag)
-    refresh!(ov::OptimizableVariable, x) = any(ov.flag) ?  PolynomialWrappers.refill!(ov.p , x , ov.flag)  : nothing
-    refill!(ov::OptimizableVariable, x) = PolynomialWrappers.refill!(ov.p , x)
-    (ov::OptimizableVariable)(x) = ov.p(x)
-    derivative!(ov_der::OptimizableVariable, ov::OptimizableVariable) = PolynomialWrappers.derivative!(ov_der.p, ov.p)
-
-    function count_lower_bound_violations(ov::OptimizableVariable{N,DT}) where {N,DT}
-        ov.is_l_bounded[] || return  0
-        counter = 0
-        c = coeffs(ov)
-        @inbounds for i in 1 : N 
-           ov.flag[i] || continue
-           c[i] <  ov.lb[i]  || continue     
-           counter += 1
-        end
-        return counter
+    #OptimizableVariable around ScaledPolynomial
+    const OVS = OptimizableVariable{N, DT, P,  B, V} where {N, DT, P<: ScaledPolynomial,  B, V}
+    function OptimizableVariable(p::Q  ; lb::Union{Nothing , NTuple{N,T}} = nothing, 
+                                         ub::Union{Nothing , NTuple{N,T}} = nothing, 
+                                         flag::SupportedFlagType{N} = true,
+                                         lb_violation_fun = < ,
+                                         ub_violation_fun = > ) where {Q <: ScaledPolynomial{P}} where  P <: AbstractPoly{N,T} where {N,T} 
+            
+            is_u_bounded = Ref(~isnothing(ub))
+            is_l_bounded = Ref(~isnothing(lb))
+            V = MVector{N,T}
+            _ub = is_u_bounded[] ? P(V(ub)) : P(V(undef))
+            _lb = is_l_bounded[] ? P(V(lb)) : P(V(undef))
+            B = MVector{N,Bool}
+            if isa(flag, Bool) 
+                flag_vec = B(undef)
+                fill!(flag_vec,flag)
+            else
+                flag_vec = B(flag)
+            end
+            return OptimizableVariable(p, 
+                                     flag_vec, _lb, _ub,
+                                     is_u_bounded, is_l_bounded,
+                                     lb_violation_fun, ub_violation_fun)
     end
-    function count_upper_bound_violations(ov::OptimizableVariable{N,DT}) where {N,DT}
-        ov.is_u_bounded[] || return  0
-        counter = 0
-        c = coeffs(ov)
-        @inbounds for i in 1 : N 
-           ov.flag[i] || continue
-           c[i] >  ov.ub[i]  || continue     
-           counter += 1
-        end
-        return counter
 
-    end
-    count_bound_violations(o::OptimizableVariable) = count_lower_bound_violations(o) + count_upper_bound_violations(o)
-    
-    function change_flag(o::OptimizableVariable; new_flag = true)
-        isa(new_flag, Bool) ? fill!(o.flag, new_flag) : copyto!(o.flag, new_flag)
-    end
+        #=p::P
+        flag::B 
+        lb::V
+        ub::V
+        is_u_bounded::Base.RefValue{Bool}
+        is_l_bounded::Base.RefValue{Bool}
+        lb_violation_fun::BinaryPredicate{DT}
+        ub_violation_fun::BinaryPredicate{DT}=#
+
+    coeffs(o::OVS) = PolynomialWrappers.coeffs(o.p)
+
+    lb_coeffs(ov::OVS)  =  PolynomialWrappers.coeffs(ov.lb)
+    ub_coeffs(ov::OVS)  =  PolynomialWrappers.coeffs(ov.ub)
+
+    derivative!(ov_der::OVS, ov::OVS) = PolynomialWrappers.derivative!(ov_der.p, ov.p)
 
     struct SingleInverseProblem{DT <: Number, 
                                 TN , N , # TN - couples number, N - timesteps number
