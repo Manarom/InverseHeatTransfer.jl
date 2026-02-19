@@ -31,9 +31,9 @@ module InverseHeatTransfer
         is_l_bounded::Base.RefValue{Bool}
         lb_violation_fun::FL
         ub_violation_fun::FU
-        function OptimizableVariable(p::P, flag::B, lb::V, ub::V, 
+        function OptimizableVariable(::Type{DT}, p::P, flag::B, lb::V, ub::V, 
                                  iu::Ref{Bool}, il::Ref{Bool}, 
-                                 f1::F1, f2::F2) where {P, B <: MVector{N,Bool}, V, F1, F2} where N
+                                 f1::F1, f2::F2) where {P, B <: MVector{N,Bool}, V, F1, F2} where {N,DT}
             # Здесь можно добавить проверки размеров, если нужно
             new{N, DT, P, B, V, F1, F2}(p, flag, lb, ub, iu, il, f1, f2)
         end
@@ -45,10 +45,10 @@ module InverseHeatTransfer
     (ov::OV)(x) = ov.p(x)
     change_flag(o::OV; new_flag = true) = isa(new_flag, Bool) ? fill!(o.flag, new_flag) : copyto!(o.flag, new_flag)
     refill!(ov::OV, x) = copyto!(coeffs(ov), x)
-    modify!(::OV, x) = copyto!(fview_coeffs(ov), x)
-    count_violations(c, b, f) = count(f(i,k) for (i,k) in zip(c,b))
-    count_lower_bound_violations(ov::OV) = (is_l_bounded[] && any(ov.flag)) ? count_violations(fview_coeffs(ov),fview_lb_coeffs(ov), lb_violation_fun) : 0
-    count_upper_bound_violations(ov::OV)= (is_l_bounded[] && any(ov.flag)) ? count_violations(fview_coeffs(ov),fview_ub_coeffs(ov), ub_violation_fun) : 0
+    modify!(ov::OV, x) = copyto!(fview_coeffs(ov), x)
+    count_violations(a, b, f) = count(f(i,k) for (i,k) in zip(a,b))
+    count_lower_bound_violations(ov::OV) = (ov.is_l_bounded[] && any(ov.flag)) ? count_violations(fview_coeffs(ov),fview_lb_coeffs(ov), ov.lb_violation_fun) : 0
+    count_upper_bound_violations(ov::OV)= (ov.is_l_bounded[] && any(ov.flag)) ? count_violations(fview_coeffs(ov),fview_ub_coeffs(ov), ov.ub_violation_fun) : 0
     count_bound_violations(o::OV) = count_lower_bound_violations(o) + count_upper_bound_violations(o)
     fview_coeffs(ov::OV) = view(coeffs(ov), ov.flag)
     fview_lb_coeffs(ov::OV) = view(lb_coeffs(ov), ov.flag)
@@ -66,8 +66,8 @@ module InverseHeatTransfer
 
     #OptimizableVariable around ScaledPolynomial
     const OVS = OptimizableVariable{N, DT, P,  B, V} where {N, DT, P<: ScaledPolynomial,  B, V}
-    function OptimizableVariable(p::Q  ; lb::Union{Nothing , NTuple{N,T}} = nothing, 
-                                         ub::Union{Nothing , NTuple{N,T}} = nothing, 
+    function OptimizableVariable(p::Q  ; lb::Union{Nothing , NTuple{N,T}, StaticVector{N,T}} = nothing, 
+                                         ub::Union{Nothing , NTuple{N,T}, StaticVector{N,T}} = nothing, 
                                          flag::SupportedFlagType{N} = true,
                                          lb_violation_fun = < ,
                                          ub_violation_fun = > ) where {Q <: ScaledPolynomial{P}} where  P <: AbstractPoly{N,T} where {N,T} 
@@ -77,6 +77,11 @@ module InverseHeatTransfer
             V = MVector{N,T}
             _ub = is_u_bounded[] ? P(V(ub)) : P(V(undef))
             _lb = is_l_bounded[] ? P(V(lb)) : P(V(undef))
+
+            if (is_u_bounded[] && is_l_bounded[]) 
+                count_violations(PolynomialWrappers.coeffs(_ub),
+                 PolynomialWrappers.coeffs(_lb), lb_violation_fun) > 0 && error("Lower boundary $(_lb) is higher than $(_ub)") 
+            end    
             B = MVector{N,Bool}
             if isa(flag, Bool) 
                 flag_vec = B(undef)
@@ -84,7 +89,7 @@ module InverseHeatTransfer
             else
                 flag_vec = B(flag)
             end
-            return OptimizableVariable(p, 
+            return OptimizableVariable(T, p, 
                                      flag_vec, _lb, _ub,
                                      is_u_bounded, is_l_bounded,
                                      lb_violation_fun, ub_violation_fun)

@@ -1,22 +1,37 @@
 include("InverseHeatTransfer.jl")
-using Plots, BenchmarkTools
+using Plots, BenchmarkTools, Test
 #using .InverseHeatTransfer
-import .InverseHeatTransfer as IT
-p = IT.ScaledPolynomial(IT.BernsteinSymPoly((1.0,2.3,5.6)), xmin = 200.0, xmax = 1200.0)
-lb = (2.0,5.0,45.0)
+p = InverseHeatTransfer.ScaledPolynomial(InverseHeatTransfer.BernsteinSymPoly((1.0,6.3,5.6)), xmin = 200.0, xmax = 1200.0)
+lb = (2.0,5.0,4.0)
+ub = (3.0,7.0,5.0)
 flag = (true, true, false)
-o = IT.OptimizableVariable(p, lb = lb, flag = flag)
+o = InverseHeatTransfer.OptimizableVariable(p, lb = lb, ub = ub)
+I = InverseHeatTransfer
+@test I.parnumber(o) == 3
+@test I.isoptimizable(o)
+I.change_flag(o, new_flag = [false, true, false])
+@test all(o.flag .|  .![false, true, false])
 
-x_new = (23,4.5)
+I.refill!(o, (1.0,6.3,5.6))
+@test  all(I.coeffs(o) .== (1.0,6.3,5.6))
+I.modify!(o, [1.0,6.3,6.6][o.flag])
+@test  I.fview_coeffs(o) == [1.0,6.3,6.6][o.flag]
 
-IT.refresh!(o, x_new)
-x = collect(200.0:1.0:1200.0)
-plot(x,o.(x))
+I.change_flag(o, new_flag = true)
+@test I.count_lower_bound_violations(o) == 1
+@test I.count_upper_bound_violations(o) == 1
+@test I.count_bound_violations(o) == 2
 
-IT.count_lower_bound_violations(o)
-@benchmark IT.count_lower_bound_violations($o)
+@test all(I.fview_coeffs(o) .== o.p.poly.coeffs)
+@test all(I.fview_lb_coeffs(o) .== lb)
+@test all(I.fview_ub_coeffs(o) .== ub)
+@test all(I.extract_params(o) .== o.p.poly.coeffs)
+@test all(I.extract_optimizable_params(o) .== o.p.poly.coeffs)
 
-@code_warntype IT.count_lower_bound_violations(o)
+I.count_lower_bound_violations(o)
+@benchmark I.count_lower_bound_violations($o)
+
+@code_warntype I.count_lower_bound_violations(o)
 
 
 
