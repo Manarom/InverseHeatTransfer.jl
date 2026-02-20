@@ -106,28 +106,37 @@ function bernstein_elevate_degree!(b::AbstractVector)
     return b
 end
 
+const BERN_TO_STAND = Dict{Int,Matrix{Float64}}()
+function get_bern_to_stand_matrix(N::Int)
+    if !haskey(BERN_TO_STAND, N) 
+        BERN_TO_STAND[N] = bernstein_to_standard_matrix(N)
+    end
+    return  BERN_TO_STAND[N]
+end
+function to_standard_basis(p::BernsteinPoly{N}) where {N}
+    return get_bern_to_stand_matrix(N)*p.coeffs
+end
+"""
+    bernstein_matrix(N::Int, T::Type=Float64)
 
-#=
-function trump_prautzsch_inplace!(b::Vector, n::Int, k::Int)
-    m = n + k
-    resize!(b, m+1); fill!(b[(n+2):end], 0)
-    
-    for s in 1:k
-        denom = n + k - s + 1
-        # Forward pass: new values only depend on untouched prior ones
-        for i in 1:(n+s+1)
-            j_low = max(0, i-1-k)  # 0-based adjust
-            j_high = min(n, i-1)
-            new_val = 0.0
-            for j in j_low:j_high
-                α = (j + k - s + 1) / denom
-                β = (n - j) / denom
-                # Access OLD b[i-1-(i-1-j)] etc. - indices stable during forward
-                new_val += α * b[i] + β * b[i+1]  # Pseudocode; exact mapping needed
+Gives matrix of bernstein to standard basis conversion coefficients
+"""
+function bernstein_to_standard_matrix(M::Int) 
+    mat = zeros(Float64, M, M)
+    N = M - 1
+    for j in 0 : N
+        cnj = binomial(N, j)
+        for k in 0 : j
+            # T[j,k] = C(N, j) * C(j, k) * (-1)^(j-k)
+            val = cnj * binomial(j, k)
+            if isodd(j - k)
+                mat[j + 1, k + 1] = -val
+            else
+                mat[j + 1, k + 1] = val
             end
-            b[i] = new_val  # Overwrite safe
         end
     end
-    return b
+    return mat
 end
-=#
+
+

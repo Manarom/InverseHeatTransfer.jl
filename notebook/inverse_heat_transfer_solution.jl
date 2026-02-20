@@ -20,10 +20,13 @@ end
 using Revise,AllocCheck, PrettyTables, Reexport, LinearAlgebra
 
 # ╔═╡ c7400800-f152-11f0-a386-29e067f9216c
-using PlutoUI,Polynomials,Interpolations, BenchmarkTools,PlutoPlotly,Interpolations,Polynomials,LegendrePolynomials,StaticArrays,RecipesBase,Plots, FFTW
+using Polynomials,Interpolations,Interpolations,Polynomials,LegendrePolynomials,StaticArrays,RecipesBase,Plots, FFTW
+
+# ╔═╡ b6133376-a592-48ee-8d63-a8413e20088d
+using BenchmarkTools, ProfileCanvas, PlutoUI, PlutoPlotly
 
 # ╔═╡ e6216c49-09a8-45c5-8c3a-6d1f7281cc3e
-using Optimization, OptimizationOptimJL, Observables
+using Optimization, OptimizationOptimJL, Observables, FunctionWrappers
 
 # ╔═╡ c806aa46-a30e-4431-b2e1-c7131ce86615
 source_path = joinpath(@__DIR__,"..","src")
@@ -341,6 +344,21 @@ md" Add noise $(@bind make_noisy CheckBox(default = false)) "
 # ╔═╡ 542bebdb-0cdc-4c07-9210-9c773b406bbd
 md" noise amplitude $(@bind noise_amp Slider(0:100, default = 0, show_value= true))"
 
+# ╔═╡ 81314d03-95c2-4eb5-9f15-09f660b2c875
+md" Lower λ limit = $(@bind lower_lam_limit confirm(Slider(0.0 : 1e-3 : 10.0, default = 0.1, show_value = true)))"
+
+# ╔═╡ 488e4960-4420-4875-a5c4-cecba610dd1a
+md" Upper λ limit = $(@bind upper_lam_limit confirm(Slider(0.1 : 1e-3 : 100.0, default = 20, show_value = true)))"
+
+# ╔═╡ 1843f411-4706-441f-a07f-5cd77a5650b1
+md" Parameters number $(@bind basis_degree Select(1:20, default = 4))"
+
+# ╔═╡ 8189333a-7ee8-44a0-9d76-a8efccd22666
+md" Particle Swarm iterations number $(@bind pso_iters Select(10:10:10000 , default = 100))"
+
+# ╔═╡ 9a602387-0383-41a3-84f2-2c31fbd93d6e
+@bind refresh_plot Button("Refresh plot")
+
 # ╔═╡ a02ce5d4-1845-410e-988c-f9f71fd129d3
 @bind  lam_changing_pars PlutoUI.combine() do Child
 	md"""
@@ -369,18 +387,18 @@ md" noise amplitude $(@bind noise_amp Slider(0:100, default = 0, show_value= tru
 	"""
 end
 
-# ╔═╡ 9a602387-0383-41a3-84f2-2c31fbd93d6e
-@bind refresh_plot Button("Refresh plot")
-
 # ╔═╡ b7f738ad-2faa-4399-be33-71c43184a4c7
 begin 
 	C = IHT.OptimizableVariable(IHT.ScaledPolynomial(IHT.BernsteinSymPoly(Cp_fun.poly.coeffs), xmin = lam_T_range[1], xmax = lam_T_range[end]))
-	λ_poly = IHT.ScaledPolynomial(IHT.BernsteinSymPoly((1.0,1.0,1.0,1.0,1.0,1.0)), xmin = lam_T_range[1], xmax = lam_T_range[end])
+	λ_poly = IHT.ScaledPolynomial(IHT.BernsteinSymPoly(ntuple(_->1.0 , basis_degree)), xmin = lam_T_range[1], xmax = lam_T_range[end])
 	λ = IHT.OptimizableVariable(λ_poly, flag = false)
 	dλdT_poly =  IHT.PolynomialWrappers.derivative(λ_poly)
 	dλdT = IHT.OptimizableVariable(dλdT_poly, flag = false)
 
 end
+
+# ╔═╡ 98a565ad-cfa2-49cd-9380-d577df12cfdd
+md"### Do profiling? $(@bind is_do_profile CheckBox(default = false))"
 
 # ╔═╡ e805618f-14c8-46a3-b0f0-cc5f949fed3b
 function discrepancy(x,inv_probl::IHT.SingleInverseProblem)
@@ -510,7 +528,7 @@ possible_location_indices = 1:IHT.xpoints(problem.grid);
 		Child(Select(possible_location_indices,default=25))
 	)\
 	i4 = $(
-		Child(Select(possible_location_indices,default=40))
+		Child(Select(possible_location_indices,default=OHT.xpoints(problem.grid) - 1))
 	)\
 	"""
 end
@@ -550,12 +568,14 @@ end
 # ╔═╡ b7cab05e-c24f-4268-ba7b-f361c1e9076d
 begin
 	xpoints_number = 100
-	tpoints_number = 3000
+	tpoints_number = 500
 	inv_probl = IHT.SingleInverseProblem(time_data, temperatures, initial_distribution, therm_locations, C,λ, dλdT, H, xpoints_number, tpoints_number)
 end
 
-# ╔═╡ 083dacae-f6ad-436e-b686-e248d2dacc4f
-inv_probl
+# ╔═╡ 01d72198-4ee9-436b-ada2-035821b8698d
+if is_do_profile 
+	@profview  discrepancy(a123,inv_probl)
+end
 
 # ╔═╡ b832d7ff-e2b8-4822-8400-7729c8ccff6f
 is_fit_on || discrepancy(lam_changing_pars, inv_probl)
@@ -564,10 +584,10 @@ is_fit_on || discrepancy(lam_changing_pars, inv_probl)
 if is_fit_on 
 	
 	start = fill(1.0,(PW.parnumber(λ_poly),))
-	lb = fill(0.1,(PW.parnumber(λ_poly),))
-	ub = fill(20.0,(PW.parnumber(λ_poly),))
+	lb = fill(lower_lam_limit,(PW.parnumber(λ_poly),))
+	ub = fill(upper_lam_limit,(PW.parnumber(λ_poly),))
 	fun = OptimizationFunction(discrepancy, NoAutoDiff())
-	optp = OptimizationProblem(discrepancy, start, inv_probl, lb = lb, ub = ub)
+	optp = OptimizationProblem(discrepancy, start, inv_probl, lb = lb, ub = ub , maxiters=pso_iters )
 	res = solve(optp, ParticleSwarm())
 
 end
@@ -601,13 +621,16 @@ begin
 	lam_changing_pars
 	refresh_plot
 
-	
+	(Tmeas_min,Tmeas_max) = extrema(temperatures)
+	(lam_minlim, lam_maxlim) = extrema( (extrema(lam_values)...,extrema(λ.(range(Tmeas_min,Tmeas_max,100)))...) )
 	plot_common_args = (grid = true, gridlinewidth=3, gridstyle = :dot,minorgrid=true, box = :on, linewidth = 2)
 	discr  = norm(inv_probl.residual)
 
 	# plotting fitted values 
-	p_fit_lam = plot_optimizable(λ, label = "calculated"; plot_common_args...)
-	plot!(p_fit_lam, lam_T_range,lam_values, label = "measured"; plot_common_args...)
+	p_fit_lam = plot_optimizable(λ, label = "fitted"; plot_common_args...)
+	plot!(p_fit_lam, lam_T_range,lam_values, label = "real"; plot_common_args...)
+	xlims!(p_fit_lam,(0.99*Tmeas_min,Tmeas_max*1.01))
+	ylims!(p_fit_lam, (0.9*lam_minlim, 1.1*lam_maxlim))
 	xlabel!(p_fit_lam, "Temperature, ᵒC")
 	ylabel!(p_fit_lam, "Thermal conductivity, W/(m*K)")
 	title!(p_fit_lam, "Fitted VS measured")
@@ -629,11 +652,11 @@ begin
 	ylabel!(p_residual, "ΔT, ᵒC")
 end ;
 
-# ╔═╡ 8c970432-b3c7-4837-9456-7744b0ffcc90
-p_residual
-
 # ╔═╡ 454e2649-539e-443e-bd1f-d5c2cd5b5cf6
 p_fit_lam
+
+# ╔═╡ 8c970432-b3c7-4837-9456-7744b0ffcc90
+p_residual
 
 # ╔═╡ 3736ef61-1756-4c68-95cb-1d61f57b321a
 p_distr
@@ -705,12 +728,29 @@ function interpolate_pref(p_ref)
 	T_ref_int = cubic_spline_interpolation((x2int,y2int), p_ref.T)
 end
 
+# ╔═╡ ad366a29-e978-4aa4-a3e6-a269556ca766
+# Кнопка для запуска сканирования
+@bind scan_trigger Button("Сканировать папку")
+
+# ╔═╡ 5c0c8bad-d8b7-433a-a317-cfbedf4caa61
+begin
+	scan_trigger
+	files = filter(isfile, readdir(pwd(), join=true))
+	@bind selected_files confirm(PlutoUI.MultiSelect(files .= basename.(files)))
+
+
+end
+
+# ╔═╡ f08ecadc-c820-412f-b002-4c0f138a8d8e
+
+
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
 [deps]
 AllocCheck = "9b6a8646-10ed-4001-bbdc-1d2f46dfbb1a"
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 FFTW = "7a1cc6ca-52ef-59f5-83cd-3a7055c09341"
+FunctionWrappers = "069b7b12-0de2-55c6-9aab-29f3d0a68a2e"
 Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
 LegendrePolynomials = "3db4a2ba-fc88-11e8-3e01-49c72059a882"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
@@ -722,6 +762,7 @@ PlutoPlotly = "8e989ff0-3d88-8e9f-f020-2b208a939ff0"
 PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
 Polynomials = "f27b6e38-b328-58d1-80ce-0feddd5e7a45"
 PrettyTables = "08abe8d2-0d0c-5749-adfa-8a2ac140af0d"
+ProfileCanvas = "efd6af41-a80b-495e-886c-e51b0c7d77a3"
 RecipesBase = "3cdcf5f2-1ef4-517c-9805-6587b60abb01"
 Reexport = "189a3867-3050-52da-a836-e630ba90ab69"
 Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
@@ -731,16 +772,18 @@ StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 AllocCheck = "~0.2.3"
 BenchmarkTools = "~1.6.3"
 FFTW = "~1.10.0"
+FunctionWrappers = "~1.1.3"
 Interpolations = "~0.16.2"
 LegendrePolynomials = "~0.4.5"
 Observables = "~0.5.5"
 Optimization = "~5.2.0"
 OptimizationOptimJL = "~0.4.8"
-Plots = "~1.41.5"
+Plots = "~1.41.6"
 PlutoPlotly = "~0.6.5"
 PlutoUI = "~0.7.79"
 Polynomials = "~4.1.0"
 PrettyTables = "~3.2.1"
+ProfileCanvas = "~0.1.7"
 RecipesBase = "~1.3.4"
 Reexport = "~1.2.2"
 Revise = "~3.13.2"
@@ -753,7 +796,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.12.5"
 manifest_format = "2.0"
-project_hash = "1a989487a52f7e9ca3d314bf12589a975fe4432b"
+project_hash = "2a52ed003a875c407dc0e7b49d552aa677e15aa6"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "f7304359109c768cf32dc5fa2d371565bb63b68a"
@@ -915,9 +958,9 @@ version = "0.5.0"
 
 [[deps.Cairo_jll]]
 deps = ["Artifacts", "Bzip2_jll", "CompilerSupportLibraries_jll", "Fontconfig_jll", "FreeType2_jll", "Glib_jll", "JLLWrappers", "LZO_jll", "Libdl", "Pixman_jll", "Xorg_libXext_jll", "Xorg_libXrender_jll", "Zlib_jll", "libpng_jll"]
-git-tree-sha1 = "fde3bf89aead2e723284a8ff9cdf5b551ed700e8"
+git-tree-sha1 = "a21c5464519504e41e0cbc91f0188e8ca23d7440"
 uuid = "83423d85-b0ee-5818-9007-b63ccbeb887a"
-version = "1.18.5+0"
+version = "1.18.5+1"
 
 [[deps.ChainRulesCore]]
 deps = ["Compat", "LinearAlgebra"]
@@ -1015,9 +1058,9 @@ weakdeps = ["InverseFunctions"]
 
 [[deps.ConcurrentUtilities]]
 deps = ["Serialization", "Sockets"]
-git-tree-sha1 = "d9d26935a0bcffc87d2613ce14c527c99fc543fd"
+git-tree-sha1 = "21d088c496ea22914fe80906eb5bce65755e5ec8"
 uuid = "f0e56b4a-5159-44fe-b623-3e5288b988bb"
-version = "2.5.0"
+version = "2.5.1"
 
 [[deps.ConsoleProgressMonitor]]
 deps = ["Logging", "ProgressMeter"]
@@ -1964,9 +2007,9 @@ version = "0.8.23"
 
 [[deps.Plots]]
 deps = ["Base64", "Contour", "Dates", "Downloads", "FFMPEG", "FixedPointNumbers", "GR", "JLFzf", "JSON", "LaTeXStrings", "Latexify", "LinearAlgebra", "Measures", "NaNMath", "Pkg", "PlotThemes", "PlotUtils", "PrecompileTools", "Printf", "REPL", "Random", "RecipesBase", "RecipesPipeline", "Reexport", "RelocatableFolders", "Requires", "Scratch", "Showoff", "SparseArrays", "Statistics", "StatsBase", "TOML", "UUIDs", "UnicodeFun", "Unzip"]
-git-tree-sha1 = "1cc8ad0762e59e713ee3ef28f9b78b2c9f4ca078"
+git-tree-sha1 = "cb20a4eacda080e517e4deb9cfb6c7c518131265"
 uuid = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
-version = "1.41.5"
+version = "1.41.6"
 
     [deps.Plots.extensions]
     FileIOExt = "FileIO"
@@ -2075,6 +2118,12 @@ version = "1.11.0"
 deps = ["StyledStrings"]
 uuid = "9abbd945-dff8-562f-b5e8-e1ebf5ef1b79"
 version = "1.11.0"
+
+[[deps.ProfileCanvas]]
+deps = ["Base64", "JSON", "Pkg", "Profile", "REPL"]
+git-tree-sha1 = "990016fb1508b0726a70039f39569720d054c78d"
+uuid = "efd6af41-a80b-495e-886c-e51b0c7d77a3"
+version = "0.1.7"
 
 [[deps.ProgressLogging]]
 deps = ["Logging", "SHA", "UUIDs"]
@@ -2854,6 +2903,7 @@ version = "1.13.0+0"
 
 # ╔═╡ Cell order:
 # ╠═c7400800-f152-11f0-a386-29e067f9216c
+# ╠═b6133376-a592-48ee-8d63-a8413e20088d
 # ╠═5fe54406-20d7-4747-bcd4-c5c0f17af47a
 # ╠═e6216c49-09a8-45c5-8c3a-6d1f7281cc3e
 # ╠═c806aa46-a30e-4431-b2e1-c7131ce86615
@@ -2881,7 +2931,7 @@ version = "1.13.0+0"
 # ╟─ed45f038-ae2b-4888-8547-ab9638170842
 # ╟─ddc9ba47-c4f2-4c77-8a9c-c598b7eb322b
 # ╟─3acc0be7-dabc-4577-917d-26530cf192bd
-# ╠═38976547-9399-49f1-b83e-0833327ea0ed
+# ╟─38976547-9399-49f1-b83e-0833327ea0ed
 # ╟─8f6d3be5-ffb5-41d5-8e50-f4353193c53c
 # ╟─0eae0fd4-8b5d-448a-b935-e06d469f080b
 # ╟─9fbe7c0d-90b7-4348-8b22-d8058452a02b
@@ -2896,16 +2946,21 @@ version = "1.13.0+0"
 # ╟─6f7cd9aa-0a48-4870-9223-4b7366d06867
 # ╟─542bebdb-0cdc-4c07-9210-9c773b406bbd
 # ╟─99f51ecf-36e4-4a0b-aa14-0757c88c69a3
-# ╠═c1bd739f-39b0-4849-a468-cb177dab7d6a
-# ╟─a02ce5d4-1845-410e-988c-f9f71fd129d3
-# ╟─9a602387-0383-41a3-84f2-2c31fbd93d6e
-# ╠═8c970432-b3c7-4837-9456-7744b0ffcc90
+# ╟─81314d03-95c2-4eb5-9f15-09f660b2c875
+# ╟─488e4960-4420-4875-a5c4-cecba610dd1a
+# ╟─1843f411-4706-441f-a07f-5cd77a5650b1
+# ╟─8189333a-7ee8-44a0-9d76-a8efccd22666
 # ╟─454e2649-539e-443e-bd1f-d5c2cd5b5cf6
+# ╟─9a602387-0383-41a3-84f2-2c31fbd93d6e
+# ╟─c1bd739f-39b0-4849-a468-cb177dab7d6a
+# ╟─a02ce5d4-1845-410e-988c-f9f71fd129d3
+# ╟─8c970432-b3c7-4837-9456-7744b0ffcc90
 # ╟─3736ef61-1756-4c68-95cb-1d61f57b321a
 # ╟─991bba10-d77b-402c-ad3b-a69c719ef58f
-# ╠═b7f738ad-2faa-4399-be33-71c43184a4c7
-# ╠═b7cab05e-c24f-4268-ba7b-f361c1e9076d
-# ╠═083dacae-f6ad-436e-b686-e248d2dacc4f
+# ╟─b7f738ad-2faa-4399-be33-71c43184a4c7
+# ╟─b7cab05e-c24f-4268-ba7b-f361c1e9076d
+# ╠═98a565ad-cfa2-49cd-9380-d577df12cfdd
+# ╠═01d72198-4ee9-436b-ada2-035821b8698d
 # ╟─e9c5ed77-2ea4-4c20-b1f5-88d7fe700e6c
 # ╠═5ab2bb2f-fd46-42ff-bdb2-3ba08231d9b4
 # ╟─b832d7ff-e2b8-4822-8400-7729c8ccff6f
@@ -2925,5 +2980,8 @@ version = "1.13.0+0"
 # ╟─802f203a-8f5b-4a64-a26b-4fe7f812ff56
 # ╟─7017c716-8682-4a74-9bfe-7dc09879db16
 # ╟─e525b2ec-f4a7-4052-af2b-7a9b4fa4f520
+# ╟─ad366a29-e978-4aa4-a3e6-a269556ca766
+# ╠═5c0c8bad-d8b7-433a-a317-cfbedf4caa61
+# ╠═f08ecadc-c820-412f-b002-4c0f138a8d8e
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002

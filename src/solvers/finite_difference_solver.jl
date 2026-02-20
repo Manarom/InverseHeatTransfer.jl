@@ -206,7 +206,7 @@ function unified_fd_solver!( problem::HeatTransferProblem{DT, CF, LF, LDF, ITF, 
         
         Tmm1 = T1
         
-        for m = 1 : M - 1 #% цикл по времени
+        @inbounds for m = 1 : M - 1 #% цикл по времени
             Tm = @view T[:,m] # Tm current time
             # filling current values of physical quantities
               @inbounds  for ii in 1 : N

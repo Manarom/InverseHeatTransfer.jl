@@ -1,9 +1,9 @@
 module PolynomialWrappers
-    using LinearAlgebra,Interpolations,Polynomials,LegendrePolynomials,StaticArrays,RecipesBase, FFTW
+    using LinearAlgebra, Interpolations, Polynomials, LegendrePolynomials, StaticArrays, RecipesBase, FFTW
 
     import Base.Broadcast: broadcastable
 
-    export BernsteinSymPoly,StandPoly, LegPoly,ChebPoly, ScaledPolynomial, AbstractPoly, VanderMatrix
+    export BernsteinSymPoly, StandPoly , LegPoly , ChebPoly , ScaledPolynomial , AbstractPoly , VanderMatrix
 
     export polyfit!, polyfit, polyfit_unscaled!, polyfit_unscaled, vander
     
@@ -96,11 +96,12 @@ const POLY_NAMES_TYPES_DICT = Base.ImmutableDict(
     end
 
     bases_folder = joinpath(".","bases")
+    include(joinpath(bases_folder,"stand_basis.jl"))
     include(joinpath(bases_folder,"bernstein_basis.jl"))
     include(joinpath(bases_folder,"chebyshev_basis.jl"))
     include(joinpath(bases_folder,"trig_basis.jl"))
     include(joinpath(bases_folder,"legendre_basis.jl"))
-    include(joinpath(bases_folder,"stand_basis.jl"))
+ 
     #include(joinpath(bases_folder,"_basis.jl"))
 
     Base.copy(p::AbstractPoly) = typeof(p)(p.coeffs)
@@ -126,8 +127,8 @@ const POLY_NAMES_TYPES_DICT = Base.ImmutableDict(
     When calling ScaledPolynomial on argument, it normalizes its input than calls on normalized 
     """
     (sp::ScaledPolynomial)(x) = eval_poly(sp, x)
-    eval_poly(p::ScaledPolynomial, x)  where {P,T} = scale_x_to_ξ(x, p) |> p.poly
-    eval_scaled_poly(p::ScaledPolynomial, x, _, _) where {P,T} = scale_x_to_ξ(x, p) |> eval_scaled_poly(p.poly,x,p.xmin,p.xmax)
+    eval_poly(p::ScaledPolynomial, x)   = scale_x_to_ξ(x, p) |> p.poly
+    eval_scaled_poly(p::ScaledPolynomial, x, _, _) = scale_x_to_ξ(x, p) |> eval_scaled_poly(p.poly,x,p.xmin,p.xmax)
 
     left_scaler(p::ScaledPolynomial) = p.xmin
     right_scaler(p::ScaledPolynomial) = p.xmax

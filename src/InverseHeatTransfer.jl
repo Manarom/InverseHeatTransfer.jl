@@ -22,6 +22,7 @@ module InverseHeatTransfer
     
     (f::BinaryPredicate{D})(x::D,y::D) where D = f.f(x,y)=# #this was slow
 
+
     struct OptimizableVariable{N, DT, P,  B, V, FL,FU}
         p::P
         flag::B 
@@ -31,33 +32,67 @@ module InverseHeatTransfer
         is_l_bounded::Base.RefValue{Bool}
         lb_violation_fun::FL
         ub_violation_fun::FU
-        function OptimizableVariable(::Type{DT}, p::P, flag::B, lb::V, ub::V, 
+        """
+    OptimizableVariable(::Type{DT}, p::P, flag::B, lb::V, ub::V, 
+                                 iu::Ref{Bool}, il::Ref{Bool}, 
+                                 f1::F1, f2::F2) where {P, B <: MVector{N,Bool}, V, F1, F2} where {N,DT}
+
+    Wrapper interface for some callable object of type `P `which can be mutated by index `flag`
+
+    This structure can be bounded from the `top` and from the `bottom` using some objects `ub` and `lb` , both of the same type `V`
+Variables `iu` and `il` are just flags which can be used to turn `on` and `off` this boundaries, boundaries are compared 
+to the current state of the varible `p` using `f1` and `f2` functions, which must take two argument of `P` and `V` types 
+and return a single value.
+
+
+"""
+function OptimizableVariable(::Type{DT}, p::P, flag::B, lb::V, ub::V, 
                                  iu::Ref{Bool}, il::Ref{Bool}, 
                                  f1::F1, f2::F2) where {P, B <: MVector{N,Bool}, V, F1, F2} where {N,DT}
             # Здесь можно добавить проверки размеров, если нужно
             new{N, DT, P, B, V, F1, F2}(p, flag, lb, ub, iu, il, f1, f2)
         end
     end
+     # default methods
     const OV = OptimizableVariable
-    # default methods
-    parnumber(::OV{N}) where N = N
-    isoptimizable(ov::OV) = any(ov.flag)
     (ov::OV)(x) = ov.p(x)
-    change_flag(o::OV; new_flag = true) = isa(new_flag, Bool) ? fill!(o.flag, new_flag) : copyto!(o.flag, new_flag)
-    refill!(ov::OV, x) = copyto!(coeffs(ov), x)
-    modify!(ov::OV, x) = copyto!(fview_coeffs(ov), x)
+
+parnumber(::OV{N}) where N = N
+isoptimizable(ov::OV) = any(ov.flag)
+is_lower_bouned(ov::OV) = ov.is_l_bounded[]
+is_upper_bounded(ov::OV) = ov.is_u_bounded[]
+optimizable_parnumber(ov::OV) = sum(ov.flag)
+change_flag(o::OV; new_flag = true) = isa(new_flag, Bool) ? fill!(o.flag, new_flag) : copyto!(o.flag, new_flag)
+    """
+    refill!(ov::OV, x)
+
+Refills all coefficients from another vector 
+"""
+refill!(ov::OV, x) = begin 
+        copyto!(coeffs(ov), x)
+        return nothing
+    end
+    """
+    modify!(ov::OV, x)
+
+Modifies coefficients which are marked as adjustable
+"""
+modify!(ov::OV, x) = begin 
+        copyto!(fview_coeffs(ov), x)
+        return nothing
+    end
     count_violations(a, b, f) = count(f(i,k) for (i,k) in zip(a,b))
-    count_lower_bound_violations(ov::OV) = (ov.is_l_bounded[] && any(ov.flag)) ? count_violations(fview_coeffs(ov),fview_lb_coeffs(ov), ov.lb_violation_fun) : 0
-    count_upper_bound_violations(ov::OV)= (ov.is_l_bounded[] && any(ov.flag)) ? count_violations(fview_coeffs(ov),fview_ub_coeffs(ov), ov.ub_violation_fun) : 0
+    count_lower_bound_violations(ov::OV) = (is_lower_bouned(ov) && isoptimizable(ov)) ? count_violations(fview_coeffs(ov),fview_lb_coeffs(ov), ov.lb_violation_fun) : 0
+    count_upper_bound_violations(ov::OV)= (is_upper_bounded(ov) && isoptimizable(ov)) ? count_violations(fview_coeffs(ov),fview_ub_coeffs(ov), ov.ub_violation_fun) : 0
     count_bound_violations(o::OV) = count_lower_bound_violations(o) + count_upper_bound_violations(o)
     fview_coeffs(ov::OV) = view(coeffs(ov), ov.flag)
     fview_lb_coeffs(ov::OV) = view(lb_coeffs(ov), ov.flag)
     fview_ub_coeffs(ov::OV) = view(ub_coeffs(ov), ov.flag)
-    extract_params(ov::OV) = copy(coeffs(ov))
+    extract_all_params(ov::OV) = copy(coeffs(ov))
     extract_optimizable_params(ov::OV) = copy(fview_coeffs(ov))
     # interface
     # necessary
-    coeffs(::OV{N,DT,P}) where {N,DT,P}  = error("OptimizableVariable wrappers around $(P) is not implemenented")
+    coeffs(::OV{N,DT,P}) where {N,DT,P}  = error("OptimizableVariable wrappers is not implemenented for $(P) type")
     lb_coeffs(::OV{N,DT,P})  where {N,DT,P}  = error("OptimizableVariable wrappers around $(P) is not implemenented")
     ub_coeffs(::OV{N,DT,P}) where {N,DT,P}  = error("OptimizableVariable wrappers around $(P) is not implemenented")
     # not necessary
@@ -162,7 +197,7 @@ function SingleInverseProblem(
                                         C::OptimizableVariable,
                                         λ::OptimizableVariable, 
                                         dλdT::OptimizableVariable,
-                                        thickness, 
+                                        thickness::Number, 
                                         xpoints_number::Int, 
                                         time_points_number::Union{Int,Nothing} = nothing,
                                         covariance::CV = NoCovariance(), 
@@ -198,7 +233,7 @@ function SingleInverseProblem(
             upper_grid_coordinate = is_upper_flux_provided ? 0.0 : thermocouples_locations[1]
             lower_grid_coordinate = is_lower_flux_provided ? thickness : thermocouples_locations[end]
             thickness_internal = lower_grid_coordinate - upper_grid_coordinate
-            (tmin,tmax) = extrema(time_data)
+            (tmin , tmax) = extrema(time_data)
             # @. time_data -=tmin
             tmax = tmax - tmin
             tpoints_number = isnothing(time_points_number) ? length(time_data) : time_points_number
@@ -213,7 +248,6 @@ function SingleInverseProblem(
 
             rtol = thermocouple_location_relative_tolerance <= 0.0 ? 1/(2*(xpoints_number - 1)) : thermocouple_location_relative_tolerance
             
-            new_locations = thermocouples_locations[first_index : last_index] .- upper_grid_coordinate
             located_inds_number = locate_indices_on_grid!(thermocouple_indices , 
                                                             thermocouples_locations[first_index : last_index],
                                                             grid , 
@@ -287,6 +321,7 @@ function SingleInverseProblem(
     function fill_residual!(p::SingleInverseProblem)
         solve_problem!(p.direct_problem)
         @. p.residual = p.Tdata_evaluated - p.Tdata_measured
+        return nothing
     end
     function interpolate_matrix!(Mout, t , M , tnew , start_col = 1, stop_col = 0)
         stop_col == 0 && (stop_col = size(M,2))
