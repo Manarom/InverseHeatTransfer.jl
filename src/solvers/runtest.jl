@@ -1,9 +1,9 @@
 # runner for julia codes and benchmarking
 using BenchmarkTools,Plots,Polynomials
- plotly()
-#gr()
+ #plotly()
+gr()
 using AllocCheck#, Revise
-include("finite_difference_functions.jl")
+include("OneDHeatTransfer.jl")
 
 lam_pars = [0.44, 0.21e-2, 0.35e-4]
 lam_fun = Polynomials.ImmutablePolynomial(lam_pars) #T -> lam_poly(T) # теплопроводность
@@ -46,9 +46,10 @@ plot(T,st=:surface)
 
 
 p_exp = OneDHeatTransfer.HeatTransferProblem(Cp_fun,lam_fun,lam_der,initT_f, 
-                            H,N, tmax,M,
-                            BC_up_f, u_BC_type,
-                            BC_dwn_f, l_BC_type, Float64)
+                            H, N, tmax, M,
+                            BC_up_f, BC_dwn_f, Float64,
+                            u_BC_type,
+                            l_BC_type )
 
 s_exp = OneDHeatTransfer.BFD1_EXP_EXP_EXP()
     
@@ -62,9 +63,10 @@ plot(p_exp.T .- T,st=:surface)
 #implicit solver 
 
 p_imp = OneDHeatTransfer.HeatTransferProblem(Cp_fun,lam_fun,lam_der,initT_f, 
-                            H,N, tmax,M,
-                            BC_up_f, u_BC_type,
-                            BC_dwn_f, l_BC_type, Float64)
+                            H, N, tmax, M,
+                            BC_up_f, BC_dwn_f, Float64,
+                            u_BC_type,
+                            l_BC_type )
 
 s_imp = OneDHeatTransfer.BFD1_IMP_EXP_EXP()
     
@@ -73,9 +75,10 @@ plot(p_imp.T, st=:surface)
 plot(p_imp.T .- T,st=:surface)
 # testing crank nicolson
 p_cn = OneDHeatTransfer.HeatTransferProblem(Cp_fun,lam_fun,lam_der,initT_f, 
-                           H,N, tmax,M,
-                            BC_up_f, u_BC_type,
-                            BC_dwn_f, l_BC_type, Float64)
+                            H, N, tmax, M,
+                            BC_up_f, BC_dwn_f, Float64,
+                            u_BC_type,
+                            l_BC_type )
 
 s_cn = OneDHeatTransfer.BFD1_CN_EXP_EXP()
 
@@ -90,9 +93,11 @@ plot(p_cn.T .- p_imp.T,st=:surface)
 
 # testing BFD2_IMP_EXP_EXP
 p_bfd2_imp = OneDHeatTransfer.HeatTransferProblem(Cp_fun,lam_fun,lam_der,initT_f, 
-                           H,N, tmax,M,
-                            BC_up_f, u_BC_type,
-                            BC_dwn_f, l_BC_type, Float64)
+                            H, N, tmax, M,
+                            BC_up_f, BC_dwn_f, Float64,
+                            u_BC_type,
+                            l_BC_type )
+
 s_bfd2_imp = OneDHeatTransfer.BFD2_IMP_EXP_EXP()                            
 OneDHeatTransfer.unified_fd_solver!(p_bfd2_imp,s_bfd2_imp)
 plot(p_bfd2_imp.T,st=:surface)
@@ -100,9 +105,11 @@ plot(p_bfd2_imp.T .- p_cn.T,st=:surface)
 
 # testing BFD2_CN_EXP_EXP
 p_bfd2_cn = OneDHeatTransfer.HeatTransferProblem(Cp_fun,lam_fun,lam_der,initT_f, 
-                           H,N, tmax,M,
-                            BC_up_f, u_BC_type,
-                            BC_dwn_f, l_BC_type, Float64)
+                            H, N, tmax, M,
+                            BC_up_f, BC_dwn_f, Float64,
+                            u_BC_type,
+                            l_BC_type )
+                            
 s_bfd2_cn = OneDHeatTransfer.BFD2_CN_EXP_EXP()                            
 OneDHeatTransfer.unified_fd_solver!(p_bfd2_cn,s_bfd2_cn)
 plot(p_bfd2_cn.T, st=:surface)

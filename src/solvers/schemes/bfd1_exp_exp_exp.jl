@@ -86,7 +86,8 @@ end
         L_f = problem.L_f
         C_f = problem.C_f
         Ld_f = problem.Ld_f
-        for m = 1:M - 1 #% цикл по времени
+        
+        for m = 1 : M - 1 #% цикл по времени
             Tm = @view T[:,m]
 
             @inbounds @simd for ii in 1:N

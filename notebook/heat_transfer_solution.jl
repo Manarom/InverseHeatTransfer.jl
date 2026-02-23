@@ -20,16 +20,19 @@ end
 using Revise,AllocCheck, PrettyTables
 
 # ╔═╡ c7400800-f152-11f0-a386-29e067f9216c
-using PlutoUI,Polynomials,Interpolations, BenchmarkTools,PlutoPlotly,Interpolations,Polynomials,LegendrePolynomials,StaticArrays,RecipesBase,Plots
+using PlutoUI,Polynomials,Interpolations, BenchmarkTools,PlutoPlotly,Interpolations,Polynomials,LegendrePolynomials,StaticArrays,RecipesBase,Plots, FFTW
 
 # ╔═╡ 9386589f-1767-46a8-8a60-ec3f44a0970d
-deps_folder = joinpath(@__DIR__,"..\\src")
+solver_path = joinpath(@__DIR__,"..","src","solvers")
+
+# ╔═╡ a91ae0d5-6a90-472e-abd7-a5b02cf470fe
+polynomials_path = joinpath(@__DIR__,"..","src","polynomials")
 
 # ╔═╡ ada6d5ce-ac5e-4de8-b9fe-4394be6a34ca
-includet(joinpath(deps_folder,"finite_difference_functions.jl"))
+includet(joinpath(solver_path,"OneDHeatTransfer.jl"))
 
 # ╔═╡ ba9efa8d-054c-42a4-99a4-31319c87c54b
-includet(joinpath(deps_folder,"PolynomialWrappers.jl"))
+includet(joinpath(polynomials_path,"PolynomialWrappers.jl"))
 
 # ╔═╡ 1936a00f-69f3-48e4-9176-6b2186e40c2c
 	begin 
@@ -47,7 +50,7 @@ begin
 	Cp = 1000.0# heat capacity
 	Ro = 2700.0# density
 	H = 15e-3# layer thickness in m
-	PolyType = PW.BernsteinSymPolyWrapper
+	PolyType = PW.BernsteinSymPoly
 	#@eval Cp_fun(_) = $Cp*$Ro# capacity
 	#@eval initT_f(x) = $Tinit*cos(0*x*pi/$H) # starting 
 end;
@@ -200,26 +203,6 @@ end
 	"""
 end
 
-# ╔═╡ 0eae0fd4-8b5d-448a-b935-e06d469f080b
-@bind  lam_pars PlutoUI.combine() do Child
-	md"""
-	``\lambda(T) = a_0T^3 + a_1T^2 + a_2T + a_3``
-	
-	a0 = $(
-		Child(Slider(1e-3:0.01:100,default=17,show_value = true))
-	) \
-	a1 = $(
-		Child(Slider(1e-3:0.01:100,default=12,show_value = true))
-	)\
-	a2 = $(
-		Child(Slider(1e-3:0.01:100,default=8,show_value = true))
-	)\
-	a3 = $(
-		Child(Slider(1e-3:0.01:100,default=10,show_value = true))
-	)\
-	"""
-end
-
 # ╔═╡ 4316370d-583d-4b48-8632-d17bc34209bd
 md"""
 	time nods = $(@bind M Slider(2:2:1000, default = 50, show_value = true))
@@ -277,6 +260,26 @@ begin
 	ylabel!("Temperature distribution, ᵒC")
 end
 
+# ╔═╡ 0eae0fd4-8b5d-448a-b935-e06d469f080b
+@bind  lam_pars PlutoUI.combine() do Child
+	md"""
+	``\lambda(T) = a_0T^3 + a_1T^2 + a_2T + a_3``
+	
+	a0 = $(
+		Child(Slider(1e-3:0.01:100,default=17,show_value = true))
+	) \
+	a1 = $(
+		Child(Slider(1e-3:0.01:100,default=12,show_value = true))
+	)\
+	a2 = $(
+		Child(Slider(1e-3:0.01:100,default=8,show_value = true))
+	)\
+	a3 = $(
+		Child(Slider(1e-3:0.01:100,default=10,show_value = true))
+	)\
+	"""
+end
+
 # ╔═╡ 84bfb85d-def3-4a08-be60-01de2d68be36
 md" Use plotly backend for surf $(@bind is_use_plotly CheckBox(default = false))"
 
@@ -329,7 +332,7 @@ begin
 end;
 
 # ╔═╡ 38976547-9399-49f1-b83e-0833327ea0ed
-	problem = Main.OneDHeatTransfer.HeatTransferProblem(Cp_fun, 					lam_fun,lam_der,initT_f, H,N, tmax,M,BC_up_f,upper_bc_type(),BC_dwn_f,lower_bc_type(),Float64);
+	problem = Main.OneDHeatTransfer.HeatTransferProblem(Cp_fun, 					lam_fun,lam_der,initT_f, H,N, tmax, M, BC_up_f, BC_dwn_f, Float64, upper_bc_type(),lower_bc_type());
 
 # ╔═╡ 9fbe7c0d-90b7-4348-8b22-d8058452a02b
 begin 
@@ -394,7 +397,7 @@ end
 # ╔═╡ 3acc0be7-dabc-4577-917d-26530cf192bd
 if is_use_plotly 
 	#plotly()
-	tr = PlutoPlotly.surface(z=TCN, colorscale="Viridis")
+	tr = PlutoPlotly.surface(z=TCN, colorscale="Heat")
 	layout = Layout(
     width=800, 
     height=600, 
@@ -643,6 +646,7 @@ PLUTO_PROJECT_TOML_CONTENTS = """
 [deps]
 AllocCheck = "9b6a8646-10ed-4001-bbdc-1d2f46dfbb1a"
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+FFTW = "7a1cc6ca-52ef-59f5-83cd-3a7055c09341"
 Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
 LegendrePolynomials = "3db4a2ba-fc88-11e8-3e01-49c72059a882"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
@@ -657,6 +661,7 @@ StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 [compat]
 AllocCheck = "~0.2.3"
 BenchmarkTools = "~1.6.3"
+FFTW = "~1.10.0"
 Interpolations = "~0.16.2"
 LegendrePolynomials = "~0.4.5"
 Plots = "~1.41.4"
@@ -673,9 +678,20 @@ StaticArrays = "~1.9.16"
 PLUTO_MANIFEST_TOML_CONTENTS = """
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.12.4"
+julia_version = "1.12.5"
 manifest_format = "2.0"
-project_hash = "0c6833ba483c3350bb844e38b11bbff101e984c0"
+project_hash = "8c2e1f4d0ef79e4326bc60de50e62c123759578c"
+
+[[deps.AbstractFFTs]]
+deps = ["LinearAlgebra"]
+git-tree-sha1 = "d92ad398961a3ed262d8bf04a1a2b8340f915fef"
+uuid = "621f4979-c628-5d54-868e-fcf4e3e8185c"
+version = "1.5.0"
+weakdeps = ["ChainRulesCore", "Test"]
+
+    [deps.AbstractFFTs.extensions]
+    AbstractFFTsChainRulesCoreExt = "ChainRulesCore"
+    AbstractFFTsTestExt = "Test"
 
 [[deps.AbstractPlutoDingetjes]]
 deps = ["Pkg"]
@@ -941,6 +957,18 @@ git-tree-sha1 = "01ba9d15e9eae375dc1eb9589df76b3572acd3f2"
 uuid = "b22a6f82-2f65-5046-a5b2-351ab43fb4e5"
 version = "8.0.1+0"
 
+[[deps.FFTW]]
+deps = ["AbstractFFTs", "FFTW_jll", "Libdl", "LinearAlgebra", "MKL_jll", "Preferences", "Reexport"]
+git-tree-sha1 = "97f08406df914023af55ade2f843c39e99c5d969"
+uuid = "7a1cc6ca-52ef-59f5-83cd-3a7055c09341"
+version = "1.10.0"
+
+[[deps.FFTW_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl"]
+git-tree-sha1 = "6d6219a004b8cf1e0b4dbe27a2860b8e04eba0be"
+uuid = "f5851436-0d7a-5f13-b9de-f02708fd171a"
+version = "3.3.11+0"
+
 [[deps.FileWatching]]
 uuid = "7b1f6079-737a-58dc-b8bc-7a2ca5c1b5ee"
 version = "1.11.0"
@@ -1072,6 +1100,12 @@ deps = ["Logging", "Random"]
 git-tree-sha1 = "0ee181ec08df7d7c911901ea38baf16f755114dc"
 uuid = "b5f81e59-6552-4d32-b1f0-c071b021bf89"
 version = "1.0.0"
+
+[[deps.IntelOpenMP_jll]]
+deps = ["Artifacts", "JLLWrappers", "LazyArtifacts", "Libdl"]
+git-tree-sha1 = "ec1debd61c300961f98064cfb21287613ad7f303"
+uuid = "1d5cc7b8-4909-519e-a0f8-d0f5ad9712d0"
+version = "2025.2.0+0"
 
 [[deps.InteractiveUtils]]
 deps = ["Markdown"]
@@ -1331,6 +1365,12 @@ version = "3.5.0"
 git-tree-sha1 = "c64d943587f7187e751162b3b84445bbbd79f691"
 uuid = "6c6e2e6c-3030-632d-7369-2d6c69616d65"
 version = "1.1.0"
+
+[[deps.MKL_jll]]
+deps = ["Artifacts", "IntelOpenMP_jll", "JLLWrappers", "LazyArtifacts", "Libdl", "oneTBB_jll"]
+git-tree-sha1 = "282cadc186e7b2ae0eeadbd7a4dffed4196ae2aa"
+uuid = "856f044c-d86e-5d09-b602-aeab76dc8ba7"
+version = "2025.2.0+0"
 
 [[deps.MacroTools]]
 git-tree-sha1 = "1e0228a030642014fe5cfe68c2c0a818f9e3f522"
@@ -2152,6 +2192,12 @@ deps = ["Artifacts", "Libdl"]
 uuid = "8e850ede-7688-5339-a07c-302acd2aaf8d"
 version = "1.64.0+1"
 
+[[deps.oneTBB_jll]]
+deps = ["Artifacts", "JLLWrappers", "LazyArtifacts", "Libdl"]
+git-tree-sha1 = "1350188a69a6e46f799d3945beef36435ed7262f"
+uuid = "1317d2d5-d96f-522e-a858-c73665f53c3e"
+version = "2022.0.0+1"
+
 [[deps.p7zip_jll]]
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "Libdl"]
 uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
@@ -2177,11 +2223,12 @@ version = "1.13.0+0"
 """
 
 # ╔═╡ Cell order:
-# ╟─c7400800-f152-11f0-a386-29e067f9216c
-# ╟─5fe54406-20d7-4747-bcd4-c5c0f17af47a
-# ╟─9386589f-1767-46a8-8a60-ec3f44a0970d
-# ╟─ada6d5ce-ac5e-4de8-b9fe-4394be6a34ca
-# ╟─ba9efa8d-054c-42a4-99a4-31319c87c54b
+# ╠═c7400800-f152-11f0-a386-29e067f9216c
+# ╠═5fe54406-20d7-4747-bcd4-c5c0f17af47a
+# ╠═9386589f-1767-46a8-8a60-ec3f44a0970d
+# ╠═a91ae0d5-6a90-472e-abd7-a5b02cf470fe
+# ╠═ada6d5ce-ac5e-4de8-b9fe-4394be6a34ca
+# ╠═ba9efa8d-054c-42a4-99a4-31319c87c54b
 # ╟─1936a00f-69f3-48e4-9176-6b2186e40c2c
 # ╟─6c87fcb7-55e6-44f4-8978-12e74b9cfdbf
 # ╟─ea882e26-5972-443f-a7ac-3075701b90fe
@@ -2203,11 +2250,11 @@ version = "1.13.0+0"
 # ╟─ed45f038-ae2b-4888-8547-ab9638170842
 # ╟─ddc9ba47-c4f2-4c77-8a9c-c598b7eb322b
 # ╟─8f6d3be5-ffb5-41d5-8e50-f4353193c53c
-# ╟─0eae0fd4-8b5d-448a-b935-e06d469f080b
 # ╟─ec6e4678-a807-47f6-845d-dc529f38e80c
 # ╟─4316370d-583d-4b48-8632-d17bc34209bd
 # ╟─3acc0be7-dabc-4577-917d-26530cf192bd
 # ╟─38976547-9399-49f1-b83e-0833327ea0ed
+# ╟─0eae0fd4-8b5d-448a-b935-e06d469f080b
 # ╟─9fbe7c0d-90b7-4348-8b22-d8058452a02b
 # ╟─84bfb85d-def3-4a08-be60-01de2d68be36
 # ╟─8992ffda-fcbb-4994-9acb-1080056903b7

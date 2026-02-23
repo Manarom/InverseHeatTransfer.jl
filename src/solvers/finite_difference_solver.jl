@@ -1,6 +1,6 @@
 
 
-using LinearAlgebra #,NonlinearSolvers, StaticArrays #, LaTeXStrings
+
 
 
 const USE_FASTMATH = true
@@ -187,7 +187,7 @@ Unified solver for 1d heat transfer problems with various schemes
 
 """
 function unified_fd_solver!( problem::HeatTransferProblem{DT, CF, LF, LDF, ITF, G, BCU, BCD, TMATtype},
-                                    solver_scheme::FDSolverScheme{TS, CS, NLS, PS} = BFD2_IMP_EXP_EXP) where {DT, CF,LF,LDF,ITF, 
+                                    solver_scheme::FDSolverScheme{TS, CS, NLS, PS} = BFD2_IMP_EXP_EXP()) where {DT, CF,LF,LDF,ITF, 
                                     G <:UniformGrid{N,M}, BCU, BCD, 
                                     TMATtype <: AbstractMatrix{DT},  
                                     TS <: AbstractTimeScheme,
@@ -206,7 +206,7 @@ function unified_fd_solver!( problem::HeatTransferProblem{DT, CF, LF, LDF, ITF, 
         
         Tmm1 = T1
         
-        for m = 1 : M - 1 #% цикл по времени
+        @inbounds for m = 1 : M - 1 #% цикл по времени
             Tm = @view T[:,m] # Tm current time
             # filling current values of physical quantities
               @inbounds  for ii in 1 : N

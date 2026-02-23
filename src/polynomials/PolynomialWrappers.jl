@@ -1,7 +1,11 @@
 module PolynomialWrappers
-    using LinearAlgebra,Interpolations,Polynomials,LegendrePolynomials,StaticArrays,RecipesBase, FFTW
-    
-    export BernsteinSymPoly,StandPoly, LegPoly,ChebPoly, ScaledPolynomial
+    using LinearAlgebra, Interpolations, Polynomials, LegendrePolynomials, StaticArrays, RecipesBase, FFTW
+
+    import Base.Broadcast: broadcastable
+
+    export BernsteinSymPoly, StandPoly , LegPoly , ChebPoly , ScaledPolynomial , AbstractPoly , VanderMatrix
+
+    export polyfit!, polyfit, polyfit_unscaled!, polyfit_unscaled, vander
     
     
     const LEFT_SCALER = -1.0
@@ -25,7 +29,6 @@ Fills in-place the vector polynomial coefficients derivative
 
 """
 function derivative_coefficients!(a::AbstractVector{T}, poly::P) where {T, P <: AbstractPoly{N,T}} where {N}
-    @assert length(a) == N - 1 "Incorrect vector size"
     copyto!(a,derivative_coefficients(poly))
 end
 
@@ -45,6 +48,7 @@ scale_span(::AbstractPoly) = scale_span()
 left_scaler(::AbstractPoly) = left_scaler()
 right_scaler(::AbstractPoly) = right_scaler()
 
+broadcastable(x::AbstractPoly) = Ref(x)
     """
     check_derivative_size_consistency(::P, ::Q) where {P <: AbstractPoly{N,V1,R1}, Q <: AbstractPoly{M,V2,R2}} where {N, M,V1,V2,R1,R2}
 
@@ -65,21 +69,10 @@ const POLY_NAMES_TYPES_DICT = Base.ImmutableDict(
     )
     for (_poly_name, _PolyType) in  POLY_NAMES_TYPES_DICT
         x = String(_poly_name)
-        if _poly_name != :bernsteinsym 
-            @eval struct $_PolyType{N,T} <: AbstractPoly{N,T,Symbol($x)}
+         @eval struct $_PolyType{N,T} <: AbstractPoly{N,T,Symbol($x)}
                 coeffs::MVector{N,T}
                 $_PolyType(x::Union{NTuple{N,T},M}) where M <: StaticVector{N,T} where {T,N} = new{N,T}(MVector(x))
-            end
-        else 
-            @eval struct $_PolyType{N,T} <: AbstractPoly{N,T,Symbol($x)}
-                    coeffs::MVector{N,T}
-                    binoms::SVector{N,T}
-                    function  $_PolyType(coeffs::Union{NTuple{N,T},M}) where M <: StaticVector{N,T} where {N,T} 
-                        binoms = SVector{N,T}(binomial(N - 1, i) for i in 0 : N - 1)
-                        new{N,T}(MVector(coeffs),binoms)
-                    end
-                end
-        end  
+        end
         @eval  function $_PolyType(x::AbstractVector{T}) where T 
                     N = length(x)
                     $_PolyType(SVector{N}(x))
@@ -101,47 +94,19 @@ const POLY_NAMES_TYPES_DICT = Base.ImmutableDict(
               end
 
     end
+
     bases_folder = joinpath(".","bases")
+    include(joinpath(bases_folder,"stand_basis.jl"))
     include(joinpath(bases_folder,"bernstein_basis.jl"))
     include(joinpath(bases_folder,"chebyshev_basis.jl"))
+    include(joinpath(bases_folder,"trig_basis.jl"))
+    include(joinpath(bases_folder,"legendre_basis.jl"))
+ 
+    #include(joinpath(bases_folder,"_basis.jl"))
 
     Base.copy(p::AbstractPoly) = typeof(p)(p.coeffs)
     # derivatives StandardBasis
-    derivative_coefficients(p::StandPoly{N,T}) where {N,T} = ntuple(i -> i * p.coeffs[i + 1], N - 1)
 
-
-
-   function derivative_coefficients(p::LegPoly{N,T}) where {N,T}
-        s =  scale_span()/2.0
-        b = zeros(MVector{N - 1, T})
-        if N ≥ 2
-            @inbounds  b[N - 1] =  (2N - 3) * p.coeffs[N] / s # 0.5 * (N * (N - 1)) *
-        end
-        if N ≥ 3
-            @inbounds  b[N - 2] =  (2N - 5) * p.coeffs[N-1] / s #  0.5 * ((N - 1) * (N - 2)) 
-        end
-        @inbounds  for k = N - 3 : -1 : 1
-            b[k] =  (2k - 1) * (b[k + 2] / (2k + 3) + p.coeffs[k + 1]/s)
-        end
-    
-        return b.data
-    end
-    function derivative_coefficients(p::TrigPoly{N,T}) where {N,T}
-            is_ends_with_sin = iseven(N)
-            b = is_ends_with_sin ? MVector{N + 1, T}(undef) :  MVector{N, T}(undef)  # if ends with sin, one extra term should be added
-           fill!(b,zero(T))
-            for k = 2 : N
-                degree = k - 1
-                n = 1 + floor(degree / 2)
-                if isodd(k)  # cos((n-1)πx) → -(n-1)π sin(nπx)  
-                    b[k - 1] =  - T(π) * (n-1)/scale_span() * p.coeffs[k] 
-                else  # sin(nπx) → +nπ cos(nπx)!            
-                    b[k + 1] =   T(π) * n/scale_span() * p.coeffs[k]
-                end
-            end
-
-            return b.data
-        end
     struct ScaledPolynomial{Ptype,T} 
         poly::Ptype
         xmin::T
@@ -155,404 +120,382 @@ const POLY_NAMES_TYPES_DICT = Base.ImmutableDict(
         ScaledPolynomial(p::P;xmin = left_scaler(), xmax = right_scaler()) where P <: AbstractPoly{N,T} where {N,T} = 
                 new{P,T}(p, xmin, xmax)
     end
-    function derivative(sp::ScaledPolynomial)
-        p_der = derivative(sp.poly)
-        p_der.coeffs .*= scale_span_ξ_by_x(sp)
-        return ScaledPolynomial(p_der,xmin=left_scaler(sp),xmax = right_scaler(sp))
-    end
-        """
-    (sp::ScaledPolynomial{P,T})(x::T) where {P,T}
 
-When calling ScaledPolynomial on argument, it normalizes its input than calls on normalized 
-"""
-    (sp::ScaledPolynomial{P,T})(x::T) where {P,T} = scale_x_to_ξ(x, sp) |> sp.poly
+            """
+        (sp::ScaledPolynomial{P,T})(x::T) where {P,T}
+
+    When calling ScaledPolynomial on argument, it normalizes its input than calls on normalized 
+    """
+    (sp::ScaledPolynomial)(x) = eval_poly(sp, x)
+    eval_poly(p::ScaledPolynomial, x)   = scale_x_to_ξ(x, p) |> p.poly
+    eval_scaled_poly(p::ScaledPolynomial, x, _, _) = scale_x_to_ξ(x, p) |> eval_scaled_poly(p.poly,x,p.xmin,p.xmax)
+
     left_scaler(p::ScaledPolynomial) = p.xmin
     right_scaler(p::ScaledPolynomial) = p.xmax
     scalers(p::ScaledPolynomial) = p.xmin,p.xmax
     scale_span(p::ScaledPolynomial) = p.xmax - p.xmin
     coeffs(sp::ScaledPolynomial) = coeffs(sp.poly)
+
+    function derivative(sp::ScaledPolynomial)
+        p_der = derivative(sp.poly)
+        span = scale_span_ξ_by_x(sp)
+        p_der.coeffs .*= span
+        return ScaledPolynomial(p_der , xmin = left_scaler(sp) , xmax = right_scaler(sp))
+    end
+    function derivative!(p_der::ScaledPolynomial, p::ScaledPolynomial)
+            (p_der.xmin == left_scaler(p) && p_der.xmax == right_scaler(p))|| error("polynomials must be of the same scaling")
+            span = scale_span_ξ_by_x(p)
+            derivative!(p_der.poly, p.poly)
+            p_der.poly.coeffs .*= span
+            return p_der
+    end
+        """
+        scale_x_to_ξ(x,x_min,x_max)
+
+    Takes x supposing it is scaled from x_min to x_max and scales it 
+    to default scaling from $(left_scaler()) to $(right_scaler())
     """
-    scale_x_to_ξ(x,x_min,x_max)
+    scale_x_to_ξ(x, x_min, x_max) = left_scaler() + scale_span() * (x - x_min)/(x_max - x_min) 
+    scale_ξ_to_x(ξ, x_min, x_max) = x_min +  (x_max - x_min) * (ξ - left_scaler())/scale_span()
 
-Takes x supposing it is scaled from x_min to x_max and scales it 
-to default scaling from $(left_scaler()) to $(right_scaler())
-"""
-scale_x_to_ξ(x, x_min, x_max) = left_scaler() + scale_span() * (x - x_min)/(x_max - x_min) 
-scale_ξ_to_x(ξ, x_min, x_max) = x_min +  (x_max - x_min) * (ξ - left_scaler())/scale_span()
+    scale_span_x_by_ξ(p::ScaledPolynomial) = scale_span(p)/scale_span()
+    scale_span_ξ_by_x(p::ScaledPolynomial) = scale_span()/scale_span(p)
 
-scale_span_x_by_ξ(p::ScaledPolynomial) = scale_span(p)/scale_span()
-scale_span_ξ_by_x(p::ScaledPolynomial) = scale_span()/scale_span(p)
-
-scale_x_to_ξ(x, p::ScaledPolynomial) = scale_x_to_ξ(x, p.xmin, p.xmax)
-scale_ξ_to_x(ξ, p::ScaledPolynomial) = scale_ξ_to_x(ξ, p.xmin, p.xmax)
+    scale_x_to_ξ(x, p::ScaledPolynomial) = scale_x_to_ξ(x, p.xmin, p.xmax)
+    scale_ξ_to_x(ξ, p::ScaledPolynomial) = scale_ξ_to_x(ξ, p.xmin, p.xmax)
 
 
-const AnyPoly  = Union{ScaledPolynomial,AbstractPoly}
-"""
-    scale_x_to_ξ(x::AbstractVector)
-
-Makes all elements of vector x to fit in range $(LEFT_SCALER)...$(RIGHT_SCALER)
-returns normalized vector , xmin and xmax values
-All elements of x must be unique
-Makes all elements of vector x to fit in range $(LEFT_SCALER)...$(RIGHT_SCALER)
-returns normalized vector , xmin and xmax values
-All elements of x must be unique
-
-"""
-function scale_x_to_ξ(x::AbstractVector)
-    ξ  = copy(x)
-    return scale_x_to_ξ!(ξ)
-end
-function scale_x_to_ξ(x::StaticVector) 
-    x_min, x_max = extrema(x)
-    s= scale_span()/(x_max - x_min)
-    a = left_scaler()
-    x_new = @.  s*(x - x_min) + a
-    return (x_new , x_min, x_max)   
-end
-function scale_x_to_ξ!(x)
-    x_min, x_max = extrema(x)
-    s= scale_span()/(x_max - x_min)
-    a = left_scaler()
-    @. x  = s*(x - x_min) + a
-    return (x , x_min, x_max)    
-end
-"""
-    scale_ξ_to_x(normalized_x::AbstractVector, x_min,x_max)
-
-Creates normal vector from one created with [`scale_x_to_ξ`](@ref)` function 
-Assumes `normalized_x` as a vector normalized to $(LEFT_SCALER)...$(RIGHT_SCALER)
-preformes the revers operation 
-"""
-function scale_ξ_to_x(ξ::AbstractVector, x_min, x_max)
-    x = copy(ξ)
-    return scale_ξ_to_x!(x, x_min, x_max)
-end
-function scale_ξ_to_x!(ξ, x_min, x_max)
-    a = left_scaler()
-    s = scale_span()
-    @. ξ = x_min + (ξ - a)*(x_max - x_min)/s
-    return ξ
-end
+    const AnyPoly  = Union{ScaledPolynomial,AbstractPoly}
     """
-    refill!(sp::ScaledPolynomial{Ptype,T},new_coeffs::NTuple{N,T}) where {Ptype <: AbstractPoly{N}} where {N,T}
+        scale_x_to_ξ(x::AbstractVector)
 
-Fills polynomial coefficients from `new_coeffs` 
-"""
-function refill!(sp::AnyPoly,new_coeffs)
-        #@assert parnumber(sp) == N "Incorrect number of coefficients "
-        copyto!(coeffs(sp),new_coeffs)
+    Makes all elements of vector x to fit in range $(LEFT_SCALER)...$(RIGHT_SCALER)
+    returns normalized vector , xmin and xmax values
+    All elements of x must be unique
+    Makes all elements of vector x to fit in range $(LEFT_SCALER)...$(RIGHT_SCALER)
+    returns normalized vector , xmin and xmax values
+    All elements of x must be unique
+
+    """
+    function scale_x_to_ξ(x::AbstractVector)
+        ξ  = copy(x)
+        return scale_x_to_ξ!(ξ)
+    end
+    function scale_x_to_ξ(x::StaticVector) 
+        x_min, x_max = extrema(x)
+        s= scale_span()/(x_max - x_min)
+        a = left_scaler()
+        x_new = @.  s*(x - x_min) + a
+        return (x_new , x_min, x_max)   
+    end
+    function scale_x_to_ξ!(x)
+        x_min, x_max = extrema(x)
+        s= scale_span()/(x_max - x_min)
+        a = left_scaler()
+        @. x  = s*(x - x_min) + a
+        return (x , x_min, x_max)    
     end
     """
-    refill!(sp::ScaledPolynomial{Ptype,T},new_coeffs::NTuple{N,T}, flag) where {Ptype <: AbstractPoly{N}} where {N,T}
+        scale_ξ_to_x(normalized_x::AbstractVector, x_min,x_max)
 
-Fills polynomial coefficients by flag, here flag must be range, bitvector or other types which can be used for 
-indexing with the same length as the number of polynomial coefficients 
-"""
-function refill!(sp::AnyPoly,new_coeffs, flag)
-        v = @view coeffs(sp)[flag]
-        copyto!(v , new_coeffs)
-    end    
-Base.fill!(p::AnyPoly, v) = fill!(coeffs(p),v)
+    Creates normal vector from one created with [`scale_x_to_ξ`](@ref)` function 
+    Assumes `normalized_x` as a vector normalized to $(LEFT_SCALER)...$(RIGHT_SCALER)
+    preformes the revers operation 
+    """
+    function scale_ξ_to_x(ξ::AbstractVector, x_min, x_max)
+        x = copy(ξ)
+        return scale_ξ_to_x!(x, x_min, x_max)
+    end
+    function scale_ξ_to_x!(ξ, x_min, x_max)
+        a = left_scaler()
+        s = scale_span()
+        @. ξ = x_min + (ξ - a)*(x_max - x_min)/s
+        return ξ
+    end
+        """
+        refill!(sp::ScaledPolynomial{Ptype,T},new_coeffs::NTuple{N,T}) where {Ptype <: AbstractPoly{N}} where {N,T}
+
+    Fills polynomial coefficients from `new_coeffs` 
+    """
+    function refill!(sp::AnyPoly,new_coeffs)
+            #@assert parnumber(sp) == N "Incorrect number of coefficients "
+            copyto!(coeffs(sp),new_coeffs)
+            return nothing
+        end
+        """
+        refill!(sp::ScaledPolynomial{Ptype,T},new_coeffs::NTuple{N,T}, flag) where {Ptype <: AbstractPoly{N}} where {N,T}
+
+    Fills polynomial coefficients by flag, here flag must be range, bitvector or other types which can be used for 
+    indexing with the same length as the number of polynomial coefficients 
+    """
+    function refill!(sp::AnyPoly,new_coeffs, flag)
+            v = @view coeffs(sp)[flag]
+            copyto!(v , new_coeffs)
+            return nothing
+        end    
+    Base.fill!(p::AnyPoly, v) = fill!(coeffs(p),v)
 
     const SUPPORTED_POLYNOMIAL_TYPES = Base.ImmutableDict([k=>eval(d) for (k,d) in  POLY_NAMES_TYPES_DICT]...)
 
     poly_name(::P) where P<: AbstractPoly{N,T,V} where {N,T,V} = V
-
     poly_name(::Type{P}) where P<: AbstractPoly{N,T,V} where {N,T,V} = V
 
     poly_degree(::AbstractPoly{N}) where {N} = N - 1
-
     poly_degree(::Type{P}) where P<:AbstractPoly{N} where {N} = N - 1
-
+    
     parnumber(::AbstractPoly{N,T,V}) where {N,T,V} = N
-
     parnumber(::ScaledPolynomial{Poly}) where {Poly <: AbstractPoly{N}} where N = N
 
-"""
-    Function to evaluate polynomials
-"""
-eval_poly(p::StandPoly,x) = evalpoly(x, p.coeffs)
-
-
-function eval_poly(leg::LegPoly{N,T}, x::S) where {N,T,S}
-    R = promote_type(T, S)
-    n = N - 1
-    n <= 0 && return zero(R)
-    n == 0 &&  return R(leg.coeffs[1]) 
-    
-    h = scale_span() # module default scalers
-    a = left_scaler()
-    x_norm = 2 * (x - a) / h - one(T)  # Scale to [-1,1]
-    
-    itr = LegendrePolynomials.LegendrePolynomialIterator(x_norm) 
-    # nice feature of LegendrePolynomials  - iterator over monomials
-    (s,state) = iterate(itr)
-    s *= leg.coeffs[1]
-    @inbounds for k in 1 : n
-        (v,state) = iterate(itr,state)
-        s += R(leg.coeffs[k + 1]) * v
+    function polyfit!(p::Union{AbstractPoly{N,T},ScaledPolynomial{PV}}, x::V , y::V) where {PV <:AbstractPoly{N,T}, V <:AbstractVector{D} } where {N,T,D}
+        @assert is_in_domain(p, x) "All values of x must be within range"
+        M = length(x)
+        @assert length(y) == M "x and y must be of the same size"
+        Vand = Matrix{D}(undef, M, N)
+        _fill_vander!(Vand , p , x)
+        refill!(p,Vand\y)
+        return p
     end
-    return s
-end
-function eval_monomial(::TrigPoly,degree,x) 
-     degree != 0 || return 1
-     n = 1 + floor(degree/2) 
-     return isodd(degree) ? sin(n * pi * x/scale_span()) : cos((n - 1) * pi * x/scale_span())
-end
-function (poly::Union{StandPoly, LegPoly})(x::Number)
-    return eval_poly(poly,x)
-end
+    function polyfit_unscaled!(p::AbstractPoly{N,T}, x::V , y::V) where { V <:AbstractVector{D} } where {N,T,D}
+        @assert is_in_domain(p, x) "All values of x must be within range"
+        M = length(x)
+        @assert length(y) == M "x and y must be of the same size"
+        (xmin , xmax) = extrema(x)
+        Vand = Matrix{D}(undef, M, N)
+        _fill_vander_unscaled!(Vand , p , x, xmin, xmax)
+        refill!(p,Vand\y)
+        return p
+    end
+    polyfit_unscaled(::Type{P}, x , y) where P <: AbstractPoly{N,T} where {N,T} =  polyfit_unscaled!(P() , x , y)
+    polyfit(::Type{P}, x , y) where P <: AbstractPoly{N,T} where {N,T} =  polyfit!(P() , x , y)
+    vander(p::AbstractPoly{N,T} , x) where {N,T}= begin 
+            M = length(x)
+            Vand = Matrix{T}(undef, M, N)
+            _fill_vander!(Vand , p , x)    
+            return Vand
+    end
+    vander(::Type{P} , x)  where P <: AbstractPoly{N,T} where {N,T} = vander(P() , x) 
+    is_in_domain(v) = left_scaler() <= minimum(v) && maximum(v) <= right_scaler()
+    is_in_domain(p::AnyPoly, v) =  left_scaler(p) <= minimum(v) && maximum(v) <= right_scaler(p)
 
+    """
+        VanderMatrix{M <: SMatrix , R <: SMatrix, V <: SVector}
+        
+    This type stores the Vandemonde matrix (fundamental matrix of basis functions),
+    supports various types of internal polynomials 
+    Structure VanderMatrix has the following fields:
+        v - the matrix itself (each column of this matrix is the value of basis function)
+        v_unnorm - version of matrix with unnormalized basis vectors (used for annormalized coefficients of polynomial fitting)
+        x_first -  first element of the initial vector 
+        x_last  -  the last value of the initial vector
+        xi - normalized vector 
+        poly_type  - polynomial type name (nothing depends on this name)
+    """
+    struct VanderMatrix{N,CN,T,NxCN,CNxCN,P} #M <: SMatrix , R <: SMatrix, V <: SVector}
+        v::SMatrix{N,CN,T,NxCN} # matrix of approximating functions 
+        v_unnorm::SMatrix{N,CN,T,NxCN} # unnormalized vandermatrix used to convert fitted parameters if necessarys
+        # QR factorization matrices
+        Q::SMatrix{N,CN,T,NxCN} 
+        R::SMatrix{CN,CN,T,CNxCN}
+        x_first::T # first element of the initial array
+        x_last::T # normalizing coefficient 
+        xi::SVector{N,T} # normalized vector-column 
+    end# struct spec
+    """
+        bern_max(::VanderMatrix{N,CN,T,NxCN,CNxCN,P}) where {N,CN,T,NxCN,CNxCN,P<:BernsteinPoly{CN}}
 
+    Returns a vector of maximal values of Bernstein basis polynomial basis for particular VanderMatrix
+    """
+    bern_max_values(::VanderMatrix{N,CN,T,NxCN,CNxCN,P}) where {N,CN,T,NxCN,CNxCN,P<:Union{BernsteinPoly{CN},BernsteinSymPoly{CN}}} = [bern_max(P,i)[1] for i in 0:CN-1]
+    bern_max_locations(::VanderMatrix{N,CN,T,NxCN,CNxCN,P}) where {N,CN,T,NxCN,CNxCN,P<:Union{BernsteinPoly{CN},BernsteinSymPoly{CN}}} = [bern_max(P,i)[2] for i in 0:CN-1]
 
-function eval_scaled_poly(p::Union{TrigPoly{N,D}, BernsteinPoly{N,D}},x::T, a::T, b::T) where {N,D,T}
-        #LegendrePolynomials.Pl(x,l) - computes Legendre polynomial of degree l at point x 
-        res = zero(T)
-        @inbounds for i ∈ 1 : N
-            res += p.coeffs[i] * eval_scaled_monomial(p, i - 1, x, a, b) 
+    """
+        VanderMatrix(x::StaticArray{Tuple{N},T,1},
+                        Poly::Type{P} # = StandPoly{CN}
+                        ) where {N, T, P <:AbstractPoly{CN,PN}} where {CN,PN}
+
+    Input: 
+        x  - vector of independent variables (coordinates)
+        Val(CN) - vandermatrix column size (degree of polynomial + 1)
+        poly_type - polynomial type name, must be member of SUPPORTED_POLYNOMIAL_TYPES
+
+    """
+    function VanderMatrix(x::StaticVector{N,T},
+                        poly_obj::P # = BernsteinSymPoly{CN,PN}
+                        ) where {N, T, P <: AbstractPoly{CN,PN}} where {CN,PN}
+                # N - number of rows, CN - number of columns
+                @assert N >= CN "Degree of polynomial must be less or equal the length og x"
+                (_xi,x_first,x_last) = scale_x_to_ξ(x)
+                V = Matrix{T}(undef,N,CN) 
+                Vunnorm = Matrix{T}(undef,N,CN)  # T{length(x)}(MVector{length(x)}(x))
+                fill!(poly_obj, zero(PN))
+                _fill_vander!(V, poly_obj,_xi)
+                _fill_vander_unscaled!(Vunnorm, poly_obj, x,  x_first, x_last)
+                NxCN =  N * CN     
+                MatrixType  = SMatrix{N, CN, T,NxCN}
+                CNxCN =  CN * CN
+                RMatrixType = SMatrix{CN, CN, T,CNxCN}
+                VectorType = SVector{N,T}
+                _V = MatrixType(V)
+                (Q,R) = qr(_V)
+                VanderMatrix{N,CN,T,NxCN,CNxCN,P}(_V,# Vandermonde matrix
+                    MatrixType(Vunnorm), #unnormalized vandermatrix
+                    MatrixType(Q),
+                    RMatrixType(R),
+                    x_first, # first element of the initial array
+                    x_last, # normalizing coefficient 
+                    VectorType(_xi),  
+                )
+    end
+    poly_name(::VanderMatrix{N,CN,T,NxCN,CNxCN,P}) where {N,CN,T,NxCN,CNxCN,P} = poly_name(P)
+    """
+        _fill_vander!(V, poly_obj::AbstractPoly,xi)
+
+    Function to fill the matrix V columns from polynomial basis functions constructor
+    with argument vector xi 
+    """
+    function _fill_vander!(V, poly_obj::Union{AbstractPoly{N,T}, ScaledPolynomial{Ptype}},xi::AbstractVector{D}) where {N, T, D, Ptype <: AbstractPoly{N} }
+        @assert size(V,2) == N "wrong size"
+        @assert size(V,1) == length(xi) "wrong size"
+        VW = @views eachcol(V)
+        fill!(poly_obj,zero(D))
+        @inbounds for (i,col) ∈ enumerate(VW)
+            coeffs(poly_obj)[i] = one(D)                             
+            @. col = poly_obj(xi)
+            coeffs(poly_obj)[i] = zero(D)
+        end  
+        return V
+    end
+    
+    function _fill_vander_unscaled!(V , p::AbstractPoly{N,T}, xi::AbstractVector{D} , xmin , xmax) where {N, T, D }
+        @assert size(V,2) == N "wrong size"
+        @assert size(V,1) == length(xi) "wrong size"
+        VW = @views eachcol(V)
+        fill!(p, zero(D))
+        #f = Base.Fix1(eval_scaled_poly,p)
+        @inbounds for (i,col) ∈ enumerate(VW)
+            coeffs(p)[i] = one(D)                             
+            @. col = eval_scaled_poly(p, xi, xmin, xmax)
+            coeffs(p)[i] = zero(D)
+        end  
+        return V
+    end
+    """
+        is_the_same_x(v::VanderMatrix,x::AbstractVector)
+
+    Checks if input `x` is the same as the one used for VanderMatrix creation
+    """
+    function is_the_same_x(vander::VanderMatrix{N,CN,T},x::AbstractVector{T}) where {N,CN,T}
+        (length(x) == N && issorted(x) ) || return false
+        x_f = first(x)
+        vander.x_first == x_f || return false
+        x_l = last(x)
+        vander.x_last == x_l || return false
+        for i in 1:N 
+            x[i] == scale_ξ_to_x(vander.xi[i], x_f, x_l)  || return false
         end
-        return res 
-end
-
-"""
-    (poly::Union{TrigPoly{N,T},BernsteinPoly{N,T},BernsteinSymPoly{N,T}})(x::T) where {N,T}
-
-"""
-function (poly::Union{TrigPoly{N,S}, BernsteinPoly{N,S}})(x::T) where {N,T,S}
-    #LegendrePolynomials.Pl(x,l) - computes Legendre polynomial of degree l at point x 
-    R = promote_type(S,T)
-    res = zero(R)
-    @inbounds for i ∈ 1 : N
-        res += poly.coeffs[i] * eval_monomial(poly, i - 1, x) 
+        return true
     end
-    return res 
-    #return sum(ntuple(i -> poly.coeffs[i]*eval_poly(poly,i - 1,x),N))
-end 
+    """
+        *(V::VanderMatrix,a::AbstractVector)
 
-function polyfit!(p::PV,x::V,y::V) where {PV <: AbstractPoly{N,T}, V <:AbstractVector{D} } where {N,T,D}
-    @assert is_in_domain(x) "All values of x must be within range"
-    M = length(x)
-    @assert length(y) == M "x and y must be of the same size"
-    Vand = Matrix{D}(undef,M,N)
+    VanderMatrix object can be directly multiplyed by a vector
+    """
+    Base.:*(V::VanderMatrix,a::AbstractVector) =V.v*a 
+    """
+        polyfit(V::VanderMatrix{N,CN,T},x::VT,y::VT) where {N,CN,T<:Number,VT<:Vector{T}}
 
-    _fill_vander!(Vand,p,x)
-    refill!(p,Vand\y)
-    return p
-end
-is_in_domain(v) = left_scaler() <= minimum(v) && maximum(v) <= right_scaler()
-is_in_domain(p::AnyPoly, v) =  left_scaler(p) <= minimum(v) && maximum(v) <= right_scaler(p)
+    Fits data x - coordinates, y - values using the VanderMatrix
+    basis function (this coefficients for normalized x-vector)
+    ```julia
+        (a,y_fitted, gf) = polyfit(V,x,y)
+        y_fitted =  V.v*a # V.v - is the vandermonde matrix
+        # for normalized x, which has all values within [-1,1] range
+        # if a = [a₁ , ..., aₙ], 
+        # e.g if V is for standard basis:
+        (xnorm,) = scale_x_to_ξ(x) # returns vector 
+        # y_fitted = a₁ + a₂xnorm + ... + aₙxnormⁿ⁻¹
+    ```
 
-"""
-    VanderMatrix{M <: SMatrix , R <: SMatrix, V <: SVector}
-    
-This type stores the Vandemonde matrix (fundamental matrix of basis functions),
-supports various types of internal polynomials 
-Structure VanderMatrix has the following fields:
-    v - the matrix itself (each column of this matrix is the value of basis function)
-    v_unnorm - version of matrix with unnormalized basis vectors (used for annormalized coefficients of polynomial fitting)
-    x_first -  first element of the initial vector 
-    x_last  -  the last value of the initial vector
-    xi - normalized vector 
-    poly_type  - polynomial type name (nothing depends on this name)
-"""
-struct VanderMatrix{N,CN,T,NxCN,CNxCN,P} #M <: SMatrix , R <: SMatrix, V <: SVector}
-    v::SMatrix{N,CN,T,NxCN} # matrix of approximating functions 
-    v_unnorm::SMatrix{N,CN,T,NxCN} # unnormalized vandermatrix used to convert fitted parameters if necessarys
-    # QR factorization matrices
-    Q::SMatrix{N,CN,T,NxCN} 
-    R::SMatrix{CN,CN,T,CNxCN}
-    x_first::T # first element of the initial array
-    x_last::T # normalizing coefficient 
-    xi::SVector{N,T} # normalized vector-column 
-end# struct spec
-"""
-    bern_max(::VanderMatrix{N,CN,T,NxCN,CNxCN,P}) where {N,CN,T,NxCN,CNxCN,P<:BernsteinPoly{CN}}
-
-Returns a vector of maximal values of Bernstein basis polynomial basis for particular VanderMatrix
-"""
-bern_max_values(::VanderMatrix{N,CN,T,NxCN,CNxCN,P}) where {N,CN,T,NxCN,CNxCN,P<:Union{BernsteinPoly{CN},BernsteinSymPoly{CN}}} = [bern_max(P,i)[1] for i in 0:CN-1]
-bern_max_locations(::VanderMatrix{N,CN,T,NxCN,CNxCN,P}) where {N,CN,T,NxCN,CNxCN,P<:Union{BernsteinPoly{CN},BernsteinSymPoly{CN}}} = [bern_max(P,i)[2] for i in 0:CN-1]
-
-"""
-    VanderMatrix(x::StaticArray{Tuple{N},T,1},
-                      Poly::Type{P} # = StandPoly{CN}
-                    ) where {N, T, P <:AbstractPoly{CN,PN}} where {CN,PN}
-
-Input: 
-    x  - vector of independent variables (coordinates)
-    Val(CN) - vandermatrix column size (degree of polynomial + 1)
-    poly_type - polynomial type name, must be member of SUPPORTED_POLYNOMIAL_TYPES
-
-"""
-function VanderMatrix(x::StaticVector{N,T},
-                      poly_obj::P # = BernsteinSymPoly{CN,PN}
-                    ) where {N, T, P <: AbstractPoly{CN,PN}} where {CN,PN}
-            # N - number of rows, CN - number of columns
-            @assert N >= CN "Degree of polynomial must be less or equal the length og x"
-            (_xi,x_first,x_last) = scale_x_to_ξ(x)
-            V = Matrix{T}(undef,N,CN) 
-            Vunnorm = Matrix{T}(undef,N,CN)  # T{length(x)}(MVector{length(x)}(x))
-            fill!(poly_obj, zero(PN))
-            _fill_vander!(V, poly_obj,_xi)
-            _fill_vander!(Vunnorm, ScaledPolynomial(poly_obj, xmin = x_first, xmax = x_last),x)
-            NxCN =  N * CN     
-            MatrixType  = SMatrix{N, CN, T,NxCN}
-            CNxCN =  CN * CN
-            RMatrixType = SMatrix{CN, CN, T,CNxCN}
-            VectorType = SVector{N,T}
-            _V = MatrixType(V)
-            (Q,R) = qr(_V)
-            VanderMatrix{N,CN,T,NxCN,CNxCN,P}(_V,# Vandermonde matrix
-                MatrixType(Vunnorm), #unnormalized vandermatrix
-                MatrixType(Q),
-                RMatrixType(R),
-                x_first, # first element of the initial array
-                x_last, # normalizing coefficient 
-                VectorType(_xi),  
-            )
-end
-poly_name(::VanderMatrix{N,CN,T,NxCN,CNxCN,P}) where {N,CN,T,NxCN,CNxCN,P} = poly_name(P)
-"""
-    _fill_vander!(V, poly_obj::AbstractPoly,xi)
-
-Function to fill the matrix V columns from polynomial basis functions constructor
-with argument vector xi 
-"""
-function _fill_vander!(V, poly_obj::Union{AbstractPoly{N,T}, ScaledPolynomial{Ptype}},xi::AbstractVector{D}) where {N, T, D, Ptype <: AbstractPoly{N} }
-    @assert size(V,2) == N "wrong size"
-    @assert size(V,1) == length(xi) "wrong size"
-    VW = @views eachcol(V)
-    fill!(poly_obj,zero(D))
-    @inbounds for (i,col) ∈ enumerate(VW)
-        coeffs(poly_obj)[i] = one(D)                             
-        @. col = poly_obj(xi)
-        coeffs(poly_obj)[i] = zero(D)
-    end  
-    return V
-end
-
-"""
-    is_the_same_x(v::VanderMatrix,x::AbstractVector)
-
-Checks if input `x` is the same as the one used for VanderMatrix creation
-"""
-function is_the_same_x(vander::VanderMatrix{N,CN,T},x::AbstractVector{T}) where {N,CN,T}
-    (length(x) == N && issorted(x) ) || return false
-    x_f = first(x)
-    vander.x_first == x_f || return false
-    x_l = last(x)
-    vander.x_last == x_l || return false
-    for i in 1:N 
-        x[i] == scale_ξ_to_x(vander.xi[i], x_f, x_l)  || return false
+    Input:
+        x - coordinates, [Nx0]
+        y - values, [Nx0]
+    returns tuple with vector of polynomial coefficients, values of y_fitted at x points
+    and the norm of goodness of fit     
+    """
+    function polyfit(V::VanderMatrix{N,CN,T},x::VT,y::VT) where {N,CN,T<:Number,VT<:Vector{T}}
+        yi =  !is_the_same_x(V,x) ? linear_interpolation(x,y)(scale_ξ_to_x(V)) : y
+        a =SVector{CN,T}(V.R\(transpose(V.Q)*yi)) # calculating pseudo-inverse
+        y_fit = V*a
+        goodness_fit = norm(yi .- y_fit)
+        return  (a, y_fit, goodness_fit) 
     end
-    return true
-end
-"""
-    *(V::VanderMatrix,a::AbstractVector)
+    """
+        polyfitn(V::VanderMatrix{N,CN,T},x::VT,y::VT) where {N,CN,T<:Number,VT<:Vector{T}}
 
-VanderMatrix object can be directly multiplyed by a vector
-"""
-Base.:*(V::VanderMatrix,a::AbstractVector) =V.v*a 
-"""
-    polyfit(V::VanderMatrix{N,CN,T},x::VT,y::VT) where {N,CN,T<:Number,VT<:Vector{T}}
+    Fits data x - coordinates, y - values using the VanderMatrix
+    basis function (coefficients for unnormalized x-vector)
 
-Fits data x - coordinates, y - values using the VanderMatrix
-basis function (this coefficients for normalized x-vector)
-```julia
-    (a,y_fitted, gf) = polyfit(V,x,y)
-    y_fitted =  V.v*a # V.v - is the vandermonde matrix
-    # for normalized x, which has all values within [-1,1] range
-    # if a = [a₁ , ..., aₙ], 
-    # e.g if V is for standard basis:
-    (xnorm,) = scale_x_to_ξ(x) # returns vector 
-    # y_fitted = a₁ + a₂xnorm + ... + aₙxnormⁿ⁻¹
-```
-
-Input:
-    x - coordinates, [Nx0]
-    y - values, [Nx0]
-returns tuple with vector of polynomial coefficients, values of y_fitted at x points
-and the norm of goodness of fit     
-"""
-function polyfit(V::VanderMatrix{N,CN,T},x::VT,y::VT) where {N,CN,T<:Number,VT<:Vector{T}}
-    yi =  !is_the_same_x(V,x) ? linear_interpolation(x,y)(scale_ξ_to_x(V)) : y
-    a =SVector{CN,T}(V.R\(transpose(V.Q)*yi)) # calculating pseudo-inverse
-    y_fit = V*a
-    goodness_fit = norm(yi .- y_fit)
-    return  (a, y_fit, goodness_fit) 
-end
-"""
-    polyfitn(V::VanderMatrix{N,CN,T},x::VT,y::VT) where {N,CN,T<:Number,VT<:Vector{T}}
-
-Fits data x - coordinates, y - values using the VanderMatrix
-basis function (coefficients for unnormalized x-vector)
-
-Input:
-    x - coordinates, [Nx0]
-    y - values, [Nx0]
-returns tuple with vector of polynomial coefficients, values of y_fitted at x points
-and the norm of goodness of fit  
-"""
-function polyfitn(V::VanderMatrix{N,CN,T},x::VT,y::VT) where {N,CN,T<:Number,VT<:Vector{T}}
-    yi =  !is_the_same_x(V,x) ? linear_interpolation(x,y)(scale_ξ_to_x(V)) : y
-    (Q,R) = qr(V.v_unnorm)
-    a =SVector{CN,T}(R\transpose(Q)*yi)# calculating pseudo-inverse
-    y_fit = V.v_unnorm * a
-    goodness_fit = norm(yi .- y_fit)
-    return  (a, y_fit, goodness_fit) 
-end
+    Input:
+        x - coordinates, [Nx0]
+        y - values, [Nx0]
+    returns tuple with vector of polynomial coefficients, values of y_fitted at x points
+    and the norm of goodness of fit  
+    """
+    function polyfit_unscaled(V::VanderMatrix{N,CN,T},x::VT,y::VT) where {N,CN,T<:Number,VT<:Vector{T}}
+        yi =  !is_the_same_x(V,x) ? linear_interpolation(x,y)(scale_ξ_to_x(V)) : y
+        (Q,R) = qr(V.v_unnorm)
+        a =SVector{CN,T}(R\transpose(Q)*yi)# calculating pseudo-inverse
+        y_fit = V.v_unnorm * a
+        goodness_fit = norm(yi .- y_fit)
+        return  (a, y_fit, goodness_fit) 
+    end
 
 
 
 
-scale_ξ_to_x(V::VanderMatrix) = Vector(scale_ξ_to_x.(V.xi, V.x_first,V.x_last))
-function triplicate_columns(a::AbstractVector,T)
-    return T(repeat(a,1,3))
-end
+    scale_ξ_to_x(V::VanderMatrix) = Vector(scale_ξ_to_x.(V.xi, V.x_first,V.x_last))
+    function triplicate_columns(a::AbstractVector,T)
+        return T(repeat(a,1,3))
+    end
 
-"""
-    fill_box_constraint!(lb,ub,::VanderMatrix{N, CN, T, NxCN, CNxCN, P},
-                val_bounds::NTuple{2,T}) where {N, CN, T, NxCN, CNxCN, P<:BernsteinSymPoly}
+    """
+        fill_box_constraint!(lb,ub,::VanderMatrix{N, CN, T, NxCN, CNxCN, P},
+                    val_bounds::NTuple{2,T}) where {N, CN, T, NxCN, CNxCN, P<:BernsteinSymPoly}
 
-Evaluates box-boundaries for polynomial coefficients for `BernsteinSymPoly` 
-polynomial basis
-"""
-function fill_box_constraint!(lb,ub,::VanderMatrix{N, CN, T, NxCN, CNxCN, P},
-                val_bounds::NTuple{2,T}) where {N, CN, T, NxCN, CNxCN, P<:BernsteinSymPoly}
-    fill!(lb,first(val_bounds))
-    fill!(ub,last(val_bounds))
-end
+    Evaluates box-boundaries for polynomial coefficients for `BernsteinSymPoly` 
+    polynomial basis
+    """
+    function fill_box_constraint!(lb,ub,::VanderMatrix{N, CN, T, NxCN, CNxCN, P},
+                    val_bounds::NTuple{2,T}) where {N, CN, T, NxCN, CNxCN, P<:BernsteinSymPoly}
+        fill!(lb,first(val_bounds))
+        fill!(ub,last(val_bounds))
+    end
 
-@recipe function f(m::Union{AbstractPoly,ScaledPolynomial})
-    minorgrid--> true
-    gridlinewidth-->2
-    dpi-->600
-    return t->m.(t)
-end
+    @recipe function f(m::Union{AbstractPoly,ScaledPolynomial})
+        minorgrid--> true
+        gridlinewidth-->2
+        dpi-->600
+        return t->m.(t)
+    end
 
 
-#p = plot(title = "Monomials",legend=:top,legend_columns=2, background_color_legend=RGBA(1, 1, 1, 0.0),foreground_color_legend=nothing)
-@recipe function f(V::VanderMatrix{N,CN,T,NxCN,CNxCN,P}; infill = true) where {N,CN,T,NxCN,CNxCN,P}
-    for (i,c) in enumerate(eachcol(V.v))
-        @series begin 
-            label:="$(i)"    
-            linewidth:=2
-            legend := :top
-            legend_columns :=2
+    #p = plot(title = "Monomials",legend=:top,legend_columns=2, background_color_legend=RGBA(1, 1, 1, 0.0),foreground_color_legend=nothing)
+    @recipe function f(V::VanderMatrix{N,CN,T,NxCN,CNxCN,P}; infill = true) where {N,CN,T,NxCN,CNxCN,P}
+        for (i,c) in enumerate(eachcol(V.v))
+            @series begin 
+                label:="$(i)"    
+                linewidth:=2
+                legend := :top
+                legend_columns :=2
 
-            foreground_color_legend :=nothing
-            if infill
-                fillrange:=0
-                fillalpha:=0.3
+                foreground_color_legend :=nothing
+                if infill
+                    fillrange:=0
+                    fillalpha:=0.3
+                end
+                markershape:=:none
+                (V.xi, c)
             end
-            markershape:=:none
-            (V.xi, c)
         end
     end
-end
-
-
-
-
 end
