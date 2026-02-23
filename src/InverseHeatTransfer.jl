@@ -145,13 +145,16 @@ modify!(ov::OV, x) = begin
     ub_coeffs(ov::OVS)  =  PolynomialWrappers.coeffs(ov.ub)
 
     derivative!(ov_der::OVS, ov::OVS) = PolynomialWrappers.derivative!(ov_der.p, ov.p)
-
+    const POSSIBLE_TAGS = (:lam, :C, )
     struct SingleInverseProblem{DT <: Number, 
                                 TN , N , # TN - couples number, N - timesteps number
                                 ProblemType <: HeatTransferProblem ,
                                 CV <: AbstractCovariance, 
                                 RG <: AbstractRegularization,
-                                DV } 
+                                DV, 
+                                O, # optimizable variable iterator 
+                                ON # number of optimizable variables (variable which can possibly be optimized) 
+                                } 
         
         thermocouple_locations::Vector{DT} # coordinates of all thermocouples
         thermocouple_indices::Vector{Int} # indices of internal thermocouples in problem TMAT  - temperature distribution matrix 
@@ -166,6 +169,8 @@ modify!(ov::OV, x) = begin
         Tdata_evaluated::DV
         residual::Matrix{DT} # raw residual vector
         # jacobian::Matrix{}
+        optimizable::O # this field stores the iterable object over all variables to be optimizaed
+
         """
     SingleInverseProblem(
                                         time_data ::Vector{DT},
@@ -196,7 +201,7 @@ function SingleInverseProblem(
                                         thermocouples_locations::AbstractVector{DT},
                                         C::OptimizableVariable,
                                         λ::OptimizableVariable, 
-                                        dλdT::OptimizableVariable,
+                                        dλdT,
                                         thickness::Number, 
                                         xpoints_number::Int, 
                                         time_points_number::Union{Int,Nothing} = nothing,
@@ -301,9 +306,10 @@ function SingleInverseProblem(
             N = t_points
             ProblemType = typeof(direct_problem)
             DV = typeof(Tdata_evaluated)
-
-
-            new{DT, TN, N , ProblemType , CV , RG , DV}(        
+            optimizable = filter(Base.Fix2(isa, OptimizableVariable), (λ, C, upper_flux, lower_flux, initial_distribution))
+            O = typeof(optimizable)
+            ON = length(optimizable)
+            new{DT, TN, N , ProblemType , CV , RG , DV, O, ON}(        
                                                         T_locations, # thermocouple_locations - total locations including those used in BC
                                                         thermocouple_indices, # indices of thermocouples in the direct problem output matrix 
                                                         copy(temperatures), # thermocouple_values -  just copy of the input data 
@@ -313,7 +319,8 @@ function SingleInverseProblem(
                                                         regularization, # reularization matrix 
                                                         Tdata_measured, # measured data used to evaluate the discrepancy
                                                         Tdata_evaluated, # reference to the part of temperature distribution matrix which is used for discrepancy evaluation
-                                                        residual # matrix used to store the residual 
+                                                        residual, # matrix used to store the residual
+                                                        optimizable 
                 )
 
         end
