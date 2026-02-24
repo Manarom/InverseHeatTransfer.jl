@@ -28,6 +28,12 @@ using BenchmarkTools, ProfileCanvas, PlutoUI, PlutoPlotly
 # ╔═╡ e6216c49-09a8-45c5-8c3a-6d1f7281cc3e
 using Optimization, OptimizationOptimJL, Observables, FunctionWrappers
 
+# ╔═╡ 79ff4f54-ce5d-4f30-81ea-0c6cbdadceb0
+using FiniteDiff, OrderedCollections, Tables
+
+# ╔═╡ 8a53eac7-3fa8-4d33-bf86-3cfcbdf120c5
+using PlutoTables, Accessors, AccessorsExtra
+
 # ╔═╡ c806aa46-a30e-4431-b2e1-c7131ce86615
 source_path = joinpath(@__DIR__,"..","src")
 
@@ -351,7 +357,7 @@ md" Lower λ limit = $(@bind lower_lam_limit confirm(Slider(0.0 : 1e-3 : 10.0, d
 md" Upper λ limit = $(@bind upper_lam_limit confirm(Slider(0.1 : 1e-3 : 100.0, default = 20, show_value = true)))"
 
 # ╔═╡ 1843f411-4706-441f-a07f-5cd77a5650b1
-md" Parameters number $(@bind basis_degree Select(1:20, default = 4))"
+md" Λ(T) parameters number $(@bind basis_degree Select(1:20, default = 4))"
 
 # ╔═╡ 8189333a-7ee8-44a0-9d76-a8efccd22666
 md" Particle Swarm iterations number $(@bind pso_iters Select(10:10:10000 , default = 100))"
@@ -578,7 +584,7 @@ if is_do_profile
 end
 
 # ╔═╡ b832d7ff-e2b8-4822-8400-7729c8ccff6f
-is_fit_on || discrepancy(lam_changing_pars, inv_probl)
+is_fit_on || discrepancy(lam_changing_pars[1:basis_degree], inv_probl)
 
 # ╔═╡ ba05924f-0aee-4e6c-8677-b6f10c50d5e2
 if is_fit_on 
@@ -747,9 +753,12 @@ end
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
 [deps]
+Accessors = "7d9f7c33-5ae7-4f3b-8dc6-eff91059b697"
+AccessorsExtra = "33016aad-b69d-45be-9359-82a41f556fd4"
 AllocCheck = "9b6a8646-10ed-4001-bbdc-1d2f46dfbb1a"
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 FFTW = "7a1cc6ca-52ef-59f5-83cd-3a7055c09341"
+FiniteDiff = "6a86dc24-6348-571c-b903-95158fe2bd41"
 FunctionWrappers = "069b7b12-0de2-55c6-9aab-29f3d0a68a2e"
 Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
 LegendrePolynomials = "3db4a2ba-fc88-11e8-3e01-49c72059a882"
@@ -757,8 +766,10 @@ LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Observables = "510215fc-4207-5dde-b226-833fc4488ee2"
 Optimization = "7f7a1694-90dd-40f0-9382-eb1efda571ba"
 OptimizationOptimJL = "36348300-93cb-4f02-beb5-3c3902f8871e"
+OrderedCollections = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 PlutoPlotly = "8e989ff0-3d88-8e9f-f020-2b208a939ff0"
+PlutoTables = "e64c0356-fa58-4209-b01c-f6c8ed5474f5"
 PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
 Polynomials = "f27b6e38-b328-58d1-80ce-0feddd5e7a45"
 PrettyTables = "08abe8d2-0d0c-5749-adfa-8a2ac140af0d"
@@ -767,19 +778,25 @@ RecipesBase = "3cdcf5f2-1ef4-517c-9805-6587b60abb01"
 Reexport = "189a3867-3050-52da-a836-e630ba90ab69"
 Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+Tables = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
 
 [compat]
+Accessors = "~0.1.43"
+AccessorsExtra = "~0.1.102"
 AllocCheck = "~0.2.3"
 BenchmarkTools = "~1.6.3"
 FFTW = "~1.10.0"
+FiniteDiff = "~2.29.0"
 FunctionWrappers = "~1.1.3"
 Interpolations = "~0.16.2"
 LegendrePolynomials = "~0.4.5"
 Observables = "~0.5.5"
 Optimization = "~5.2.0"
 OptimizationOptimJL = "~0.4.8"
+OrderedCollections = "~1.8.1"
 Plots = "~1.41.6"
 PlutoPlotly = "~0.6.5"
+PlutoTables = "~0.1.7"
 PlutoUI = "~0.7.79"
 Polynomials = "~4.1.0"
 PrettyTables = "~3.2.1"
@@ -788,6 +805,7 @@ RecipesBase = "~1.3.4"
 Reexport = "~1.2.2"
 Revise = "~3.13.2"
 StaticArrays = "~1.9.16"
+Tables = "~1.12.1"
 """
 
 # ╔═╡ 00000000-0000-0000-0000-000000000002
@@ -796,7 +814,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.12.5"
 manifest_format = "2.0"
-project_hash = "2a52ed003a875c407dc0e7b49d552aa677e15aa6"
+project_hash = "08cac6ba06875911658b69350b7114d2c30be9d9"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "f7304359109c768cf32dc5fa2d371565bb63b68a"
@@ -857,6 +875,55 @@ version = "0.1.43"
     StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
     StructArrays = "09ab397b-f2b6-538f-b94a-2f83cf4a842a"
     Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+    Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
+
+[[deps.AccessorsExtra]]
+deps = ["Accessors", "CompositionsBase", "ConstructionBase", "DataPipes", "InverseFunctions", "LinearAlgebra", "Reexport"]
+git-tree-sha1 = "5c6d50ec5b3a3fc2e87d0ce26b934fb87ec4d41b"
+uuid = "33016aad-b69d-45be-9359-82a41f556fd4"
+version = "0.1.102"
+
+    [deps.AccessorsExtra.extensions]
+    ColorTypesExt = "ColorTypes"
+    DateFormatsExt = "DateFormats"
+    DatesExt = "Dates"
+    DictArraysExt = "DictArrays"
+    DictionariesExt = "Dictionaries"
+    DistributionsExt = "Distributions"
+    DomainSetsExt = "DomainSets"
+    FlexiGroupsExt = "FlexiGroups"
+    FlexiMapsExt = "FlexiMaps"
+    FlexiMapsStructArraysExt = ["FlexiMaps", "StructArrays"]
+    MakieExt = "Makie"
+    SkipperExt = "Skipper"
+    StaticArraysExt = "StaticArrays"
+    StatisticsExt = "Statistics"
+    StatsBaseExt = "StatsBase"
+    StructArraysExt = "StructArrays"
+    TablesExt = "Tables"
+    TestExt = "Test"
+    URIsExt = "URIs"
+    UnitfulExt = "Unitful"
+
+    [deps.AccessorsExtra.weakdeps]
+    ColorTypes = "3da002f7-5984-5a60-b8a6-cbb66c0b333f"
+    DateFormats = "44557152-fe0a-4de1-8405-416d90313ce6"
+    Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+    DictArrays = "e9958f2c-b184-4647-9c5a-224a61f6a14b"
+    Dictionaries = "85a47980-9c8c-11e8-2b9f-f7ca1fa99fb4"
+    Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
+    DomainSets = "5b8099bc-c8ec-5219-889f-1d9e522a28bf"
+    FlexiGroups = "1e56b746-2900-429a-8028-5ec1f00612ec"
+    FlexiMaps = "6394faf6-06db-4fa8-b750-35ccc60383f7"
+    Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
+    Skipper = "fc65d762-6112-4b1c-b428-ad0792653d81"
+    StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+    Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+    StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
+    StructArrays = "09ab397b-f2b6-538f-b94a-2f83cf4a842a"
+    Tables = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
+    Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+    URIs = "5c2747f8-b7ea-4ff2-ba2e-563bfd36b1d4"
     Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
 
 [[deps.Adapt]]
@@ -1098,6 +1165,11 @@ git-tree-sha1 = "abe83f3a2f1b857aac70ef8b269080af17764bbe"
 uuid = "9a962f9c-6df0-11e9-0e5d-c546b8b5ee8a"
 version = "1.16.0"
 
+[[deps.DataPipes]]
+git-tree-sha1 = "29077a8d5c093f4e0988e92c0d76f56c4c581900"
+uuid = "02685ad9-2d12-40c3-9f73-c6aeda6a7ff5"
+version = "0.3.18"
+
 [[deps.DataStructures]]
 deps = ["OrderedCollections"]
 git-tree-sha1 = "e357641bb3e0638d353c4b29ea0e40ea644066a6"
@@ -1305,6 +1377,26 @@ deps = ["Statistics"]
 git-tree-sha1 = "05882d6995ae5c12bb5f36dd2ed3f61c98cbb172"
 uuid = "53c48c17-4a7d-5ca2-90c5-79b7896eea93"
 version = "0.8.5"
+
+[[deps.FlexiMaps]]
+deps = ["Accessors", "DataPipes", "InverseFunctions"]
+git-tree-sha1 = "c2e79264c5e749d099d7ae854f64ec73f2f9e3e9"
+uuid = "6394faf6-06db-4fa8-b750-35ccc60383f7"
+version = "0.1.29"
+
+    [deps.FlexiMaps.extensions]
+    AxisKeysExt = "AxisKeys"
+    DictionariesExt = "Dictionaries"
+    IntervalSetsExt = "IntervalSets"
+    StructArraysExt = "StructArrays"
+    UnitfulExt = "Unitful"
+
+    [deps.FlexiMaps.weakdeps]
+    AxisKeys = "94b1ba4f-4ee9-5380-92f1-94cde586c3c5"
+    Dictionaries = "85a47980-9c8c-11e8-2b9f-f7ca1fa99fb4"
+    IntervalSets = "8197267c-284f-5f27-9208-e0e47529a953"
+    StructArrays = "09ab397b-f2b6-538f-b94a-2f83cf4a842a"
+    Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
 
 [[deps.Fontconfig_jll]]
 deps = ["Artifacts", "Bzip2_jll", "Expat_jll", "FreeType2_jll", "JLLWrappers", "Libdl", "Libuuid_jll", "Zlib_jll"]
@@ -2038,6 +2130,12 @@ version = "0.6.5"
     [deps.PlutoPlotly.weakdeps]
     PlotlyKaleido = "f2990250-8cf9-495f-b13a-cce12b45703c"
     Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
+
+[[deps.PlutoTables]]
+deps = ["AccessorsExtra", "CompositionsBase", "DataPipes", "FlexiMaps", "HypertextLiteral", "PlutoUI"]
+git-tree-sha1 = "14540198cf09674779dda0dce2cfa0e20c0259ac"
+uuid = "e64c0356-fa58-4209-b01c-f6c8ed5474f5"
+version = "0.1.7"
 
 [[deps.PlutoUI]]
 deps = ["AbstractPlutoDingetjes", "Base64", "ColorTypes", "Dates", "Downloads", "FixedPointNumbers", "Hyperscript", "HypertextLiteral", "IOCapture", "InteractiveUtils", "Logging", "MIMEs", "Markdown", "Random", "Reexport", "URIs", "UUIDs"]
@@ -2906,6 +3004,8 @@ version = "1.13.0+0"
 # ╠═b6133376-a592-48ee-8d63-a8413e20088d
 # ╠═5fe54406-20d7-4747-bcd4-c5c0f17af47a
 # ╠═e6216c49-09a8-45c5-8c3a-6d1f7281cc3e
+# ╠═79ff4f54-ce5d-4f30-81ea-0c6cbdadceb0
+# ╠═8a53eac7-3fa8-4d33-bf86-3cfcbdf120c5
 # ╠═c806aa46-a30e-4431-b2e1-c7131ce86615
 # ╠═32ac05db-67f0-4638-9842-d5ef37442efa
 # ╠═1936a00f-69f3-48e4-9176-6b2186e40c2c
@@ -2946,19 +3046,19 @@ version = "1.13.0+0"
 # ╟─6f7cd9aa-0a48-4870-9223-4b7366d06867
 # ╟─542bebdb-0cdc-4c07-9210-9c773b406bbd
 # ╟─99f51ecf-36e4-4a0b-aa14-0757c88c69a3
-# ╟─81314d03-95c2-4eb5-9f15-09f660b2c875
-# ╟─488e4960-4420-4875-a5c4-cecba610dd1a
-# ╟─1843f411-4706-441f-a07f-5cd77a5650b1
-# ╟─8189333a-7ee8-44a0-9d76-a8efccd22666
+# ╠═81314d03-95c2-4eb5-9f15-09f660b2c875
+# ╠═488e4960-4420-4875-a5c4-cecba610dd1a
+# ╠═1843f411-4706-441f-a07f-5cd77a5650b1
+# ╠═8189333a-7ee8-44a0-9d76-a8efccd22666
 # ╟─454e2649-539e-443e-bd1f-d5c2cd5b5cf6
 # ╟─9a602387-0383-41a3-84f2-2c31fbd93d6e
 # ╠═c1bd739f-39b0-4849-a468-cb177dab7d6a
 # ╟─a02ce5d4-1845-410e-988c-f9f71fd129d3
-# ╟─8c970432-b3c7-4837-9456-7744b0ffcc90
-# ╟─3736ef61-1756-4c68-95cb-1d61f57b321a
+# ╠═8c970432-b3c7-4837-9456-7744b0ffcc90
+# ╠═3736ef61-1756-4c68-95cb-1d61f57b321a
 # ╟─991bba10-d77b-402c-ad3b-a69c719ef58f
 # ╟─b7f738ad-2faa-4399-be33-71c43184a4c7
-# ╟─b7cab05e-c24f-4268-ba7b-f361c1e9076d
+# ╠═b7cab05e-c24f-4268-ba7b-f361c1e9076d
 # ╠═98a565ad-cfa2-49cd-9380-d577df12cfdd
 # ╠═01d72198-4ee9-436b-ada2-035821b8698d
 # ╟─e9c5ed77-2ea4-4c20-b1f5-88d7fe700e6c
@@ -2967,7 +3067,7 @@ version = "1.13.0+0"
 # ╠═a302366d-27f9-4600-930d-fc0acc9456cd
 # ╠═e805618f-14c8-46a3-b0f0-cc5f949fed3b
 # ╠═ba05924f-0aee-4e6c-8677-b6f10c50d5e2
-# ╟─22203a92-5d3d-4416-a86d-89aff3a939cc
+# ╠═22203a92-5d3d-4416-a86d-89aff3a939cc
 # ╠═ae28ced2-046a-4751-947e-9d2fb8c412f8
 # ╠═fcd801f7-d34d-40d6-8902-8f926dc56e8b
 # ╟─169ae691-dcf6-465d-ba44-5cd8c086651d

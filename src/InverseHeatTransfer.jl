@@ -199,8 +199,8 @@ function SingleInverseProblem(
                                         temperatures ::Matrix{DT}, 
                                         initial_distribution::Union{Number, OptimizableVariable, Matrix{DT}},
                                         thermocouples_locations::AbstractVector{DT},
-                                        C::OptimizableVariable,
-                                        λ::OptimizableVariable, 
+                                        C,
+                                        λ, 
                                         dλdT,
                                         thickness::Number, 
                                         xpoints_number::Int, 
@@ -239,7 +239,7 @@ function SingleInverseProblem(
             lower_grid_coordinate = is_lower_flux_provided ? thickness : thermocouples_locations[end]
             thickness_internal = lower_grid_coordinate - upper_grid_coordinate
             (tmin , tmax) = extrema(time_data)
-            # @. time_data -=tmin
+            @. time_data -= tmin # shifting time data to make it starting from zero
             tmax = tmax - tmin
             tpoints_number = isnothing(time_points_number) ? length(time_data) : time_points_number
             grid = G(thickness_internal , tmax , Val(xpoints_number) , Val(tpoints_number))
@@ -263,13 +263,13 @@ function SingleInverseProblem(
             
             # setting upper BC
             (bc_fun_up, bc_up_type) = if !is_upper_flux_provided 
-                (Interpolations.linear_interpolation(time_data , temperatures[:,1]), DirichletBC())
+                (Interpolations.linear_interpolation(time_data , temperatures[:,1] , extrapolation_bc=Line()), DirichletBC())
             else
                 (upper_flux, NeumanBC())
             end
             # setting lower BC
             (bc_fun_dwn, bc_dwn_type) = if !is_lower_flux_provided
-                (Interpolations.linear_interpolation(time_data , temperatures[:,end]), DirichletBC())
+                (Interpolations.linear_interpolation(time_data , temperatures[:,end] , extrapolation_bc=Line()), DirichletBC())
             else
                 (lower_flux, NeumanBC())
             end

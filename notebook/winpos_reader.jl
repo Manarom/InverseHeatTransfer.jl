@@ -22,11 +22,17 @@ using Plots, Revise, OrderedCollections, PlutoUI, DataFrames, StatsPlots, CSV
 # ╔═╡ 03f71b6c-eb9a-430e-a4dd-742aee405573
 using Interpolations, Tables
 
+# ╔═╡ 624f7936-b348-4bf4-bb73-258a4ffb4312
+default_data_fodler = joinpath(@__DIR__, "..","test","test_data","binary_files")
+
+# ╔═╡ e85c6074-cf89-4ccf-b6c5-6d3fffd49dca
+winpos_path = joinpath(@__DIR__, "..","src","WinPos.jl");
+
 # ╔═╡ a81c0777-676b-4121-b5c3-ee4cfe62fadb
-includet(raw"D:\JuliaDepoth\dev\InverseHeatTransfer.jl\src\WinPos.jl")
+includet(winpos_path)
 
 # ╔═╡ 78de716d-0e56-4805-a071-976789c1a5da
-md""" #### working folder $(@bind working_folder TextField(default = raw"D:\JuliaDepoth\dev\InverseHeatTransfer.jl\test\test_data\binary_files")) """
+md""" #### working folder $(@bind working_folder TextField(default = default_data_fodler)) """
 
 # ╔═╡ dfeb485c-1268-4861-a0f3-2102e1bd3bc7
 projects = Main.WinPos.find_project_pairs(working_folder)
@@ -46,9 +52,9 @@ $(@bind selected_variables confirm(MultiSelect(collect(keys(selected_proj.data))
 
 # ╔═╡ 2dc63e8f-a84c-4edb-a37c-2e6e11074841
 md"""
-	tmin = $(@bind t_min Slider(range(0.0,3000.0,1000), default = 0.0, show_value = true))
+	tmin = $(@bind t_min Slider(range(0.0,1000.0,1000), default = 0.0, show_value = true))
 	
-	tmax = $(@bind t_max Slider(range(0.0,3000.0,1000) , default = 1000.0, show_value = true))
+	tmax = $(@bind t_max Slider(range(0.0,1000.0,1000) , default = 1000.0, show_value = true))
 
 	"""
 
@@ -68,9 +74,6 @@ end
 # ╔═╡ 6bd364e8-5749-4f08-b617-1562c216dc24
 tbl = DataFrame(Main.WinPos.to_table(selected_proj; names = selected_variables, tmin = t_min, tmax = t_max))
 
-# ╔═╡ ca855a80-8dd0-4558-b5c2-8d9c8baedd3a
-DataFrames.@df tbl plot(x, T1)
-
 # ╔═╡ 8ce6fa40-2975-4415-80a4-259631389374
 md"### Save data to file ? $(@bind is_write_file CheckBox(default = false))"
 
@@ -84,6 +87,9 @@ md""" File name: $(@bind file_name TextField(default = "measured.csv"))"""
 if is_write_file
 	CSV.write( joinpath(folder_name,file_name), tbl, delim = "\t")
 end
+
+# ╔═╡ 83bb4919-68ff-48c8-8c52-3b64af0a3865
+paired_data
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -1711,20 +1717,22 @@ version = "1.13.0+0"
 # ╔═╡ Cell order:
 # ╠═d3c8a0c0-1013-11f1-9abe-af169b4cd95a
 # ╠═03f71b6c-eb9a-430e-a4dd-742aee405573
-# ╠═a81c0777-676b-4121-b5c3-ee4cfe62fadb
+# ╟─624f7936-b348-4bf4-bb73-258a4ffb4312
+# ╟─e85c6074-cf89-4ccf-b6c5-6d3fffd49dca
+# ╟─a81c0777-676b-4121-b5c3-ee4cfe62fadb
 # ╟─78de716d-0e56-4805-a071-976789c1a5da
 # ╟─dfeb485c-1268-4861-a0f3-2102e1bd3bc7
 # ╟─513adeca-4e20-46dc-8712-c35b0c6573fd
-# ╟─b136aee1-4073-45dc-90d7-90d588062adf
-# ╟─1505a057-82df-4bbb-ada9-065609d7ceda
+# ╠═b136aee1-4073-45dc-90d7-90d588062adf
+# ╠═1505a057-82df-4bbb-ada9-065609d7ceda
 # ╠═b62cd0e5-0ee9-4cae-b1f8-b6deb9e4612d
 # ╠═945359ee-7b0e-4a34-ab83-c5e1a4866e6a
-# ╟─2dc63e8f-a84c-4edb-a37c-2e6e11074841
-# ╟─6bd364e8-5749-4f08-b617-1562c216dc24
-# ╠═ca855a80-8dd0-4558-b5c2-8d9c8baedd3a
-# ╟─8ce6fa40-2975-4415-80a4-259631389374
-# ╟─517dca54-1fed-4179-93ca-0fd38c01966a
-# ╟─4f65ae20-46b2-42e5-a6ff-9fc3644a1866
+# ╠═2dc63e8f-a84c-4edb-a37c-2e6e11074841
+# ╠═6bd364e8-5749-4f08-b617-1562c216dc24
+# ╠═8ce6fa40-2975-4415-80a4-259631389374
+# ╠═517dca54-1fed-4179-93ca-0fd38c01966a
+# ╠═4f65ae20-46b2-42e5-a6ff-9fc3644a1866
 # ╠═4a3a29ae-d2d0-4b0b-b7f7-f1db9817d6b3
+# ╠═83bb4919-68ff-48c8-8c52-3b64af0a3865
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002

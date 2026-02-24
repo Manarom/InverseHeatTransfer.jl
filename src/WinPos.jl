@@ -11,16 +11,34 @@ module WinPos
         y::Vector{Float64}
         DataPair(name , xfile , yfile , project) = new(name , xfile , yfile , project, Float64[], Float64[])
     end
+    function cut_by_x(dp::DataPair; xmin::Union{Nothing,T} = nothing, xmax::Union{Nothing,T} = nothing) where T<: Number
+        xmin = isnothing(xmin) ? -Inf : xmin
+        xmax = isnothing(xmax) ? Inf : xmax
+        x = dp.x
+        w = @. (x >= xmin) & (x <= xmax)
+        return (;x = dp.x[w], y = dp.y[w])
+
+    end
     is_data_filled(d::DataPair) = !isempty(d.x) && !isempty(d.y)
-    function read_winposfile!(vec::Vector{T}, filename::String, ::Type{F}  = Float32) where {F <: Number, T <:Number}
-        bytes = read(filename)
+    """
+    read_winposfile!(vec::Vector{T}, filename::String, ::Type{F}  = Float32) where {F <: Number, T <:Number}
+
+Reads data from winpos format file to a vector of `Float64`, `Type{F}` shows the type of data in file 
+"""
+function read_winposfile!(vec::Vector{T}, filename::String, ::Type{F}  = Float32) where {F <: Number, T <:Number}
+        bytes = read(filename) # reads the data to UInt8
         n = length(bytes) ÷ 4
         resize!(vec, n)
         copyto!(vec, 1, reinterpret(F, bytes), 1, n)
         return vec
     end
     read_winposfile(filename) = read_winposfile!(Float64[],filename)
-    function fill_data!(d::DataPair)
+    """
+    fill_data!(d::DataPair)
+
+Loads data from attached files 
+"""
+function fill_data!(d::DataPair)
         read_winposfile!(d.x , d.xfile)
         read_winposfile!(d.y , d.yfile)
     end
@@ -30,6 +48,10 @@ module WinPos
     end
     filter_data_names(proj::WinPosProject, ::Nothing) = keys(proj.data)
     filter_data_names(proj::WinPosProject, names) = filter(Base.Fix1(haskey,proj.data), names)
+    Base.getindex(p::WinPosProject, k)  = p.data[k]
+    Base.iterate(p::WinPosProject) = Base.iterate(p.data)
+    Base.iterate(p::WinPosProject,j) = Base.iterate(p.data,j)
+    Base.length(p::WinPosProject) = Base.length(p.data)
     """
     joindata(proj::WinPosProject)
 
@@ -50,10 +72,10 @@ function joindata(proj::WinPosProject; names = nothing, tmin = nothing, tmax = n
         for (i , n_i) in enumerate(names)
             haskey(proj.data , n_i) || continue
             d_i = proj.data[n_i]
-            is_data_consistent(d_i) && try 
+            !is_data_consistent(d_i) && try 
                                 fill_data!(d_i)
                               catch ex
-                                @show ex
+                                @warn ex
                               end
             !is_data_consistent(d_i) && begin
                                     @warn "Data in $(n_i) is inconsisted and ignored"
@@ -63,7 +85,7 @@ function joindata(proj::WinPosProject; names = nothing, tmin = nothing, tmax = n
         end
         return ( ; x = x , y = y, names = names)    
     end
-    is_data_consistent(a,b) = !isempty(a) && !isempty(b) && length(a) == length(b)
+    is_data_consistent(a,b) = !isempty(a) && !isempty(b) && (length(a) == length(b))
     is_data_consistent(d::DataPair) = is_data_consistent( d.x , d.y )
     function to_matrix(proj::WinPosProject; kwargs...) 
         out = joindata(proj ; kwargs...)
