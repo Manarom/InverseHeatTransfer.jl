@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.21
+# v0.20.23
 
 using Markdown
 using InteractiveUtils
@@ -56,7 +56,7 @@ begin
 	Tinit = 20.0# starting temperature
 	Cp = 1000.0# heat capacity
 	Ro = 2700.0# density
-	H = 15e-3# layer thickness in m
+	H = 7e-3# layer thickness in m
 	PolyType = PW.BernsteinSymPoly
 	#@eval Cp_fun(_) = $Cp*$Ro# capacity
 	#@eval initT_f(x) = $Tinit*cos(0*x*pi/$H) # starting 
@@ -748,7 +748,20 @@ begin
 end
 
 # ╔═╡ f08ecadc-c820-412f-b002-4c0f138a8d8e
+md"""
+Nikita $@bind Nikita_slider Slider(1.0:100.0, show_value=true, default = 5)
+"""
 
+# ╔═╡ d3874dba-a67c-4d42-8863-a932794847e0
+begin
+	nikita_x = range(1.0,Nikita_slider,1000)
+	nikita_y = @. sin(nikita_x)*nikita_x
+	nikita_y1 = @. cos(nikita_x)*nikita_x
+	Plots.plot(nikita_x,nikita_y)
+	Plots.plot!(nikita_x,nikita_y1)
+	ylims!(-100,100)
+	xlims!(0,100)
+end
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -3016,7 +3029,7 @@ version = "1.13.0+0"
 # ╟─da943c51-3f33-4f10-bc3d-9129f76399df
 # ╟─1611afbd-f13c-4532-aec9-6404b33e3f15
 # ╟─d8e97e88-da66-48d7-b5cd-4c1b3d9a4c4c
-# ╠═4316370d-583d-4b48-8632-d17bc34209bd
+# ╟─4316370d-583d-4b48-8632-d17bc34209bd
 # ╟─d6145328-5f43-4148-8911-232c9fed39c4
 # ╟─57b23767-880e-4375-b9b4-bd0164df4a4b
 # ╟─3a88786c-cefd-4daa-bc71-1d7cf04b9a2e
@@ -3046,13 +3059,13 @@ version = "1.13.0+0"
 # ╟─6f7cd9aa-0a48-4870-9223-4b7366d06867
 # ╟─542bebdb-0cdc-4c07-9210-9c773b406bbd
 # ╟─99f51ecf-36e4-4a0b-aa14-0757c88c69a3
-# ╠═81314d03-95c2-4eb5-9f15-09f660b2c875
-# ╠═488e4960-4420-4875-a5c4-cecba610dd1a
-# ╠═1843f411-4706-441f-a07f-5cd77a5650b1
-# ╠═8189333a-7ee8-44a0-9d76-a8efccd22666
+# ╟─81314d03-95c2-4eb5-9f15-09f660b2c875
+# ╟─488e4960-4420-4875-a5c4-cecba610dd1a
+# ╟─1843f411-4706-441f-a07f-5cd77a5650b1
+# ╟─c1bd739f-39b0-4849-a468-cb177dab7d6a
+# ╟─8189333a-7ee8-44a0-9d76-a8efccd22666
 # ╟─454e2649-539e-443e-bd1f-d5c2cd5b5cf6
 # ╟─9a602387-0383-41a3-84f2-2c31fbd93d6e
-# ╠═c1bd739f-39b0-4849-a468-cb177dab7d6a
 # ╟─a02ce5d4-1845-410e-988c-f9f71fd129d3
 # ╠═8c970432-b3c7-4837-9456-7744b0ffcc90
 # ╠═3736ef61-1756-4c68-95cb-1d61f57b321a
@@ -3083,5 +3096,6 @@ version = "1.13.0+0"
 # ╟─ad366a29-e978-4aa4-a3e6-a269556ca766
 # ╠═5c0c8bad-d8b7-433a-a317-cfbedf4caa61
 # ╠═f08ecadc-c820-412f-b002-4c0f138a8d8e
+# ╠═d3874dba-a67c-4d42-8863-a932794847e0
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002

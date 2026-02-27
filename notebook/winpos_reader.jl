@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.21
+# v0.20.23
 
 using Markdown
 using InteractiveUtils
@@ -50,6 +50,19 @@ $(@bind selected_variables confirm(MultiSelect(collect(keys(selected_proj.data))
 
 """
 
+# ╔═╡ 945359ee-7b0e-4a34-ab83-c5e1a4866e6a
+# ╠═╡ disabled = true
+#=╠═╡
+if length(selected_variables) >=1
+	p = plot(grid = true,gridlinewidth=3,gridstyle = :dot,minorgrid=true, box = :on, linewidth =3)
+	for (i , c) in enumerate(eachcol(T))
+		plot!(p,t , c, label = selected_variables[i], linewidth = 2)
+	end
+	
+	p
+end
+  ╠═╡ =#
+
 # ╔═╡ 2dc63e8f-a84c-4edb-a37c-2e6e11074841
 md"""
 	tmin = $(@bind t_min Slider(range(0.0,1000.0,1000), default = 0.0, show_value = true))
@@ -60,16 +73,6 @@ md"""
 
 # ╔═╡ b62cd0e5-0ee9-4cae-b1f8-b6deb9e4612d
 (length(selected_variables) <= 0) || ((t,T) = Main.WinPos.joindata(selected_proj,names = selected_variables, tmin = t_min, tmax = t_max));
-
-# ╔═╡ 945359ee-7b0e-4a34-ab83-c5e1a4866e6a
-if length(selected_variables) >=1
-	p = plot(grid = true,gridlinewidth=3,gridstyle = :dot,minorgrid=true, box = :on, linewidth =3)
-	for (i , c) in enumerate(eachcol(T))
-		plot!(p,t , c, label = selected_variables[i], linewidth = 2)
-	end
-	
-	p
-end
 
 # ╔═╡ 6bd364e8-5749-4f08-b617-1562c216dc24
 tbl = DataFrame(Main.WinPos.to_table(selected_proj; names = selected_variables, tmin = t_min, tmax = t_max))
@@ -90,6 +93,12 @@ end
 
 # ╔═╡ 83bb4919-68ff-48c8-8c52-3b64af0a3865
 paired_data
+
+# ╔═╡ 67eb18a9-28fe-4373-8331-6383dfac7ada
+@bind x Slider(0:100)
+
+# ╔═╡ b6f649d8-e8a5-4136-8252-b75a4b768f5b
+p = plot(1:1:x, sin.(1:1:x))
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -1731,8 +1740,10 @@ version = "1.13.0+0"
 # ╠═6bd364e8-5749-4f08-b617-1562c216dc24
 # ╠═8ce6fa40-2975-4415-80a4-259631389374
 # ╠═517dca54-1fed-4179-93ca-0fd38c01966a
-# ╠═4f65ae20-46b2-42e5-a6ff-9fc3644a1866
+# ╟─4f65ae20-46b2-42e5-a6ff-9fc3644a1866
 # ╠═4a3a29ae-d2d0-4b0b-b7f7-f1db9817d6b3
 # ╠═83bb4919-68ff-48c8-8c52-3b64af0a3865
+# ╠═b6f649d8-e8a5-4136-8252-b75a4b768f5b
+# ╠═67eb18a9-28fe-4373-8331-6383dfac7ada
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002

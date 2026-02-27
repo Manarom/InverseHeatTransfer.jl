@@ -223,7 +223,7 @@ function SingleInverseProblem(
             issorted(time_data) || error("Time data must be sorted in ascending order")
             issorted(thermocouples_locations) || error("Thermocouple locations must be sorted in ascending order")
             NT = length(thermocouples_locations) # number of couples points
-            all(Base.Fix2(<, thickness), thermocouples_locations) || error("Thermocouple locations should be smaller than the value of thickness")
+            all(Base.Fix2(<=, thickness), thermocouples_locations) || error("Thermocouple locations should be smaller than the value of thickness")
             NT < temperatures_needed && error("There should be at least $(temperatures_needed) thermocouples to solve the inverse problem")
             length(time_data) == size(temperatures, 1) || error("Number of rows in temperature data should be the same as the numbe rof time points")
             
