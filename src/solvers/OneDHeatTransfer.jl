@@ -214,8 +214,71 @@ function copy_physics(p::HeatTransferProblem{DT, CF, LF, LDF, ITF, G},
 Returns temperature interpolator: T(x,t) , here x is coordinate, t  - time 
 """
 function temperature_field(p::HeatTransferProblem)
-            return interpolate((collect(xrange(p)), collect(trange(p))), p.T , Gridded(Linear()))
+            #return interpolate((collect(xrange(p)), collect(trange(p))), p.T , Gridded(Linear()))
+            return scale(interpolate(p.T,    BSpline(Linear())), xrange(p.grid), trange(p.grid))
         end
+
+
+# 
+function temperature_gradient(p::HeatTransferProblem)
+    return scale(interpolate(first_order_x_derivative(p) ,    BSpline(Linear())), xrange(p.grid), trange(p.grid))
+    #return interpolate((collect(xrange(p)), collect(trange(p))), first_order_x_derivative(p), Gridded(Linear()))
+end
+first_order_x_derivative(p::HeatTransferProblem) = first_order_x_derivative!(similar(p.T),p)
+        """
+    first_order_x_derivative!(Tx::TMATtype , p::HeatTransferProblem{DT, CF, LF,
+                                         LDF, ITF, G, BCU, BCD, TMATtype})  where {DT, CF, 
+                                            LF, LDF, ITF, 
+                                            G <: UniformGrid, BCU, BCD, TMATtype}
+
+Function evaluates ∂T/∂x from te solution and returns it as a matrix
+"""
+function first_order_x_derivative!(Tx::TMATtype , p::HeatTransferProblem{DT, CF, LF,
+                                         LDF, ITF, G, BCU, BCD, TMATtype})  where {DT, CF, 
+                                            LF, LDF, ITF, 
+                                            G <: UniformGrid, BCU, BCD, TMATtype}
+    grid = p.grid                           
+    Nx = OneDHeatTransfer.xpoints(grid)
+    T_mat = p.T
+    # first derivatives internal points
+    dx = OneDHeatTransfer.xstep(grid, 1)
+    @inbounds for i in 2 : Nx - 1
+        
+        Tp1 = @view T_mat[i + 1 , :]
+        Tm1 = @view T_mat[i - 1 , :]
+        Txc = @view Tx[i , :]
+        @. Txc = (Tp1 - Tm1)/ (2dx)
+    end
+    # second order backward finite difference
+    T1, T2, T3 = @view(T_mat[1 , :]), @view(T_mat[2 , :]), @view(T_mat[3 , :])
+    @. Tx[1, :] = (-3 * T1 + 4 * T2 - T3) / (2 * dx)
+    
+    TN, TNm1, TNm2 = @view(T_mat[Nx , :]), @view(T_mat[Nx - 1 , :]), @view(T_mat[Nx - 2 , :])
+    @. Tx[Nx, :] = (3 * TN - 4 * TNm1 + TNm2) / (2 * dx)
+    
+    return Tx
+end
+
+function second_order_x_derivative(p::HeatTransferProblem) 
+    grid = p.grid                           
+    Nx, Nt =OneDHeatTransfer.xpoints(grid), OneDHeatTransfer.tpoints(grid)
+    dx = OneDHeatTransfer.xstep(grid,1)
+    Tx = zeros(Nx, Nt)
+    Txx = zeros(Nx, Nt)
+    T_mat = p.T
+    # second derivatives internal points - central finite difference
+    Txx[2:Nx-1, :] .= (T_mat[3:Nx, :] .- 2 .* T_mat[2:Nx-1, :] .+ T_mat[1:Nx-2, :]) ./ (dx^2)
+    # neghbours copy
+    Txx[1, :] .= Txx[2, :]
+    Txx[Nx, :] .= Txx[Nx - 1, :]
+
+    # first derivatives internal points
+    Tx[2:Nx-1, :] .= (T_mat[3:Nx, :] .- T_mat[1:Nx - 2, :]) ./ (2dx)
+    # second order backward finite difference
+    Tx[1, :] .= (-3 .* T_mat[1, :] .+ 4 .* T_mat[2, :] .- T_mat[3, :]) ./ (2dx)
+    Tx[Nx, :] .= (3 .* T_mat[Nx, :] .- 4 .* T_mat[Nx-1, :] .+ T_mat[Nx-2, :]) ./ (2dx)
+    return Tx, Txx
+end
         """
         Bunch of functions to solve the non-linear transient heat transfer using finite difference
 
