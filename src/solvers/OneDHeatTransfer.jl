@@ -259,25 +259,39 @@ function first_order_x_derivative!(Tx::TMATtype , p::HeatTransferProblem{DT, CF,
     return Tx
 end
 
-function second_order_x_derivative(p::HeatTransferProblem) 
+"""
+    second_order_x_derivative(Txx::TMATtype , p::HeatTransferProblem{DT, CF, LF,
+                                         LDF, ITF, G, BCU, BCD, TMATtype})  where {DT, CF, 
+                                            LF, LDF, ITF, 
+                                            G <: UniformGrid, BCU, BCD, TMATtype}
+
+Fills the matrix of second derivatives of the same size as temperature distribution matrix inside the 
+`HeatTransferProblem` object applying the central derivative
+
+!!! In current implementation boundary value are just the same as the adjacent
+"""
+function second_order_x_derivative(Txx::TMATtype , p::HeatTransferProblem{DT, CF, LF,
+                                         LDF, ITF, G, BCU, BCD, TMATtype})  where {DT, CF, 
+                                            LF, LDF, ITF, 
+                                            G <: UniformGrid, BCU, BCD, TMATtype} 
+
     grid = p.grid                           
-    Nx, Nt =OneDHeatTransfer.xpoints(grid), OneDHeatTransfer.tpoints(grid)
-    dx = OneDHeatTransfer.xstep(grid,1)
-    Tx = zeros(Nx, Nt)
-    Txx = zeros(Nx, Nt)
+    Nx = OneDHeatTransfer.xpoints(grid)
     T_mat = p.T
-    # second derivatives internal points - central finite difference
-    Txx[2:Nx-1, :] .= (T_mat[3:Nx, :] .- 2 .* T_mat[2:Nx-1, :] .+ T_mat[1:Nx-2, :]) ./ (dx^2)
-    # neghbours copy
+    # first derivatives internal points
+    dx = OneDHeatTransfer.xstep(grid, 1)
+    @inbounds for i in 2 : Nx - 1
+        Tp1 = @view T_mat[i + 1 , :]
+        Tm1 = @view T_mat[i - 1 , :]
+        Ti = @view T_mat[i  , :]
+        Txxc = @view Txx[i , :]
+        @. Txxc = (Tp1 -2*Ti + Tm1)/ (dx^2)
+    end
+    
     Txx[1, :] .= Txx[2, :]
     Txx[Nx, :] .= Txx[Nx - 1, :]
 
-    # first derivatives internal points
-    Tx[2:Nx-1, :] .= (T_mat[3:Nx, :] .- T_mat[1:Nx - 2, :]) ./ (2dx)
-    # second order backward finite difference
-    Tx[1, :] .= (-3 .* T_mat[1, :] .+ 4 .* T_mat[2, :] .- T_mat[3, :]) ./ (2dx)
-    Tx[Nx, :] .= (3 .* T_mat[Nx, :] .- 4 .* T_mat[Nx-1, :] .+ T_mat[Nx-2, :]) ./ (2dx)
-    return Tx, Txx
+    return Txx
 end
         """
         Bunch of functions to solve the non-linear transient heat transfer using finite difference
