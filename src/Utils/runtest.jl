@@ -1,8 +1,9 @@
 
-
-include("finite_difference_functions.jl")
+sol_dir = joinpath(@__DIR__,"..", "solvers")
+include(joinpath(sol_dir,"OneDHeatTransfer.jl"))
 using LinearAlgebra,BenchmarkTools
 using Test
+using .OneDHeatTransfer
 #@testset begin 
 N = 100
 f = rand(N)

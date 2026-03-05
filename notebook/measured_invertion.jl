@@ -89,9 +89,6 @@ md" use static folder $(@bind use_static_folder CheckBox(default = true))"
 # ╔═╡ 2e676f8c-909a-4fb7-b35e-57d08f802df7
 #typeof(JSON2.read(read(joinpath(fldrd,settings_file[]), String)))
 
-# ╔═╡ b74643c7-cce8-478c-b122-71382926b113
-
-
 # ╔═╡ df99b7b7-5a0d-4b71-bf5c-415b5cfa3b2d
 md"""
 
@@ -3056,7 +3053,6 @@ version = "1.13.0+0"
 # ╟─17fbc55f-12a8-431e-ac00-b28304f2eb6c
 # ╟─304091a8-4206-49c2-9c98-cffb18a0e906
 # ╟─2e676f8c-909a-4fb7-b35e-57d08f802df7
-# ╠═b74643c7-cce8-478c-b122-71382926b113
 # ╟─a2a87cfe-5976-4902-b400-fabb19baa9c7
 # ╟─0177413c-0f89-4935-9963-5aeebd333b9a
 # ╟─56a5f3c9-6a41-4326-83ab-2c19d65b3ed0
@@ -3076,7 +3072,7 @@ version = "1.13.0+0"
 # ╟─8f65e989-1abe-4689-9c3f-fdb6cabd7eae
 # ╟─5843fcfb-4e0e-480d-b263-e3f3ad6a7ac3
 # ╟─7d37019a-34bf-43ca-aa81-8b6c29191473
-# ╠═67763d8f-e1ac-4b1f-978f-4734af1e03ba
+# ╟─67763d8f-e1ac-4b1f-978f-4734af1e03ba
 # ╟─68ed85b2-7308-4ea7-b696-0f1951219592
 # ╟─16337bb4-438e-4b86-bdc5-b88ef210a960
 # ╟─538487b4-b2fc-42c2-ba69-663b2ca5b768

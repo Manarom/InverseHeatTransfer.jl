@@ -2,7 +2,7 @@
     eval_monomial(p::BernsteinSymPoly{D,T}, k::Int, x::T) where {D,T}
 
 Evaluates Bernstein polynomial k'th monomial value for x the index of the monomial
-goes from ``0 to D - 1``
+goes from ``0 to D - 1`` where D is the number of coefficients
 """
 function eval_scaled_monomial(::BernsteinSymPoly{D,S}, k::Int, x::T, a::T, b::T) where {D,S,T}
 
@@ -106,16 +106,22 @@ function bernstein_elevate_degree!(b::AbstractVector)
     return b
 end
 
+#strores Bernstein to standard basis conversion matrix
+
 const BERN_TO_STAND = Dict{Int,Matrix{Float64}}()
+
 function get_bern_to_stand_matrix(N::Int)
     if !haskey(BERN_TO_STAND, N) 
         BERN_TO_STAND[N] = bernstein_to_standard_matrix(N)
     end
     return  BERN_TO_STAND[N]
 end
+
 function to_standard_basis(p::BernsteinPoly{N}) where {N}
     return get_bern_to_stand_matrix(N)*p.coeffs
 end
+
+
 """
     bernstein_matrix(N::Int, T::Type=Float64)
 

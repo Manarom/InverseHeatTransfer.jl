@@ -509,7 +509,13 @@ end
 
 # ╔═╡ 60506dec-faf8-4ce1-9d2f-d5ea816a7825
 if reference_eval
-	reference_problem = Main.OneDHeatTransfer.HeatTransferProblem(Cp_fun, 					lam_fun,lam_der,initT_f, H,500, tmax,50000,BC_up_f,upper_bc_type(),BC_dwn_f,lower_bc_type(),Float64);
+	reference_problem = Main.OneDHeatTransfer.HeatTransferProblem(Cp_fun, 					lam_fun,lam_der,initT_f, H,500, tmax,50000,BC_up_f,BC_dwn_f,Float64,upper_bc_type(),lower_bc_type());
+
+#=
+problem = Main.OneDHeatTransfer.HeatTransferProblem(Cp_fun, 					lam_fun,lam_der,initT_f, H,N, tmax, M, BC_up_f, BC_dwn_f, Float64, upper_bc_type(),lower_bc_type());
+	=#
+
+	
 	reference_solver_type = OHT.BFD1_CN_EXP_EXP()
 	fd_solver(reference_problem, reference_solver_type)
 	T_ref_int = interpolate_pref(reference_problem)
@@ -560,7 +566,7 @@ end;
 if is_check_all && reference_eval
 	for i in 1:m_number
 		mi = m_vect[i]
-		p_i = OHT.HeatTransferProblem(Cp_fun,lam_fun,lam_der,initT_f, H,N, tmax,mi, BC_up_f,upper_bc_type(), BC_dwn_f,lower_bc_type(),Float64)
+		p_i = OHT.HeatTransferProblem(Cp_fun,lam_fun,lam_der,initT_f, H,N, tmax,mi, BC_up_f,BC_dwn_f, Float64, upper_bc_type(), lower_bc_type())
 		for (j,(name,type)) in enumerate(schemes2compare)
 			OHT.unified_fd_solver!(p_i, type())
 			bm_cur = !is_bench_all ? nothing : @benchmark OHT.unified_fd_solver!($p_i, $(type())) seconds = 2
@@ -2284,6 +2290,6 @@ version = "1.13.0+0"
 # ╟─8833c701-d50b-4561-bda9-a93df065a179
 # ╟─7017c716-8682-4a74-9bfe-7dc09879db16
 # ╟─e525b2ec-f4a7-4052-af2b-7a9b4fa4f520
-# ╠═d5762b64-6db0-4460-afa7-ac7e0b36e448
+# ╟─d5762b64-6db0-4460-afa7-ac7e0b36e448
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002

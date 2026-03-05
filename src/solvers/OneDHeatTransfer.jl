@@ -219,10 +219,27 @@ function temperature_field(p::HeatTransferProblem)
         end
 
 
-# 
+all_grid_interpolators(p::HeatTransferProblem) =(T = temperature_field(p), 
+                                                 Tₓ = temperature_gradient(p),
+                                                 Tₓₓ = temperature_laplacian(p))
+"""
+    temperature_gradient(p::HeatTransferProblem)
+
+returns the interpolator of ∂T/∂x(x,t) on grid of the problem `p`
+uses central finite difference to evaluate the in-grid points and 
+second order backward differences at the boundaries
+"""
 function temperature_gradient(p::HeatTransferProblem)
     return scale(interpolate(first_order_x_derivative(p) ,    BSpline(Linear())), xrange(p.grid), trange(p.grid))
     #return interpolate((collect(xrange(p)), collect(trange(p))), first_order_x_derivative(p), Gridded(Linear()))
+end
+"""
+    temperature_laplacian(p::HeatTransferProblem)
+
+returns the interpolator of ∂²T/∂x²(x,t) on grid of the problem `p`
+"""
+function temperature_laplacian(p::HeatTransferProblem)
+    return scale(interpolate(first_order_x_derivative(p) ,    BSpline(Linear())), xrange(p.grid), trange(p.grid))
 end
 first_order_x_derivative(p::HeatTransferProblem) = first_order_x_derivative!(similar(p.T),p)
         """
@@ -258,9 +275,15 @@ function first_order_x_derivative!(Tx::TMATtype , p::HeatTransferProblem{DT, CF,
     
     return Tx
 end
-
 """
-    second_order_x_derivative(Txx::TMATtype , p::HeatTransferProblem{DT, CF, LF,
+    second_order_x_derivative(p::HeatTransferProblem)
+
+Returns the second oreder derivative matrix of the same size as the temperature matrix `p.T`
+on grid.
+"""
+second_order_x_derivative(p::HeatTransferProblem) = second_order_x_derivative!(similar(p.T),p)
+"""
+    second_order_x_derivative!(Txx::TMATtype , p::HeatTransferProblem{DT, CF, LF,
                                          LDF, ITF, G, BCU, BCD, TMATtype})  where {DT, CF, 
                                             LF, LDF, ITF, 
                                             G <: UniformGrid, BCU, BCD, TMATtype}
@@ -270,7 +293,7 @@ Fills the matrix of second derivatives of the same size as temperature distribut
 
 !!! In current implementation boundary value are just the same as the adjacent
 """
-function second_order_x_derivative(Txx::TMATtype , p::HeatTransferProblem{DT, CF, LF,
+function second_order_x_derivative!(Txx::TMATtype , p::HeatTransferProblem{DT, CF, LF,
                                          LDF, ITF, G, BCU, BCD, TMATtype})  where {DT, CF, 
                                             LF, LDF, ITF, 
                                             G <: UniformGrid, BCU, BCD, TMATtype} 
