@@ -9,11 +9,19 @@ module InverseHeatTransfer
     include(joinpath(".","polynomials", "PolynomialWrappers.jl"))
     @reexport using .PolynomialWrappers
 
-    abstract type AbstractInverseProblem end
     abstract type AbstractRegularization end
     struct NoRegularization <: AbstractRegularization end
+
+
+
+
+
     abstract type AbstractCovariance  end
-    struct NoCovariance <: AbstractCovariance end    
+    struct NoCovariance <: AbstractCovariance end   
+
+
+    abstract type AbstractInverseProblem end
+ 
 
     const SupportedFlagType{N} = Union{Bool, AbstractVector{Bool}, NTuple{N,Bool}} where N
     #=struct BinaryPredicate{D}  
@@ -57,12 +65,12 @@ function OptimizableVariable(::Type{DT}, p::P, flag::B, lb::V, ub::V,
     const OV = OptimizableVariable
     (ov::OV)(x) = ov.p(x)
 
-parnumber(::OV{N}) where N = N
-isoptimizable(ov::OV) = any(ov.flag)
+total_parnumber(::OV{N}) where N = N
+is_optimizable(ov::OV) = any(ov.flag)
 is_lower_bouned(ov::OV) = ov.is_l_bounded[]
 is_upper_bounded(ov::OV) = ov.is_u_bounded[]
 optimizable_parnumber(ov::OV) = sum(ov.flag)
-change_flag(o::OV; new_flag = true) = isa(new_flag, Bool) ? fill!(o.flag, new_flag) : copyto!(o.flag, new_flag)
+change_flag!(o::OV; new_flag = true) = isa(new_flag, Bool) ? fill!(o.flag, new_flag) : copyto!(o.flag, new_flag)
     """
     refill!(ov::OV, x)
 
@@ -82,8 +90,8 @@ modify!(ov::OV, x) = begin
         return nothing
     end
     count_violations(a, b, f) = count(f(i,k) for (i,k) in zip(a,b))
-    count_lower_bound_violations(ov::OV) = (is_lower_bouned(ov) && isoptimizable(ov)) ? count_violations(fview_coeffs(ov),fview_lb_coeffs(ov), ov.lb_violation_fun) : 0
-    count_upper_bound_violations(ov::OV)= (is_upper_bounded(ov) && isoptimizable(ov)) ? count_violations(fview_coeffs(ov),fview_ub_coeffs(ov), ov.ub_violation_fun) : 0
+    count_lower_bound_violations(ov::OV) = (is_lower_bouned(ov) && is_optimizable(ov)) ? count_violations(fview_coeffs(ov),fview_lb_coeffs(ov), ov.lb_violation_fun) : 0
+    count_upper_bound_violations(ov::OV)= (is_upper_bounded(ov) && is_optimizable(ov)) ? count_violations(fview_coeffs(ov),fview_ub_coeffs(ov), ov.ub_violation_fun) : 0
     count_bound_violations(o::OV) = count_lower_bound_violations(o) + count_upper_bound_violations(o)
     fview_coeffs(ov::OV) = view(coeffs(ov), ov.flag)
     fview_lb_coeffs(ov::OV) = view(lb_coeffs(ov), ov.flag)
@@ -101,17 +109,23 @@ modify!(ov::OV, x) = begin
 
     #OptimizableVariable around ScaledPolynomial
     const OVS = OptimizableVariable{N, DT, P,  B, V} where {N, DT, P<: ScaledPolynomial,  B, V}
-    function OptimizableVariable(p::Q  ; lb::Union{Nothing , NTuple{N,T}, StaticVector{N,T}} = nothing, 
-                                         ub::Union{Nothing , NTuple{N,T}, StaticVector{N,T}} = nothing, 
-                                         flag::SupportedFlagType{N} = true,
+    function OptimizableVariable(p::Q  ; lb::Union{Nothing , T , NTuple{N,T}, StaticVector{N,T}} = nothing, 
+                                         ub::Union{Nothing , T , NTuple{N,T}, StaticVector{N,T}} = nothing, 
+                                         flag::SupportedFlagType{N} = false,
                                          lb_violation_fun = < ,
                                          ub_violation_fun = > ) where {Q <: ScaledPolynomial{P}} where  P <: AbstractPoly{N,T} where {N,T} 
             
             is_u_bounded = Ref(~isnothing(ub))
+            is_u_single_number = isa(lb , Number)
+            is_l_single_number = isa(ub , Number)
             is_l_bounded = Ref(~isnothing(lb))
             V = MVector{N,T}
-            _ub = is_u_bounded[] ? P(V(ub)) : P(V(undef))
-            _lb = is_l_bounded[] ? P(V(lb)) : P(V(undef))
+            _ub = (!is_u_bounded[] || is_u_single_number) ? P(V(undef)) : P(V(ub))  
+            _lb = (!is_l_bounded[] || is_l_single_number) ? P(V(undef)) : P(V(lb)) 
+            # @show _ub
+            # @show _lb
+            is_u_single_number && fill!(_ub , ub)
+            is_l_single_number && fill!(_lb , lb)
 
             if (is_u_bounded[] && is_l_bounded[]) 
                 count_violations(PolynomialWrappers.coeffs(_ub),
@@ -145,6 +159,7 @@ modify!(ov::OV, x) = begin
     ub_coeffs(ov::OVS)  =  PolynomialWrappers.coeffs(ov.ub)
 
     derivative!(ov_der::OVS, ov::OVS) = PolynomialWrappers.derivative!(ov_der.p, ov.p)
+
     const POSSIBLE_TAGS = (:lam, :C, )
     struct SingleInverseProblem{DT <: Number, 
                                 TN , N , # TN - couples number, N - timesteps number
@@ -232,6 +247,12 @@ function SingleInverseProblem(
             NT == size(temperatures, 2) || error("Number of thermocouple locations must 
                         be equal to the number of columns in temperatures matrix")
             
+
+            if isa(dλdT, OptimizableVariable)
+                   change_flag!(dλdT , new_flag = false )
+            else
+                dλdT = OptimizableVariable(dλdT)
+            end         
             # we need to solve the equation only in the region of interest, thus  
             # only the part of the sample is covered with grid 
             # thickness is the real thickness of the sample 
@@ -306,7 +327,10 @@ function SingleInverseProblem(
             N = t_points
             ProblemType = typeof(direct_problem)
             DV = typeof(Tdata_evaluated)
-            optimizable = filter(Base.Fix2(isa, OptimizableVariable), (λ, C, upper_flux, lower_flux, initial_distribution))
+            is_optim = Base.Fix2(isa, OptimizableVariable)
+            # all possibly optimizable variables are arranged into named tuple 
+            optimizable = (; (k => v for (k, v) in zip((:λ,:C,:q_up, :q_dwn,:T₀, :dλdT),
+                    (λ, C, upper_flux, lower_flux, initial_distribution, dλdT)) if is_optim(v))...)
             O = typeof(optimizable)
             ON = length(optimizable)
             new{DT, TN, N , ProblemType , CV , RG , DV, O, ON}(        
@@ -325,14 +349,73 @@ function SingleInverseProblem(
 
         end
     end
-    function fill_residual!(p::SingleInverseProblem)
+    """
+    fill_residual!(p::SingleInverseProblem)
+
+Function  solves the direct problem and refills the resiaduals matrix
+"""
+function fill_residual!(p::SingleInverseProblem)
         solve_problem!(p.direct_problem)
         @. p.residual = p.Tdata_evaluated - p.Tdata_measured
         return nothing
     end
-    function interpolate_matrix!(Mout, t , M , tnew , start_col = 1, stop_col = 0)
-        stop_col == 0 && (stop_col = size(M,2))
-        for (i , c) in enumerate(eachcol(M)[start_col : stop_col])
+    """
+    update_all_optimizables!(p::SingleInverseProblem, x_vector::AbstractVector)
+
+Function updates all optimizable variables with respect to the flags vectors
+"""
+function update_all_optimizables!(p::SingleInverseProblem, x_vector::AbstractVector)
+        cursor = 1 # updated variables counter 
+        for ov in p.optimizable
+            n = optimizable_parnumber(ov)
+            n == 0 && continue
+            modify!(ov, view(x_vector, cursor : cursor + n - 1))
+            cursor += n
+        end
+        is_λ_optimizable(p) && modify_λ_derivative!(p)
+    end
+
+    optimizable_parnumber(p::SingleInverseProblem) = sum(optimizable_parnumber, p.optimizable)
+
+    is_λ_optimizable(p::SingleInverseProblem) = haskey(p.optimizable,:λ)
+
+    function fill_starting_vector(p::SingleInverseProblem{DT}) where DT
+        v = Vector{DT}()
+        cursor = 1 # updated variables counter 
+        for ov in p.optimizable
+            n = optimizable_parnumber(ov)
+            n == 0 && continue
+            resize!(v, length(v) + n)
+            _v = view(v, cursor : cursor + n - 1)
+            ilb = is_lower_bouned(ov)
+            iub = is_upper_bounded(ov)
+            _d , _l , _u =fview_coeffs(ov), fview_lb_coeffs(ov) , fview_ub_coeffs(ov)
+            if  ilb && iub
+               @. _v = 0.5 * (_d + _l)
+            elseif ilb
+                copyto!(_v , _l)
+            elseif iub
+                copyto!(_v , _u)
+            else
+                copyto!(_v , _d)
+            end
+            cursor += n
+        end
+        return v
+    end
+    #fview_coeffs(ov::OV) = view(coeffs(ov), ov.flag)
+    #fview_lb_coeffs(ov::OV) = view(lb_coeffs(ov), ov.flag)
+    #fview_ub_coeffs(ov::OV) = view(ub_coeffs(ov), ov.flag)
+    function modify_λ_derivative!(p::SingleInverseProblem) 
+        derivative!(p.optimizable.dλdT, p.optimizable.λ)
+    end
+
+
+    function interpolate_matrix!(Mout, t , M , tnew , start_col::Int = 1, stop_col::Int = 0)
+        
+        stop_col <= 0 && (stop_col = size(M,2))
+        iter_step = start_col <= stop_col ? 1 : -1
+        for (i , c) in enumerate(eachcol(M)[start_col : iter_step : stop_col])
             interpolator = linear_interpolation(t , c)
             c_data = @view Mout[: , i] 
             @. c_data = interpolator(tnew)
