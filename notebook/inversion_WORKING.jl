@@ -20,7 +20,7 @@ end
 using Revise,AllocCheck, PrettyTables, Reexport, LinearAlgebra
 
 # ╔═╡ c7400800-f152-11f0-a386-29e067f9216c
-using Polynomials,Interpolations,Interpolations,Polynomials,LegendrePolynomials,StaticArrays,RecipesBase,Plots, FFTW
+using Polynomials,Interpolations,Interpolations,Polynomials,LegendrePolynomials,StaticArrays,RecipesBase,Plots, FFTW, Unrolled
 
 # ╔═╡ b6133376-a592-48ee-8d63-a8413e20088d
 using BenchmarkTools, ProfileCanvas, PlutoUI, PlutoPlotly
@@ -395,9 +395,9 @@ end
 
 # ╔═╡ b7f738ad-2faa-4399-be33-71c43184a4c7
 begin 
-	C = IHT.OptimizableVariable(IHT.ScaledPolynomial(IHT.BernsteinSymPoly(Cp_fun.poly.coeffs), xmin = lam_T_range[1], xmax = lam_T_range[end]))
+	C = IHT.OptimizableVariable(IHT.ScaledPolynomial(IHT.BernsteinSymPoly(Cp_fun.poly.coeffs), xmin = lam_T_range[1], xmax = lam_T_range[end]), flag = false)
 	λ_poly = IHT.ScaledPolynomial(IHT.BernsteinSymPoly(ntuple(_->1.0 , basis_degree)), xmin = lam_T_range[1], xmax = lam_T_range[end])
-	λ = IHT.OptimizableVariable(λ_poly, flag = false)
+	λ = IHT.OptimizableVariable(λ_poly, flag = true)
 	dλdT_poly =  IHT.PolynomialWrappers.derivative(λ_poly)
 	dλdT = IHT.OptimizableVariable(dλdT_poly, flag = false)
 
@@ -407,11 +407,12 @@ end
 md"### Do profiling? $(@bind is_do_profile CheckBox(default = false))"
 
 # ╔═╡ e805618f-14c8-46a3-b0f0-cc5f949fed3b
-function discrepancy(x,inv_probl::IHT.SingleInverseProblem)
+function discrepancy(x , inv_probl::IHT.SingleInverseProblem)
 	λ = inv_probl.direct_problem.L_f.fun
 	IHT.refill!(λ, x)
 	dλdT = inv_probl.direct_problem.Ld_f.fun
 	IHT.derivative!(dλdT, λ)
+	IHT.solve_direct_problem!(inv_probl)
 	IHT.fill_residual!(inv_probl)
 	#return sum(Base.Fix2(^,2.0), inv_probl.residual)
 	return norm(inv_probl.residual) + sum(dλdT.p.poly.coeffs)
@@ -574,7 +575,7 @@ end
 # ╔═╡ b7cab05e-c24f-4268-ba7b-f361c1e9076d
 begin
 	xpoints_number = 100
-	tpoints_number = 500
+	tpoints_number = 2000
 	inv_probl = IHT.SingleInverseProblem(time_data, temperatures, initial_distribution, therm_locations, C,λ, dλdT, H, xpoints_number, tpoints_number)
 end
 
@@ -595,8 +596,8 @@ if is_fit_on
 	start = fill(1.0,(PW.parnumber(λ_poly),))
 	lb = fill(lower_lam_limit,(PW.parnumber(λ_poly),))
 	ub = fill(upper_lam_limit,(PW.parnumber(λ_poly),))
-	fun = OptimizationFunction(discrepancy, NoAutoDiff())
-	optp = OptimizationProblem(discrepancy, start, inv_probl, lb = lb, ub = ub , maxiters=pso_iters )
+	# fun = OptimizationFunction(discrepancy, NoAutoDiff())
+	optp = OptimizationProblem(IHT.discrepancy, start, inv_probl, lb = lb, ub = ub , maxiters=pso_iters )
 	res = solve(optp, ParticleSwarm())
 
 end
@@ -779,6 +780,7 @@ Reexport = "189a3867-3050-52da-a836-e630ba90ab69"
 Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 Tables = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
+Unrolled = "9602ed7d-8fef-5bc8-8597-8f21381861e8"
 
 [compat]
 Accessors = "~0.1.43"
@@ -806,6 +808,7 @@ Reexport = "~1.2.2"
 Revise = "~3.13.2"
 StaticArrays = "~1.9.16"
 Tables = "~1.12.1"
+Unrolled = "~0.1.5"
 """
 
 # ╔═╡ 00000000-0000-0000-0000-000000000002
@@ -814,7 +817,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.12.5"
 manifest_format = "2.0"
-project_hash = "08cac6ba06875911658b69350b7114d2c30be9d9"
+project_hash = "6a06c095adeed7be508ccfe5b9151c57667e7f90"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "f7304359109c768cf32dc5fa2d371565bb63b68a"
@@ -2715,6 +2718,12 @@ git-tree-sha1 = "53915e50200959667e78a92a418594b428dffddf"
 uuid = "1cfade01-22cf-5700-b092-accc4b62d6e1"
 version = "0.4.1"
 
+[[deps.Unrolled]]
+deps = ["MacroTools"]
+git-tree-sha1 = "6cc9d682755680e0f0be87c56392b7651efc2c7b"
+uuid = "9602ed7d-8fef-5bc8-8597-8f21381861e8"
+version = "0.1.5"
+
 [[deps.Unzip]]
 git-tree-sha1 = "ca0969166a028236229f63514992fc073799bb78"
 uuid = "41fe7b60-77ed-43a1-b4f0-825fd5a5650d"
@@ -3040,18 +3049,18 @@ version = "1.13.0+0"
 # ╟─331ee2df-931b-4267-8795-1fe402c7fdaa
 # ╟─86a00c2e-4896-417d-93d0-bc69b5823957
 # ╟─95508f3b-73b5-4cc5-b6bd-bb4d949bf00c
-# ╟─1182c47f-3cfb-4aed-a597-c79a0a786d3c
+# ╠═1182c47f-3cfb-4aed-a597-c79a0a786d3c
 # ╟─ec444543-c871-468b-aad0-aa494586e514
-# ╟─5bc1c582-825e-4906-b796-9da5c14554fb
-# ╟─6f7cd9aa-0a48-4870-9223-4b7366d06867
+# ╠═5bc1c582-825e-4906-b796-9da5c14554fb
+# ╠═6f7cd9aa-0a48-4870-9223-4b7366d06867
 # ╟─542bebdb-0cdc-4c07-9210-9c773b406bbd
 # ╟─99f51ecf-36e4-4a0b-aa14-0757c88c69a3
 # ╟─81314d03-95c2-4eb5-9f15-09f660b2c875
 # ╟─488e4960-4420-4875-a5c4-cecba610dd1a
 # ╟─1843f411-4706-441f-a07f-5cd77a5650b1
-# ╟─c1bd739f-39b0-4849-a468-cb177dab7d6a
+# ╠═c1bd739f-39b0-4849-a468-cb177dab7d6a
 # ╟─8189333a-7ee8-44a0-9d76-a8efccd22666
-# ╟─454e2649-539e-443e-bd1f-d5c2cd5b5cf6
+# ╠═454e2649-539e-443e-bd1f-d5c2cd5b5cf6
 # ╟─9a602387-0383-41a3-84f2-2c31fbd93d6e
 # ╟─a02ce5d4-1845-410e-988c-f9f71fd129d3
 # ╠═8c970432-b3c7-4837-9456-7744b0ffcc90
@@ -3061,9 +3070,9 @@ version = "1.13.0+0"
 # ╠═b7cab05e-c24f-4268-ba7b-f361c1e9076d
 # ╠═98a565ad-cfa2-49cd-9380-d577df12cfdd
 # ╠═01d72198-4ee9-436b-ada2-035821b8698d
-# ╟─e9c5ed77-2ea4-4c20-b1f5-88d7fe700e6c
+# ╠═e9c5ed77-2ea4-4c20-b1f5-88d7fe700e6c
 # ╠═5ab2bb2f-fd46-42ff-bdb2-3ba08231d9b4
-# ╟─b832d7ff-e2b8-4822-8400-7729c8ccff6f
+# ╠═b832d7ff-e2b8-4822-8400-7729c8ccff6f
 # ╠═a302366d-27f9-4600-930d-fc0acc9456cd
 # ╠═e805618f-14c8-46a3-b0f0-cc5f949fed3b
 # ╠═a939bc18-e866-425a-aa5f-2650feb3c487

@@ -1,5 +1,6 @@
 module InverseHeatTransfer
     using LinearAlgebra , Reexport , StaticArrays , Interpolations, RecipesBase
+    using Unrolled
     import FunctionWrappers
     
     export OptimizableVariable, SingleInverseProblem
@@ -15,17 +16,10 @@ module InverseHeatTransfer
     struct NoRegularization <: AbstractRegularization end
     struct  FiniteDifferenceRegularization <: AbstractRegularization end
 
-   
-
-
 
     abstract type AbstractCovariance  end
-    struct NoCovariance <: AbstractCovariance end   
-    struct HeteroscedasticCovariance{D} <: AbstractCovariance 
-        
-    end 
-
-    
+    struct NoCovariance <: AbstractCovariance end  
+   
  
 
     const SupportedFlagType{N} = Union{Bool, AbstractVector{Bool}, NTuple{N,Bool}} where N
@@ -35,13 +29,27 @@ module InverseHeatTransfer
     
     (f::BinaryPredicate{D})(x::D,y::D) where D = f.f(x,y)=# #this was slow
 
-
+"""
+    wrappes any modifiable and callcable variable of type P, which has parameters accessabel by `coeffs` function
+    and can be bounded by `lb` and `ub` constraints, constraints violation can be checked  with  `lb_violation_fun`
+    and `ub_violation_fun` functions. The parameters of `ub` and `lb` objects should be accessable by `lb_coeffs` and 
+    `ub_coeffs`, there also should be a function to evaluate the derivative of `lb` and `ub` with respect to their 
+    parameters.
+    
+        Currently implemented for `ScaledPolynomial` from `PolynomialWrappers`
+        The following interface should be implemented to make it work for any particular type
+    coeffs(::OV{N,DT,P}) where {N,DT,P} 
+    lb_coeffs(::OV{N,DT,P})  
+    ub_coeffs(::OV{N,DT,P}) where {N,DT,P}  
+    # not necessary
+    derivative!(::OV, ::OV)
+"""
     struct OptimizableVariable{N, DT, P,  B, V, FL, FU}
-        p::P
+        p::P # any type which must be callable
         flag::B 
         lb::V
         ub::V
-        is_u_bounded::Base.RefValue{Bool}
+        is_u_bounded::Base.RefValue{Bool} # flag if upper bounded 
         is_l_bounded::Base.RefValue{Bool}
         lb_violation_fun::FL
         ub_violation_fun::FU
@@ -59,7 +67,6 @@ Variables `iu` and `il` are just flags which can be used to turn `on` and `off` 
 to the current state of the varible `p` using `f1` and `f2` functions, which must take two argument of `P` and `V` types 
 and return a single value.
 
-
 """
     function OptimizableVariable(::Type{DT}, p::P, flag::B, 
                                  lb::V, ub::V, 
@@ -74,7 +81,10 @@ and return a single value.
     end
      # default methods
     const OV = OptimizableVariable
+
     (ov::OV)(x) = ov.p(x)
+
+
 is_optimizable(_) = false
 total_parnumber(::OV{N}) where N = N
 is_optimizable(ov::OV) = any(ov.flag)
@@ -94,10 +104,43 @@ refill!(ov::OV, x) = begin
     """
     modify!(ov::OV, x)
 
-Modifies coefficients which are marked as adjustable
+Modifies coefficients which are marked as adjustable by ov.flag
+If x is empty or ov.flag has no true values does nothing
 """
-modify!(ov::OV, x) = begin 
-        copyto!(fview_coeffs(ov), x)
+function modify!(ov::OV{N , DT}, x) where {N , DT}
+        (isempty(x) || !is_optimizable(ov)) && return nothing
+        optimizable_parnumber(ov) != length(x) && error("incorrect x size") 
+        #_x = coeffs(ov)
+        #_f = ov.flag
+        counter = 1
+        @inbounds for i = 1 : N 
+            if ov.flag[i]
+                coeffs(ov)[i] = x[counter]
+                counter += 1
+            end    
+        end
+        # copyto!(fview_coeffs(ov), x)
+        return nothing
+    end
+"""
+    modify!(ov::OV{N , DT}, x , r) where {N , DT}
+
+Function fills parameters of `ov` marked by ov.flag from 
+x[r], r can be a vector of indices or indices range
+"""
+function modify!(ov::OV{N , DT}, x , r) where {N , DT}
+        n = optimizable_parnumber(ov)
+        nr = length(r)
+        nr == 0 && return nothing
+        (n != nr || nr > length(x)) && error("incorrect x size") 
+        counter = 1
+        @inbounds for i = 1 : N 
+            if ov.flag[i]
+                coeffs(ov)[i] = x[r[counter]]
+                counter += 1
+            end    
+        end
+        # copyto!(fview_coeffs(ov), x)
         return nothing
     end
     count_violations(a, b, f) = count(f(i,k) for (i,k) in zip(a,b))
@@ -105,7 +148,14 @@ modify!(ov::OV, x) = begin
     count_upper_bound_violations(ov::OV)= (is_upper_bounded(ov) && is_optimizable(ov)) ? count_violations(fview_coeffs(ov),fview_ub_coeffs(ov), ov.ub_violation_fun) : 0
     count_bound_violations(o::OV) = count_lower_bound_violations(o) + count_upper_bound_violations(o)
 
-    function constraints_loss(ov::OV{N , DT}) where {N,DT}
+    """
+    constraints_loss(ov::OV{N , DT}) where {N,DT}
+
+Evaluates scalar loss due to the constraints of the OptimizableVariable violation 
+The value of loss is proportional to the square of the difference between the constraint
+value and the actual value of coefficients, normalized to the span of the box
+"""
+function constraints_loss(ov::OV{N , DT}) where {N,DT}
         !is_optimizable(ov) && return zero(DT)
         ilb = is_lower_bounded(ov)
         iub = is_upper_bounded(ov)
@@ -123,13 +173,13 @@ modify!(ov::OV, x) = begin
                         ub_i    
                     end    
                     if ilb && ov.lb_violation_fun(x_i , lb_i)
-                        ov.lb_violation[i] = abs(x_i -  lb_i)/span
+                        ov.lb_violation[i] = ((x_i -  lb_i)/span)^2.0
                         s_i += ov.lb_violation[i] 
                     else
                         ov.lb_violation[i] = zero(DT)
                     end
                     if iub && ov.ub_violation_fun(x_i , ub_i)
-                        ov.ub_violation[i] = abs(x_i -  ub_i)/span
+                        ov.ub_violation[i] = ((x_i -  ub_i)/span)^2.0
                         s_i += ov.ub_violation[i]
                     else
                         ov.ub_violation[i] = zero(DT)
@@ -138,13 +188,38 @@ modify!(ov::OV, x) = begin
             end
         return s_i
     end
+    """
+    finite_difference_regularization_loss(ov::OptimizableVariable{N,DT}) where {N,DT}
 
+Evaluates loss addition due to Tikhonov's regularization  `xᵀDᵀDx` with regularizing matrix `D`
+finite difference matrix here x are `ALL` coefficients (not only those which are supposed to be modified by flag)
+When using together with Bernstein polynomial forces funtion to be more monotonical
+"""
+function finite_difference_regularization_loss(ov::OV{N,DT}) where {N,DT}
+
+        !is_optimizable(ov) && return zero(DT)
+        _x = coeffs(ov)
+        s_i = zero(DT)
+
+        (lv, hv) = (_x[1], _x[1])
+        
+        @inbounds @simd for i in 1 : N - 1
+            x_ip = _x[i  + 1]
+            x_ip > hv && (hv = x_ip)
+            x_ip < lv && (lv = x_ip)
+            Δ = x_ip - _x[i]
+            s_i += Δ * Δ
+        end
+        diff = hv - lv
+        s_i *= (abs(diff) > 1e-16) ? DT(0.25) / (N * (diff^2)) : zero(DT)
+        return s_i   
+    end
 
     fview_coeffs(ov::OV) = view(coeffs(ov), ov.flag)
     fview_lb_coeffs(ov::OV) = view(lb_coeffs(ov), ov.flag)
     fview_ub_coeffs(ov::OV) = view(ub_coeffs(ov), ov.flag)
     fview_lb_violation(ov::OV)  = view(ov.lb_violation, ov.flag)
-    fview_lb_violation(ov::OV)  = view(ov.ub_violation, ov.flag)
+    fview_ub_violation(ov::OV)  = view(ov.ub_violation, ov.flag)
 
     extract_all_params(ov::OV) = copy(coeffs(ov))
     extract_optimizable_params(ov::OV) = copy(fview_coeffs(ov))
@@ -207,15 +282,31 @@ modify!(ov::OV, x) = begin
     derivative!(ov_der::OVS, ov::OVS) = PolynomialWrappers.derivative!(ov_der.p, ov.p)
 
     # const POSSIBLE_TAGS = (:lam, :C, )
+"""
+    Type to to store the single inverse problem (simplest case of the problem )
+    parameters of the type:
 
+        DT  - type of temperature data 
+        TN - number of thermocouples involved in residual  (number of columns of redual matrix)
+        N - number of time points 
+        ProblemType - direct problem type (see `HeatTransferProblem` for details)
+        CV - covarinace type 
+        RG - regularization type 
+        DV - evalauted data (view of full results matrix )
+        O - a Tuple of optimizable variables (to change the optimizabel variables the problem should be recreated)
+        ON - total number of optimizable variables 
+        IM - Tuple of index mapping with the same number of elements as the optimizable, conatins indices ranges which must be used 
+        to fill the parameters of the optimizable variables from the extrenal vector (see `update_all_optimizables!`)
+"""
     struct SingleInverseProblem{DT <: Number, 
                                 TN , N , # TN - couples number, N - timesteps number
                                 ProblemType <: HeatTransferProblem ,
                                 CV <: AbstractCovariance, 
                                 RG <: AbstractRegularization,
                                 DV, 
-                                O, # optimizable variable iterator 
-                                ON # number of optimizable variables (variable which can possibly be optimized) 
+                                O <: NamedTuple, # optimizable variable iterator 
+                                ON, # number of optimizable variables (variable which can possibly be optimized) 
+                                IM <: Tuple # index mapping for optimizable variables parameters in optimization variables single vector 
                                 } <: AbstractInverseProblem
         
         thermocouple_locations::Vector{DT} # coordinates of all thermocouples
@@ -232,6 +323,7 @@ modify!(ov::OV, x) = begin
         residual::Matrix{DT} # raw residual vector
         # jacobian::Matrix{}
         optimizable::O # this field stores the iterable object over all variables to be optimizaed
+        index_mapper::IM # stored indices ranges for optimizable variables parameters vector 
         α::Base.RefValue{DT} # regularization multiplier
         ψ::Base.RefValue{DT}  # constraints violation multiplier if contraint violation is added to the loss function 
         include_constraints_violation_to_loss::Base.RefValue{Bool} # if this flag is true, conatraints violation are added to the loss function
@@ -378,16 +470,17 @@ function SingleInverseProblem(
             N = t_points
             ProblemType = typeof(direct_problem)
             DV = typeof(Tdata_evaluated)
-            # is_optim = Base.Fix2(isa, OptimizableVariable)
+
             # all possibly optimizable variables are arranged into named tuple 
 
-            optimizable =(;λ = λ , C = C, dλdT = dλdT) # q_up = upper_flux , q_dwn = lower_flux , T₀ = initial_distribution, )
+            #optimizable =(;λ = λ , C = C, dλdT = dλdT) # q_up = upper_flux , q_dwn = lower_flux , T₀ = initial_distribution, )
             
-            # optimizable =(; (k => v for (k, v) in zip((:λ,:C,:q_up, :q_dwn,:T₀, :dλdT), (λ, C, upper_flux, lower_flux, initial_distribution, dλdT)) if is_optim(v))...)
-
+            optimizable =(; (k => v for (k, v) in zip((:λ,:C,:q_up, :q_dwn,:T₀, :dλdT), (λ, C, upper_flux, lower_flux, initial_distribution, dλdT)) if isa(v, OptimizableVariable))...)
+            index_mapper = create_index_mapping(optimizable)
             O = typeof(optimizable)
             ON = length(optimizable)
-            new{DT, TN, N , ProblemType , CV , RG , DV, O, ON}(        
+            IM = typeof(index_mapper)
+            new{DT, TN, N , ProblemType , CV , RG , DV, O, ON , IM}(        
                                                         T_locations, # thermocouple_locations - total locations including those used in BC
                                                         thermocouple_indices, # indices of thermocouples in the direct problem output matrix 
                                                         copy(temperatures), # thermocouple_values -  just copy of the input data 
@@ -399,6 +492,7 @@ function SingleInverseProblem(
                                                         Tdata_evaluated, # reference to the part of temperature distribution matrix which is used for discrepancy evaluation
                                                         residual, # matrix used to store the residual
                                                         optimizable,
+                                                        index_mapper,
                                                         Ref(alpha),
                                                         Ref(psi),
                                                         Ref(include_constraints_violation_to_loss) 
@@ -412,27 +506,42 @@ function SingleInverseProblem(
 Function  solves the direct problem and refills the resiaduals matrix
 """
 function fill_residual!(p::SingleInverseProblem)
-        solve_problem!(p.direct_problem)
         @. p.residual = p.Tdata_evaluated - p.Tdata_measured
         return nothing
-    end
+end
+
+solve_direct_problem!(p::SingleInverseProblem) = solve_problem!(p.direct_problem)
+function create_index_mapping(optimizable)
+        cursor = 1 # updated variables counter 
+        v = []
+        for ov in optimizable
+            if !is_optimizable(ov) 
+                push!(v , cursor : cursor  - 1)
+                continue
+            end
+            n = optimizable_parnumber(ov)
+            push!(v , cursor : cursor + n - 1)
+            cursor += n
+        end    
+        return Tuple(v)
+end
     """
     update_all_optimizables!(p::SingleInverseProblem, x_vector::AbstractVector)
 
 Function updates all optimizable variables with respect to the flags vectors
 """
 function update_all_optimizables!(p::SingleInverseProblem, x_vector::AbstractVector)
-        cursor = 1 # updated variables counter 
-        for ov in p.optimizable
-            !is_optimizable(ov) && continue
-            n = optimizable_parnumber(ov)
-            modify!(ov, view(x_vector, cursor : cursor + n - 1))
-            cursor += n
-        end
+        _modify_optimizables(p.optimizable, p.index_mapper , x_vector)
         is_λ_optimizable(p) && modify_λ_derivative!(p)
         return nothing
     end
-
+@unroll function _modify_optimizables(optimizables , index_mapper , x)
+ @unroll for i  in 1 : length(index_mapper)
+            (ov, r) = (optimizables[i] , index_mapper[i])
+            #modify!(ov, view(x , r))
+            modify!(ov, x , r)
+         end
+end
     optimizable_parnumber(p::SingleInverseProblem) = sum(optimizable_parnumber, p.optimizable)
 
     is_λ_optimizable(p::SingleInverseProblem) = haskey(p.optimizable,:λ)
@@ -497,8 +606,19 @@ function fill_starting_vectors(p::SingleInverseProblem{DT}) where DT
         return (; x₀ = v , lb = lb , ub = ub)
     end
 
+    """
+    constraints_violation_loss(p::SingleInverseProblem)
 
- regularization_loss(::SingleInverseProblem{DT,TN,N,P,CV,RG}) where {DT , TN , N , P,CV,RG <: NoRegularization} = zero(DT)
+Evaluates constraints violation part of discrepancy
+"""
+constraints_loss(p::SingleInverseProblem) = sum(constraints_loss , p.optimizable)
+
+ """
+    regularization_loss(::SingleInverseProblem{DT,TN,N,P,CV,RG}) where {DT , TN , N , P,CV,RG <: NoRegularization}
+
+No regularization
+"""
+regularization_loss(::SingleInverseProblem{DT,TN,N,P,CV,RG}) where {DT , TN , N , P,CV,RG <: NoRegularization} = zero(DT)
     """
     regularize(::FiniteDifferenceRegularization , p::SingleInverseProblem{DT})
 
@@ -513,37 +633,60 @@ function
 function regularization_loss( p::SingleInverseProblem{DT,TN,N,P,CV,RG,  DV ,  O, ON}) where {DT , TN , N , P,CV, RG <: FiniteDifferenceRegularization,  DV ,  O, ON}
         return sum(finite_difference_regularization_loss , p.optimizable)
     end
-    function finite_difference_regularization_loss(ov::OptimizableVariable{DT}) where DT
 
-        !is_optimizable(ov) && return zero(DT)
-        _x = fview_coeffs(ov)
-        n = length(_x)
-        s_i = zero(DT)
-
-        (lv, hv) = (_x[1], _x[1])
-        
-        @inbounds @simd for i in 1:(n - 1)
-            x_ip = _x[i+1]
-            x_ip > hv && (hv = x_ip)
-            x_ip < lv && (lv = x_ip)
-            Δ = x_ip - _x[i]
-            s_i += Δ * Δ
-        end
-        diff = hv - lv
-        s_i *= (abs(diff) > 1e-16) ? 0.25 / (n*(diff^2)) : 0.0
-
-        return s_i   
-    end
+# covariances loss functions 
+    covariance_loss(p::SingleInverseProblem{DT, TN, N,
+                        PT , CV  } ) where {DT, TN, N,
+                                            PT , CV <: NoCovariance } = sum(abs2 , p.residual)/(N * TN)
     """
-    constraints_violation_loss(p::SingleInverseProblem)
+        Covariance with diagonal elements provided externally as a function 
+    """
+    struct HeteroscedasticCovariance{F} <: AbstractCovariance 
+        σ²::F
+    end 
+    """
+        Covariance which is proportional to the value of temperature to take into account relative 
+    accuracy of temperature measurements
+    """
+    struct RelativeDiagonalCovariance{DT} <: AbstractCovariance
+        relative_sigma::DT # value
+        floor_sigma::DT    # 
+    end
+    function covariance_loss(p::SingleInverseProblem{DT, TN, N,
+                        PT , CV  } ) where {DT, TN, N,
+                                            PT , CV <: RelativeDiagonalCovariance }
+        loss = zero(DT)
+        
+        rel_s = p.covariance.relative_sigma
+        floor_s = p.covariance.floor_sigma
+    
+        # column iteration
+        @inbounds for j in 1:TN
+        # iteration over time
+            @simd for i in 1:N
+                Tij = p.Tdata_evaluated[i , j]
+                sigma_sq = (rel_s * T_val)^2 + floor_s^2
+                r = p.residual[i , j]
+                loss += (r * r) / sigma_sq
+            end
+        end
+        return loss
+    end
 
-Evaluates constraints violation part of discrepancy
-"""
-constraints_loss(p::SingleInverseProblem) = sum(constraints_loss , p.optimizable)
 
-function discrepancy(x , p::SingleInverseProblem)
 
+function discrepancy(x , p::SingleInverseProblem{DT}) where DT
+    update_all_optimizables!(p , x) # refreshes values of parameters
+    solve_direct_problem!(p) # solves the direct problem 
+    fill_residual!(p) # fills rediaul matrix 
+    #@show 
+    loss = covariance_loss(p) # applies the main loss 
+    p.include_constraints_violation_to_loss[] && (loss += p.ψ[] * constraints_loss(p))
+    #@show 
+    loss += p.α[] * regularization_loss(p)
+    return loss
 end
+
 
 
     function interpolate_matrix!(Mout, t , M , tnew , start_col::Int = 1, stop_col::Int = 0)

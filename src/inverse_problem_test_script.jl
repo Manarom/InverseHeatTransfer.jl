@@ -4,8 +4,8 @@
     using Plots, BenchmarkTools, Test
     using CSV, Tables
     import .InverseHeatTransfer as IHT
-    # working_folder = raw"E:\JULIA\JULIA_DEPOT\dev\InverseHeatTransfer.jl\test\test_data\property_inversion_ansys_new\25ks"
-    working_folder = raw"D:\JuliaDepoth\dev\InverseHeatTransfer.jl\test\test_data\property_inversion_ansys_new\25ks"
+     working_folder = raw"E:\JULIA\JULIA_DEPOT\dev\InverseHeatTransfer.jl\test\test_data\property_inversion_ansys_new\25ks"
+    #working_folder = raw"D:\JuliaDepoth\dev\InverseHeatTransfer.jl\test\test_data\property_inversion_ansys_new\25ks"
     hr_file = filter(f->  contains(f,"Tmeasured") , readdir(working_folder))
 	isempty(hr_file) && error("folder must constain file with  Tmeasured")
 	T_measured = CSV.read(joinpath(working_folder,hr_file[]), Tables.matrix)
@@ -22,7 +22,7 @@
     xpoints_number = 200
     tpoints_number = 2000
 
-    C = IHT.OptimizableVariable(IHT.ScaledPolynomial(IHT.BernsteinSymPoly((2700*900.0 , 2700*1000.0 , 2700*1000.0)) , xmin = lam_T_range[1], xmax = lam_T_range[end]), flag = true)
+    C = IHT.OptimizableVariable(IHT.ScaledPolynomial(IHT.BernsteinSymPoly((2700*900.0 , 2700*1000.0 , 2700*1000.0)) , xmin = lam_T_range[1], xmax = lam_T_range[end]), flag = false)
 	λ_poly = IHT.ScaledPolynomial(IHT.BernsteinSymPoly(ntuple(_-> 1.0 , basis_degree)), xmin = lam_T_range[1], xmax = lam_T_range[end])
 	λ = IHT.OptimizableVariable(λ_poly, flag = true , lb = 3.0, ub=25.0)
 	dλdT_poly =  IHT.PolynomialWrappers.derivative(λ_poly)
@@ -40,28 +40,17 @@
         xpoints_number, tpoints_number; regularization = IHT.FiniteDifferenceRegularization())
 
 
-        is_optim = Base.Fix2(isa, IHT.OptimizableVariable)
-        #=optimizable = (; is_optim(t[2]) for t in zip((:λ,:C),(λ, C))]
-        for z in zip((:λ,:C),(λ, C))
-            @show typeof(z) 
-            @show is_optim(z[2])
-
-        end=#
-
-        nt = (; (k => v for (k, v) in zip((:λ,:C),(λ, C)) if is_optim(v))...)
-
-        for ov in nt
-            @show typeof(ov)
-        end
-
-
-        IHT.update_all_optimizables!(inv_probl, [2.0,2.0,2.0, 2700*1300, 2700*1300, 2700*1300])
-
-        plot(props_T_range, inv_probl.optimizable.λ.(props_T_range))
-        plot(props_T_range, inv_probl.optimizable.dλdT.(props_T_range))
-
         IHT.coeffs(λ)
 
         IHT.fill_starting_vectors(inv_probl)
 
         IHT.regularization_loss(inv_probl)
+        IHT.constraints_loss(inv_probl)
+        #@benchmark IHT.modify!($(inv_probl.optimizable.λ) , $[5.0, 4.0, 8.0] )
+
+        inv_probl.optimizable.λ
+    
+        IHT.discrepancy( [ 21.0, 15.0, 10.2] , inv_probl)
+        inv_probl.optimizable.λ
+
+        plot(inv_probl.Tdata_evaluated)
