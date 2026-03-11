@@ -37,6 +37,9 @@ using PlutoTables, Accessors, AccessorsExtra, JSON2
 # ╔═╡ 9f370f71-8de3-4654-81cf-ea72a88b1d71
 using Gtk
 
+# ╔═╡ b681548e-1514-4e9c-bfec-ccfd9c6ad4cd
+using Unrolled
+
 # ╔═╡ 1bff0761-5f9b-42de-b5ad-fb09cce3dafa
 using OptimizationNLopt
 
@@ -55,9 +58,12 @@ includet(joinpath(source_path, "InverseHeatTransfer.jl"))
 # ╔═╡ 6d2a48d4-e458-4edd-b22a-7b7dae9f492c
 includet(joinpath(source_path, "WinPos.jl"))
 
+# ╔═╡ a6d591eb-20f2-476f-af19-9b0084ddf929
+import Main.InverseHeatTransfer as IHT
+
 # ╔═╡ 35958e8a-eb7a-4eff-89a0-f9c04aff2a37
 begin 
-	IHT = Main.InverseHeatTransfer
+	
 	PW = IHT.PolynomialWrappers
 	OHT = IHT.OneDHeatTransfer
 	WP = Main.WinPos
@@ -114,16 +120,34 @@ md" #### Total thickness, mm = $(@bind thickness_mm NumberField(0.0:1e-3:100.0, 
 # ╔═╡ 62069546-44fb-4a77-986d-f03624719e29
 md" ## Physical properties setup"
 
+# ╔═╡ a46970c8-7c91-4795-83a9-41c56a7ca399
+md""" ### Compare to passport $(@bind show_passport CheckBox(default = true))"""
+
 # ╔═╡ 4f3e1899-541d-4809-810c-f2e6b7ca1ad1
-md"#### load Cp from material base : $(@bind is_load_cp CheckBox(default = true))"
+md"#### Optimize C : $(@bind is_optimize_c CheckBox(default = false))"
+
+# ╔═╡ 2bb61e43-384c-48ce-8a55-843726bf3f05
+md" Upper Cp limit = $(@bind upper_cp_limit confirm(Slider(100.0 : 1e-1 : 10000.0, default = 1500.0, show_value = true)))"
+
+# ╔═╡ baffb68a-fb52-4bac-b484-4a215108aaed
+md" Lower Cp limit = $(@bind lower_cp_limit confirm(Slider(100.0 : 1e-1 : 10000.0, default = 600.0, show_value = true)))"
+
+# ╔═╡ 4ca95124-8a7a-4e4f-9e65-ff7b2adf35a5
+md" #### Optimize λ ? $( @bind is_optimize_lambda CheckBox(default = true))"
+
+# ╔═╡ c8dc4f9d-a549-4dc2-82bd-38ffe949ea55
+md" Lower λ limit = $(@bind lower_lam_limit confirm(Slider(0.0 : 1e-3 : 10.0, default = 0.1, show_value = true)))"
+
+# ╔═╡ bfa23359-8bac-4db0-bac1-0885ebe8ec4b
+md" Upper λ limit = $(@bind upper_lam_limit confirm(Slider(0.1 : 1e-3 : 30.0, default = 20, show_value = true)))"
 
 # ╔═╡ 68ed85b2-7308-4ea7-b696-0f1951219592
 @bind lam_y_scale_region PlutoUI.combine() do Child 
 md"""
-	``\lambda_{min} \ ^oC``= $(
+	``\lambda_{min} ``= $(
 		Child(NumberField(0:1e-2:50,default=0.0))
 	) \
-	``\lambda_{max} \ ^oC`` = $(
+	``\lambda_{max} `` = $(
 		Child(NumberField(0:1e-3:50,default=30.0))
 	)\
 	"""
@@ -134,12 +158,6 @@ md" ### Inverse problem setup"
 
 # ╔═╡ 2b3a1a65-8d3c-424e-a6cf-0e96646795f4
 md" ### refit $(@bind is_fit_on CheckBox(default = false))"
-
-# ╔═╡ c8dc4f9d-a549-4dc2-82bd-38ffe949ea55
-md" Lower λ limit = $(@bind lower_lam_limit confirm(Slider(0.0 : 1e-3 : 10.0, default = 0.1, show_value = true)))"
-
-# ╔═╡ bfa23359-8bac-4db0-bac1-0885ebe8ec4b
-md" Upper λ limit = $(@bind upper_lam_limit confirm(Slider(0.1 : 1e-3 : 30.0, default = 20, show_value = true)))"
 
 # ╔═╡ fa72774e-040a-4bc3-a759-5eb68c243fb4
 md" Λ(T) parameters number $(@bind basis_degree Select(1:100, default = 4))"
@@ -158,11 +176,11 @@ md"""
 # ╔═╡ d02ec3fd-1b0d-4bc3-92e9-adedc8bf2c8c
 md" ##### Global optimizer iterations number $(@bind pso_iters Select(10:10:10000 , default = 100))"
 
-# ╔═╡ a46970c8-7c91-4795-83a9-41c56a7ca399
-md""" ### Compare to passport $(@bind show_passport CheckBox(default = true))"""
-
 # ╔═╡ 9cd8c4c8-7d11-4fb0-92d5-439702aa9496
 md" ### OPTIMIZATION "
+
+# ╔═╡ 84e23b57-e5a4-4bf0-97ef-6b41b502b4e6
+optimizer
 
 # ╔═╡ 0a0324df-430f-4ac0-857b-4da6a7dca138
 md"addtitional fit $(@bind is_after_fit CheckBox(default = false))"
@@ -192,11 +210,13 @@ md" #### Select material name : $(@bind material_name Select(collect(keys(Cp_Dic
 
 # ╔═╡ efa9120f-5a45-41a0-9132-dc26f967fec3
 Rho_Dict = Dict(
+	
 	"RBSN" => 2700.0, 
 	"NIASIT" => 2000.0,
 	"OTM357" => 2530.0,
 	"HAFS" => 1600.0,
 	"BAFS" => 1800.0
+	
 );
 
 # ╔═╡ 7d37019a-34bf-43ca-aa81-8b6c29191473
@@ -206,13 +226,6 @@ md" ### Density, kg/m³ $(@bind density confirm(Slider(200.0:0.1:4000, default =
 if density != Rho_Dict[material_name]
 	md" passport density is $(Rho_Dict[material_name])"
 end
-
-# ╔═╡ 16337bb4-438e-4b86-bdc5-b88ef210a960
-begin 
-	cp_x =is_load_cp ? Cp_Dict[material_name].x : 0.0
-	cp_y =is_load_cp ? Cp_Dict[material_name].y : 0.0
-	Cp = linear_interpolation(cp_x ,density.*cp_y , extrapolation_bc=Line())
-end;
 
 # ╔═╡ 023dc25f-6cf8-4802-83b4-77d1827cd2a7
 L_Dict =Dict( "RBSN" =>(;
@@ -255,6 +268,7 @@ function discrepancy(x,inv_probl::IHT.SingleInverseProblem)
 	IHT.refill!(λ, x)
 	dλdT = inv_probl.direct_problem.Ld_f.fun
 	IHT.derivative!(dλdT, λ)
+	IHT.solve_direct_problem!(inv_probl)
 	IHT.fill_residual!(inv_probl)
 	#return sum(Base.Fix2(^,2.0), inv_probl.residual)
 	return norm(inv_probl.residual)/length(inv_probl.residual) #+ sum(Base.Fix1(^,2.0),dλdT.p.poly.coeffs)/PW.parnumber(dλdT.p)
@@ -402,20 +416,52 @@ end
 # ╔═╡ fc79d398-03d0-4f75-a777-41e2e27fee5e
 lam_T_rage = extrema(T_experimental)
 
+# ╔═╡ 16337bb4-438e-4b86-bdc5-b88ef210a960
+begin 
+	C_poly = IHT.ScaledPolynomial(IHT.BernsteinSymPoly(ntuple(_->density*1000.0 , basis_degree)), xmin = lam_T_rage[1], xmax =lam_T_rage[2])
+	c_x = Cp_Dict[material_name].x 
+	c_y = density.*Cp_Dict[material_name].y
+	flc = @. (c_x <= lam_T_rage[2]) & (c_x >= lam_T_rage[1])
+	c_x = c_x[flc]
+	c_y = c_y[flc]
+	if is_optimize_c
+		C = IHT.OptimizableVariable(C_poly, flag = is_optimize_c , lb = density*lower_cp_limit , ub = density * upper_cp_limit )
+	else
+
+		C = PW.polyfit!(C_poly, c_x,c_y)#linear_interpolation(c_x ,c_y , extrapolation_bc=Line())
+	end
+end;
+
+# ╔═╡ c8861fa2-9cb3-4349-9ece-eba285c24eab
+begin 
+	λ_poly = IHT.ScaledPolynomial(IHT.BernsteinSymPoly(ntuple(_->1.0 , basis_degree)), xmin = lam_T_rage[1], xmax =lam_T_rage[2])
+	
+	if is_optimize_lambda
+		
+		λ = IHT.OptimizableVariable(λ_poly, flag = is_optimize_lambda , lb = lower_lam_limit , ub = upper_lam_limit )
+		dλdT_poly =  IHT.PolynomialWrappers.derivative(λ_poly)
+		dλdT = IHT.OptimizableVariable(dλdT_poly, flag = false)
+		
+	else
+		l_x = L_Dict[material_name].x 
+		l_y = L_Dict[material_name].y
+		fl = @. (l_x <= lam_T_rage[2]) & (l_x >= lam_T_rage[1])
+		l_x = l_x[fl]
+		l_y = l_y[fl]
+		#Cp = linear_interpolation(cp_x ,density.*cp_y , extrapolation_bc=Line())
+		λ = PW.polyfit!(λ_poly, l_x, l_y)
+		dλdT = PW.derivative(λ)
+	end
+end;
+
 # ╔═╡ d71fd6d1-167d-40fb-a253-b0982e19c0d0
 @bind Ttest Slider(range(lam_T_rage[1],lam_T_rage[2],100), show_value = true)
 
 # ╔═╡ efe09dba-b787-4cda-8301-8735b1273192
 lam_T_rage
 
-# ╔═╡ c8861fa2-9cb3-4349-9ece-eba285c24eab
-begin 
-	λ_poly = IHT.ScaledPolynomial(IHT.BernsteinSymPoly(ntuple(_->1.0 , basis_degree)), xmin = lam_T_rage[1], xmax =lam_T_rage[2])
-	λ = IHT.OptimizableVariable(λ_poly, flag = false)
-	dλdT_poly =  IHT.PolynomialWrappers.derivative(λ_poly)
-	dλdT = IHT.OptimizableVariable(dλdT_poly, flag = false)
-	initial_distribution = mean(T_experimental[1,:])
-end
+# ╔═╡ e06ac758-c5ae-4cf6-84b1-11d51a56f200
+initial_distribution = mean(T_experimental[1,:])
 
 # ╔═╡ 6cd4f554-7242-4e97-b4cb-8549e3b70139
 function multi_values(names, default_values=nothing)
@@ -452,7 +498,7 @@ begin
 	else
 		inds = sortperm(therm_locations)
 		
-		inv_probl = IHT.SingleInverseProblem(time_experimental, T_experimental[:,inds], initial_distribution, therm_locations[inds], Cp,λ, dλdT, thickness, xpoints_number, tpoints_number)
+		inv_probl = IHT.SingleInverseProblem(time_experimental, T_experimental[:,inds], initial_distribution, therm_locations[inds], C,λ, dλdT, thickness, xpoints_number, tpoints_number)
 	end
 end;
 
@@ -474,21 +520,15 @@ end
 # ╔═╡ e9e9e16d-0b2c-45ce-aa5b-cdcda6b143f1
 begin 
 	if is_fit_on 
-	st1 = (upper_lam_limit + lower_lam_limit)*0.5
-	start = fill(st1,(PW.parnumber(λ_poly),))
-	lb = fill(lower_lam_limit,(PW.parnumber(λ_poly),))
-	ub = fill(upper_lam_limit,(PW.parnumber(λ_poly),))
-	fun = OptimizationFunction(discrepancy, NoAutoDiff())
-	optp = OptimizationProblem(discrepancy, start, inv_probl, lb = lb, ub = ub , maxiters=pso_iters )
-	res = solve(optp, optimizer()) #OptimizationNLopt.OptimizationNLopt.NLopt.LN_COBYLA()) # NLopt.LN_BOBYQA())# #ParticleSwarm())
-
+	(start, lb, ub)  =  IHT.fill_starting_vectors(inv_probl)
+	optp = OptimizationProblem(IHT.discrepancy, start, inv_probl, lb = lb, ub = ub , maxiters=pso_iters )
+	res = solve(optp, optimizer())
 		if is_after_fit
 			new_start = res.u
-			disc_before = discrepancy(new_start, inv_probl)
-			
-			optp2= OptimizationProblem(discrepancy, new_start, inv_probl)
-			res2 = solve(optp2, NelderMead())
-			disc_after = discrepancy(res2.u, inv_probl)
+			disc_before = IHT.discrepancy(new_start, inv_probl)
+			optp2= OptimizationProblem(IHT.discrepancy, new_start, inv_probl , lb = lb, ub = ub , maxiters=pso_iters)
+			res2 = solve(optp2, NLopt.LN_COBYLA())
+			disc_after = IHT.discrepancy(res2.u, inv_probl)
 			disc_before - disc_after
 		end
 	end
@@ -529,11 +569,14 @@ begin
 	ylabel!(p_residual, "ΔT, ᵒC")
 end ;
 
+# ╔═╡ 538487b4-b2fc-42c2-ba69-663b2ca5b768
+begin 
+	c_plot = Plots.plot(Tplot,C.(Tplot) ./density, label = "inverse", xlabel = "Temperature",linecolor = :green , ylabel = "Heat capacity, J/K"; plot_common_args...)
+	Plots.plot!(c_plot ,c_x ,c_y ./density , label = "passport",marker = :circle , markersize  = 8; plot_common_args... )
+end
+
 # ╔═╡ 67763d8f-e1ac-4b1f-978f-4734af1e03ba
 ylims!(p_fit_lam, lam_y_scale_region)
-
-# ╔═╡ 538487b4-b2fc-42c2-ba69-663b2ca5b768
-Plots.plot(Tplot,Cp.(Tplot) ./density, label = nothing, xlabel = "Temperature", ylabel = "Heat capacity, J/K"; plot_common_args...)
 
 # ╔═╡ 042ea29b-63dd-43d0-a20f-68807c5f7cd4
 p_distr
@@ -585,6 +628,9 @@ OHT.thermal_conductivity(inv_probl.direct_problem, Ttest)
 # ╔═╡ ae6779d3-c8ef-4d28-a964-aba37b3c4cc0
 inv_probl.direct_problem.L_f
 
+# ╔═╡ 9f7364d8-f68c-4595-a542-0566bcfd4194
+inv_probl.direct_problem.C_f
+
 # ╔═╡ 886a718e-dae6-4bb7-bc4b-95ee2953e2ec
 
 
@@ -629,6 +675,7 @@ Reexport = "189a3867-3050-52da-a836-e630ba90ab69"
 Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 Tables = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
+Unrolled = "9602ed7d-8fef-5bc8-8597-8f21381861e8"
 
 [compat]
 Accessors = "~0.1.43"
@@ -662,6 +709,7 @@ Reexport = "~1.2.2"
 Revise = "~3.13.2"
 StaticArrays = "~1.9.17"
 Tables = "~1.12.1"
+Unrolled = "~0.1.5"
 """
 
 # ╔═╡ 00000000-0000-0000-0000-000000000002
@@ -670,7 +718,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.12.5"
 manifest_format = "2.0"
-project_hash = "504a3a1b80b6e4c31f787527f6dd65f8cab99b52"
+project_hash = "2b4cdc9acf9a338464404842411bfa521e00e1a8"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "f7304359109c768cf32dc5fa2d371565bb63b68a"
@@ -2670,6 +2718,12 @@ git-tree-sha1 = "53915e50200959667e78a92a418594b428dffddf"
 uuid = "1cfade01-22cf-5700-b092-accc4b62d6e1"
 version = "0.4.1"
 
+[[deps.Unrolled]]
+deps = ["MacroTools"]
+git-tree-sha1 = "6cc9d682755680e0f0be87c56392b7651efc2c7b"
+uuid = "9602ed7d-8fef-5bc8-8597-8f21381861e8"
+version = "0.1.5"
+
 [[deps.Unzip]]
 git-tree-sha1 = "ca0969166a028236229f63514992fc073799bb78"
 uuid = "41fe7b60-77ed-43a1-b4f0-825fd5a5650d"
@@ -3033,12 +3087,14 @@ version = "1.13.0+0"
 # ╠═db3b05af-0b7c-4746-96a8-8fd34bfb8ac9
 # ╠═7fe4cacf-7986-4f60-aa3d-a41777cd72c4
 # ╠═9f370f71-8de3-4654-81cf-ea72a88b1d71
+# ╠═b681548e-1514-4e9c-bfec-ccfd9c6ad4cd
 # ╠═1bff0761-5f9b-42de-b5ad-fb09cce3dafa
 # ╠═76c7bd3e-b04c-4e0c-a06c-e13f76f40eb2
-# ╟─2bb45200-d7ba-47a3-b82d-9c147b5d7601
-# ╟─80479ac3-897a-4aa7-8ce9-977fa4912bc6
+# ╠═2bb45200-d7ba-47a3-b82d-9c147b5d7601
+# ╠═80479ac3-897a-4aa7-8ce9-977fa4912bc6
 # ╠═50a4c97e-16ec-470f-80f7-c1ebcdb66855
 # ╠═6d2a48d4-e458-4edd-b22a-7b7dae9f492c
+# ╠═a6d591eb-20f2-476f-af19-9b0084ddf929
 # ╠═35958e8a-eb7a-4eff-89a0-f9c04aff2a37
 # ╠═438a3909-9367-4660-a3ca-bd1786ab6016
 # ╟─db671921-13dc-497b-81e5-dcb4da0695f9
@@ -3050,12 +3106,12 @@ version = "1.13.0+0"
 # ╠═1291c9fd-80bf-4193-894c-5783787a6b95
 # ╠═6fceccd6-22cd-420d-8209-f4aad9e99269
 # ╠═81c2f93b-05b1-4eb0-9919-4ef76ecad233
-# ╟─17fbc55f-12a8-431e-ac00-b28304f2eb6c
+# ╠═17fbc55f-12a8-431e-ac00-b28304f2eb6c
 # ╠═304091a8-4206-49c2-9c98-cffb18a0e906
 # ╠═2e676f8c-909a-4fb7-b35e-57d08f802df7
 # ╠═a2a87cfe-5976-4902-b400-fabb19baa9c7
 # ╟─0177413c-0f89-4935-9963-5aeebd333b9a
-# ╠═56a5f3c9-6a41-4326-83ab-2c19d65b3ed0
+# ╟─56a5f3c9-6a41-4326-83ab-2c19d65b3ed0
 # ╟─2c103d75-471e-4ed6-8598-6b0be0c9e195
 # ╟─4d584fde-e821-402c-8850-6d3876e6fb46
 # ╟─a207e8c4-ce27-405f-aafd-4505eb69ef1b
@@ -3068,18 +3124,22 @@ version = "1.13.0+0"
 # ╟─73d06f8f-3a2c-46cf-993b-66d313bdf7eb
 # ╟─dbd1d788-120b-4678-bf3b-7541b9ea7341
 # ╟─62069546-44fb-4a77-986d-f03624719e29
-# ╟─4f3e1899-541d-4809-810c-f2e6b7ca1ad1
 # ╟─8f65e989-1abe-4689-9c3f-fdb6cabd7eae
+# ╟─a46970c8-7c91-4795-83a9-41c56a7ca399
 # ╟─5843fcfb-4e0e-480d-b263-e3f3ad6a7ac3
 # ╟─7d37019a-34bf-43ca-aa81-8b6c29191473
-# ╟─67763d8f-e1ac-4b1f-978f-4734af1e03ba
-# ╟─68ed85b2-7308-4ea7-b696-0f1951219592
-# ╟─16337bb4-438e-4b86-bdc5-b88ef210a960
+# ╟─4f3e1899-541d-4809-810c-f2e6b7ca1ad1
+# ╟─2bb61e43-384c-48ce-8a55-843726bf3f05
+# ╟─baffb68a-fb52-4bac-b484-4a215108aaed
 # ╟─538487b4-b2fc-42c2-ba69-663b2ca5b768
-# ╟─9b35c13b-24ba-4c43-a621-a3f8ba45fe4a
-# ╟─2b3a1a65-8d3c-424e-a6cf-0e96646795f4
+# ╟─16337bb4-438e-4b86-bdc5-b88ef210a960
+# ╟─4ca95124-8a7a-4e4f-9e65-ff7b2adf35a5
 # ╟─c8dc4f9d-a549-4dc2-82bd-38ffe949ea55
 # ╟─bfa23359-8bac-4db0-bac1-0885ebe8ec4b
+# ╟─67763d8f-e1ac-4b1f-978f-4734af1e03ba
+# ╟─68ed85b2-7308-4ea7-b696-0f1951219592
+# ╟─9b35c13b-24ba-4c43-a621-a3f8ba45fe4a
+# ╟─2b3a1a65-8d3c-424e-a6cf-0e96646795f4
 # ╟─fa72774e-040a-4bc3-a759-5eb68c243fb4
 # ╟─3281dd3c-0453-4098-a6ed-4d771717033b
 # ╟─bbc2d0df-28bf-4754-bbdf-bece0bbfe76b
@@ -3087,20 +3147,22 @@ version = "1.13.0+0"
 # ╟─d02ec3fd-1b0d-4bc3-92e9-adedc8bf2c8c
 # ╟─fc79d398-03d0-4f75-a777-41e2e27fee5e
 # ╟─c8861fa2-9cb3-4349-9ece-eba285c24eab
+# ╟─e06ac758-c5ae-4cf6-84b1-11d51a56f200
 # ╟─1318f293-f606-4a9f-8896-853b87c0665d
 # ╟─6cd83678-860c-41c8-b3cd-007725f9e01d
-# ╟─a46970c8-7c91-4795-83a9-41c56a7ca399
 # ╟─f2943cf8-ffb9-4065-a272-1f344488dd0f
 # ╟─042ea29b-63dd-43d0-a20f-68807c5f7cd4
 # ╟─a660bf26-5b50-4910-b0ab-8e453623dc1a
 # ╟─a2a84394-1f18-48e3-a4dc-c03f64a3a1c0
-# ╠═9cd8c4c8-7d11-4fb0-92d5-439702aa9496
-# ╠═e9e9e16d-0b2c-45ce-aa5b-cdcda6b143f1
+# ╟─9cd8c4c8-7d11-4fb0-92d5-439702aa9496
+# ╟─e9e9e16d-0b2c-45ce-aa5b-cdcda6b143f1
+# ╟─84e23b57-e5a4-4bf0-97ef-6b41b502b4e6
 # ╟─0a0324df-430f-4ac0-857b-4da6a7dca138
 # ╟─27031733-7ade-4bda-b464-5a9ade0b2950
-# ╠═f5b13ec5-98f9-48bb-ad95-7dbd87e11f7b
+# ╟─f5b13ec5-98f9-48bb-ad95-7dbd87e11f7b
 # ╟─d71fd6d1-167d-40fb-a253-b0982e19c0d0
 # ╠═ae6779d3-c8ef-4d28-a964-aba37b3c4cc0
+# ╠═9f7364d8-f68c-4595-a542-0566bcfd4194
 # ╠═fb2937d0-738b-4329-aef5-f3af1d17497a
 # ╠═efa9120f-5a45-41a0-9132-dc26f967fec3
 # ╠═023dc25f-6cf8-4802-83b4-77d1827cd2a7

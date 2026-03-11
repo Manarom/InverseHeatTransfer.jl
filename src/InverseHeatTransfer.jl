@@ -676,6 +676,8 @@ function regularization_loss( p::SingleInverseProblem{DT,TN,N,P,CV,RG,  DV ,  O,
 
 
 function discrepancy(x , p::SingleInverseProblem{DT}) where DT
+    #@show typeof(x)
+    #@show size(x)
     update_all_optimizables!(p , x) # refreshes values of parameters
     solve_direct_problem!(p) # solves the direct problem 
     fill_residual!(p) # fills rediaul matrix 
