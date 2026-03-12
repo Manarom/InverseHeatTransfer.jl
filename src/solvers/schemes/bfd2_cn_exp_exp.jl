@@ -10,7 +10,7 @@
 LHS for `m + 1`'th time step
 `[... , -0.5*F, (3/2 + F),  - 0.5*F , ...]T⁺ `
 """
-function fill_LHS!(LHS, Fm1, F, Fp1, m , scheme::BFD2_CN_EXP_EXP, problem ) 
+function fill_LHS!(LHS, Fm1, F, Fp1, m , ::BFD2_CN_EXP_EXP, problem ) 
     m != 1 || return fill_LHS!(LHS, Fm1, F, Fp1, m , FIRST_STEP_BFD2, problem ) 
     fill_tridiag!(LHS, Fm1, F, Fp1, 1.5, -0.5 , 1.0 , -0.5)
     return nothing
