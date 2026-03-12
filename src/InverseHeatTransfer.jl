@@ -1,6 +1,7 @@
 module InverseHeatTransfer
     using LinearAlgebra , Reexport , StaticArrays , Interpolations, RecipesBase
     using Unrolled
+    using InteractiveUtils
     import FunctionWrappers
     
     export OptimizableVariable, SingleInverseProblem
@@ -151,9 +152,17 @@ function modify!(ov::OV{N , DT}, x , r) where {N , DT}
     """
     constraints_loss(ov::OV{N , DT}) where {N,DT}
 
-Evaluates scalar loss due to the constraints of the OptimizableVariable violation 
+Evaluates scalar loss due to the `OptimizableVariable` constraints violation 
 The value of loss is proportional to the square of the difference between the constraint
 value and the actual value of coefficients, normalized to the span of the box
+If the optimization variable is box constraint, thus having bot `lb` and `ub` vectors
+limiting the possible range of coefficients , constraints loss are evaluated as 
+
+`Σᵢ[(xᵢ - lbᵢ)/spanᵢ]² + Σⱼ[(xⱼ - ubⱼ)/spanⱼ]²` where `x` is the optimizable 
+variabel parameters `spanᵢ = ubᵢ - lbᵢ` is the box width, and `i`and `j` are 
+the indices of coordinates  which are marked as optimizable and violate 
+lower or upper constraints respectively
+
 """
 function constraints_loss(ov::OV{N , DT}) where {N,DT}
         !is_optimizable(ov) && return zero(DT)
@@ -186,14 +195,16 @@ function constraints_loss(ov::OV{N , DT}) where {N,DT}
                     end
                 end
             end
-        return s_i
+        return s_i/N
     end
     """
     finite_difference_regularization_loss(ov::OptimizableVariable{N,DT}) where {N,DT}
 
-Evaluates loss addition due to Tikhonov's regularization  `xᵀDᵀDx` with regularizing matrix `D`
-finite difference matrix here x are `ALL` coefficients (not only those which are supposed to be modified by flag)
-When using together with Bernstein polynomial forces funtion to be more monotonical
+Evaluates loss addition due to Tikhonov's regularization  `xᵀDᵀDx/N` with regularizing matrix `D`
+is a finite difference matrix here `x` is `ALL` coefficients vector (not only those which are 
+supposed to be modified by flag) 
+
+When using together with Bernstein polynomial forces function to be more monotonical
 """
 function finite_difference_regularization_loss(ov::OV{N,DT}) where {N,DT}
 
@@ -205,13 +216,13 @@ function finite_difference_regularization_loss(ov::OV{N,DT}) where {N,DT}
         
         @inbounds @simd for i in 1 : N - 1
             x_ip = _x[i  + 1]
-            x_ip > hv && (hv = x_ip)
-            x_ip < lv && (lv = x_ip)
+            hv = max(hv , x_ip)
+            lv = min(lv , x_ip)
             Δ = x_ip - _x[i]
             s_i += Δ * Δ
         end
         diff = hv - lv
-        s_i *= (abs(diff) > 1e-16) ? DT(0.25) / (N * (diff^2)) : zero(DT)
+        s_i *= (abs(diff) > DT(1e-16)) ? DT(0.25) / (N * (diff^2)) : zero(DT)
         return s_i   
     end
 
@@ -546,10 +557,6 @@ end
 
     is_λ_optimizable(p::SingleInverseProblem) = haskey(p.optimizable,:λ)
 
-    #fview_coeffs(ov::OV) = view(coeffs(ov), ov.flag)
-    #fview_lb_coeffs(ov::OV) = view(lb_coeffs(ov), ov.flag)
-    #fview_ub_coeffs(ov::OV) = view(ub_coeffs(ov), ov.flag)
-
     function modify_λ_derivative!(p::SingleInverseProblem) 
         derivative!(p.optimizable.dλdT, p.optimizable.λ)
     end
@@ -634,62 +641,24 @@ function regularization_loss( p::SingleInverseProblem{DT,TN,N,P,CV,RG,  DV ,  O,
         return sum(finite_difference_regularization_loss , p.optimizable)
     end
 
-# covariances loss functions 
-    covariance_loss(p::SingleInverseProblem{DT, TN, N,
-                        PT , CV  } ) where {DT, TN, N,
-                                            PT , CV <: NoCovariance } = sum(abs2 , p.residual)/(N * TN)
-    """
-        Covariance with diagonal elements provided externally as a function 
-    """
-    struct HeteroscedasticCovariance{F} <: AbstractCovariance 
-        σ²::F
-    end 
-    """
-        Covariance which is proportional to the value of temperature to take into account relative 
-    accuracy of temperature measurements
-    """
-    struct RelativeDiagonalCovariance{DT} <: AbstractCovariance
-        relative_sigma::DT # value
-        floor_sigma::DT    # 
-    end
-    function covariance_loss(p::SingleInverseProblem{DT, TN, N,
-                        PT , CV  } ) where {DT, TN, N,
-                                            PT , CV <: RelativeDiagonalCovariance }
-        loss = zero(DT)
-        
-        rel_s = p.covariance.relative_sigma
-        floor_s = p.covariance.floor_sigma
-    
-        # column iteration
-        @inbounds for j in 1:TN
-        # iteration over time
-            @simd for i in 1:N
-                Tij = p.Tdata_evaluated[i , j]
-                sigma_sq = (rel_s * T_val)^2 + floor_s^2
-                r = p.residual[i , j]
-                loss += (r * r) / sigma_sq
-            end
-        end
-        return loss
-    end
+include("covariances.jl")
 
+    """
+    discrepancy(x , p::SingleInverseProblem{DT}) where DT
 
-
+Evaluates the weighted least-sqaure discrepancy of the corresponding inverse problem 
+"""
 function discrepancy(x , p::SingleInverseProblem{DT}) where DT
-    #@show typeof(x)
-    #@show size(x)
-    update_all_optimizables!(p , x) # refreshes values of parameters
-    solve_direct_problem!(p) # solves the direct problem 
-    fill_residual!(p) # fills rediaul matrix 
-    #@show 
-    loss = covariance_loss(p) # applies the main loss 
-    p.include_constraints_violation_to_loss[] && (loss += p.ψ[] * constraints_loss(p))
-    #@show 
-    loss += p.α[] * regularization_loss(p)
-    return loss
-end
 
+        update_all_optimizables!(p , x) # refreshes the values of parameters without solving the direct problem 
+        solve_direct_problem!(p) # solves the direct problem 
+        fill_residual!(p) # fills residual matrix 
+        loss = covariance_loss(p) # applies weighted least squares
+        p.include_constraints_violation_to_loss[] && (loss += p.ψ[] * constraints_loss(p)) # adds constraints loss to the main discrepancy (if they are needed)
+        loss += p.α[] * regularization_loss(p)
+        return loss
 
+    end
 
     function interpolate_matrix!(Mout, t , M , tnew , start_col::Int = 1, stop_col::Int = 0)
         
@@ -733,4 +702,6 @@ has the same objects for  λ, λ' and cₚ, hence the problem can be simplified
     @recipe function f(m::OptimizableVariable)
         return (m.p)
     end
+    const ALL_REGULARIZATION_TYPES = subtypes(AbstractRegularization)
+    const ALL_COVARIANCE_TYPES = subtypes(AbstractCovariance)
 end

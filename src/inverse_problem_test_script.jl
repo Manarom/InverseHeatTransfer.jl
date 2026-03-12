@@ -75,7 +75,7 @@
 
         #Optimization.EnsembleProblem
         #ensemble_prob = Optimization.EnsembleProblem(optp, safety_copy = true)
-        res = solve(optp,optimizer , use_initial = true)         # Включает ваш x0 в начальный рой )#, options = Metaheuristics.Options(parallel_evaluation = true))
+        res = solve(optp, optimizer , use_initial = true)         # Включает ваш x0 в начальный рой )#, options = Metaheuristics.Options(parallel_evaluation = true))
         
         ensemble_prob = EnsembleProblem(
                         optp, 

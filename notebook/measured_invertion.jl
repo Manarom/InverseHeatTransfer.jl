@@ -631,9 +631,6 @@ inv_probl.direct_problem.L_f
 # ╔═╡ 9f7364d8-f68c-4595-a542-0566bcfd4194
 inv_probl.direct_problem.C_f
 
-# ╔═╡ 886a718e-dae6-4bb7-bc4b-95ee2953e2ec
-
-
 # ╔═╡ 87ae11cd-8c4f-4835-9a9f-852447a45c97
 #=write(joinpath(raw"D:\JULIA\JULIA_DEPOT\dev\InverseHeatTransfer.jl\test\test_data\binary_files","dasfsdf.json"), JSON2.write(Dict(:T1=>2.0, :T2=>3.0))) =#
 
@@ -3176,7 +3173,6 @@ version = "1.13.0+0"
 # ╠═5135015e-0fcf-484a-86ad-3cb7e40849bd
 # ╟─fd51a6c8-6569-4bfd-86ac-883c648fe6d9
 # ╠═6cd4f554-7242-4e97-b4cb-8549e3b70139
-# ╠═886a718e-dae6-4bb7-bc4b-95ee2953e2ec
 # ╠═87ae11cd-8c4f-4835-9a9f-852447a45c97
 # ╠═58eb27e1-38c5-4a90-9e80-61f6213aa721
 # ╟─00000000-0000-0000-0000-000000000001
