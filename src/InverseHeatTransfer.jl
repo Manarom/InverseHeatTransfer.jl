@@ -2,6 +2,7 @@ module InverseHeatTransfer
     using LinearAlgebra , Reexport , StaticArrays , Interpolations, RecipesBase
     using Unrolled
     using InteractiveUtils
+    using Static
     import FunctionWrappers
     
     export OptimizableVariable, SingleInverseProblem
@@ -541,18 +542,23 @@ end
 
 Function updates all optimizable variables with respect to the flags vectors
 """
-function update_all_optimizables!(p::SingleInverseProblem, x_vector::AbstractVector)
-        _modify_optimizables(p.optimizable, p.index_mapper , x_vector)
+function update_all_optimizables!(p::SingleInverseProblem{DT, TN, N , ProblemType , CV , RG , DV, O, ON , IM}, 
+    x::AbstractVector) where {DT, TN, N , ProblemType , CV , RG , DV, O, ON , IM}
+
+        ntuple(Val(ON)) do i 
+            modify!(p.optimizable[i] , x , p.index_mapper[i])
+        end
+        
         is_λ_optimizable(p) && modify_λ_derivative!(p)
         return nothing
     end
-@unroll function _modify_optimizables(optimizables , index_mapper , x)
+#= @unroll function _modify_optimizables(optimizables , index_mapper , x)
  @unroll for i  in 1 : length(index_mapper)
             (ov, r) = (optimizables[i] , index_mapper[i])
             #modify!(ov, view(x , r))
             modify!(ov, x , r)
          end
-end
+end =#
     optimizable_parnumber(p::SingleInverseProblem) = sum(optimizable_parnumber, p.optimizable)
 
     is_λ_optimizable(p::SingleInverseProblem) = haskey(p.optimizable,:λ)

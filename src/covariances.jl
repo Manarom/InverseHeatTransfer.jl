@@ -60,8 +60,8 @@ function covariance_loss(p::SingleInverseProblem{DT, TN, N,
         ρ2_plus_1 = 1.0 + ρ^2
         two_ρ = 2.0 * ρ   
         loss = zero(DT)
-        
-        @inbounds for j in 1 : TN
+
+        @inbounds for j in StaticInt(1) : StaticInt(TN)
             
             s_squares = zero(DT) # squared amplitudes
             s_cross = zero(DT) # cross products
@@ -97,7 +97,13 @@ function covariance_loss(::SingleInverseProblem{DT, TN, N,
                                 PT , CV  }
                                  error("Covariance $(CV) is not implemented") 
     end
-    function fill_covariance_cache!(p::SingleInverseProblem{DT, TN, N,
+    """
+    fill_covariance_cache!(::SingleInverseProblem)
+
+By default covariance fill cachedo nothing
+"""
+function fill_covariance_cache!(::SingleInverseProblem) end
+function fill_covariance_cache!(p::SingleInverseProblem{DT, TN, N,
                                 PT , CV  } ) where {DT, 
                                                     PT , 
                                                     CV <: TemperatureDependentDiagonalCovariance{F , DT , TN , N} } where {F, TN, N}
@@ -145,8 +151,8 @@ function covariance_loss(::SingleInverseProblem{DT, TN, N,
         @inbounds for j in 1 : TN
         # iteration over time
             @simd for i in 1 : N
-                Tij = p.Tdata_evaluated[i , j]
-                sigma_sq = (rel_s * T_val)^2 + floor_s^2
+                Tij = p.Tdata_measured[i , j]
+                sigma_sq = (rel_s * Tij)^2 + floor_s^2
                 r = p.residual[i , j]
                 loss += (r * r) / sigma_sq
             end

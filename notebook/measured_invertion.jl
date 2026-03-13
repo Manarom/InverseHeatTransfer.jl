@@ -46,6 +46,9 @@ using OptimizationNLopt
 # ╔═╡ 76c7bd3e-b04c-4e0c-a06c-e13f76f40eb2
 using HypertextLiteral
 
+# ╔═╡ 52efdc4b-4a0a-4dbf-aca2-e46c896dcc71
+using Static
+
 # ╔═╡ 2bb45200-d7ba-47a3-b82d-9c147b5d7601
 default_data_fodler = joinpath(@__DIR__, "..","test","test_data","binary_files")
 
@@ -141,6 +144,9 @@ md" Lower λ limit = $(@bind lower_lam_limit confirm(Slider(0.0 : 1e-3 : 10.0, d
 # ╔═╡ bfa23359-8bac-4db0-bac1-0885ebe8ec4b
 md" Upper λ limit = $(@bind upper_lam_limit confirm(Slider(0.1 : 1e-3 : 30.0, default = 20, show_value = true)))"
 
+# ╔═╡ e632a837-4533-4362-a6e1-988ade06a617
+md" τ = $(@bind tau NumberField(1e-3:1e-2:10))"
+
 # ╔═╡ 68ed85b2-7308-4ea7-b696-0f1951219592
 @bind lam_y_scale_region PlutoUI.combine() do Child 
 md"""
@@ -155,6 +161,24 @@ end
 
 # ╔═╡ 9b35c13b-24ba-4c43-a621-a3f8ba45fe4a
 md" ### Inverse problem setup"
+
+# ╔═╡ 33473b7a-e22f-4333-a2f2-374778c0d603
+md" Covariance type $(@bind covariance_type Select(IHT.ALL_COVARIANCE_TYPES))"
+
+# ╔═╡ f3e24d8a-e35d-41de-92e6-0df290d3503c
+begin 
+	if covariance_type <: IHT.AR1Covariance
+		cargs = (tau , 1.0)
+	elseif covariance_type <: IHT.RelativeDiagonalCovariance
+		cargs  = (tau, 1.0)
+	else
+		cargs = Tuple([])
+	end
+	cov = covariance_type(cargs...)
+end
+
+# ╔═╡ 2983afc0-c241-4799-b2f4-f60049da531c
+Tuple([])
 
 # ╔═╡ 2b3a1a65-8d3c-424e-a6cf-0e96646795f4
 md" ### refit $(@bind is_fit_on CheckBox(default = false))"
@@ -498,7 +522,7 @@ begin
 	else
 		inds = sortperm(therm_locations)
 		
-		inv_probl = IHT.SingleInverseProblem(time_experimental, T_experimental[:,inds], initial_distribution, therm_locations[inds], C,λ, dλdT, thickness, xpoints_number, tpoints_number)
+		inv_probl = IHT.SingleInverseProblem(time_experimental, T_experimental[:,inds], initial_distribution, therm_locations[inds], C,λ, dλdT, thickness, xpoints_number, tpoints_number , covariance=cov)
 	end
 end;
 
@@ -670,6 +694,7 @@ ProfileCanvas = "efd6af41-a80b-495e-886c-e51b0c7d77a3"
 RecipesBase = "3cdcf5f2-1ef4-517c-9805-6587b60abb01"
 Reexport = "189a3867-3050-52da-a836-e630ba90ab69"
 Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
+Static = "aedffcd0-7271-4cad-89d0-dc628f76c6d3"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 Tables = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
 Unrolled = "9602ed7d-8fef-5bc8-8597-8f21381861e8"
@@ -704,6 +729,7 @@ ProfileCanvas = "~0.1.7"
 RecipesBase = "~1.3.4"
 Reexport = "~1.2.2"
 Revise = "~3.13.2"
+Static = "~1.3.1"
 StaticArrays = "~1.9.17"
 Tables = "~1.12.1"
 Unrolled = "~0.1.5"
@@ -715,7 +741,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.12.5"
 manifest_format = "2.0"
-project_hash = "2b4cdc9acf9a338464404842411bfa521e00e1a8"
+project_hash = "89010be731de123e78647aae395b4fcdbd883d11"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "f7304359109c768cf32dc5fa2d371565bb63b68a"
@@ -1007,6 +1033,11 @@ git-tree-sha1 = "78ea4ddbcf9c241827e7035c3a03e2e456711470"
 uuid = "38540f10-b2f7-11e9-35d8-d573e4eb0ff2"
 version = "0.2.6"
 
+[[deps.CommonWorldInvalidations]]
+git-tree-sha1 = "ae52d1c52048455e85a387fbee9be553ec2b68d0"
+uuid = "f70d9fcc-98c5-4d4a-abd7-e4cdeebd8ca8"
+version = "1.0.0"
+
 [[deps.Compat]]
 deps = ["TOML", "UUIDs"]
 git-tree-sha1 = "9d8a54ce4b17aa5bdce0ea5c34bc5e7c340d16ad"
@@ -1222,7 +1253,7 @@ uuid = "c87230d0-a227-11e9-1b43-d7ebe4e7570a"
 version = "0.4.5"
 
 [[deps.FFMPEG_jll]]
-deps = ["Artifacts", "Bzip2_jll", "FreeType2_jll", "FriBidi_jll", "JLLWrappers", "LAME_jll", "Libdl", "Ogg_jll", "OpenSSL_jll", "Opus_jll", "PCRE2_jll", "Zlib_jll", "libaom_jll", "libass_jll", "libfdk_aac_jll", "libvorbis_jll", "x264_jll", "x265_jll"]
+deps = ["Artifacts", "Bzip2_jll", "FreeType2_jll", "FriBidi_jll", "JLLWrappers", "LAME_jll", "Libdl", "Ogg_jll", "OpenSSL_jll", "Opus_jll", "PCRE2_jll", "Zlib_jll", "libaom_jll", "libass_jll", "libfdk_aac_jll", "libva_jll", "libvorbis_jll", "x264_jll", "x265_jll"]
 git-tree-sha1 = "01ba9d15e9eae375dc1eb9589df76b3572acd3f2"
 uuid = "b22a6f82-2f65-5046-a5b2-351ab43fb4e5"
 version = "8.0.1+0"
@@ -1472,6 +1503,11 @@ deps = ["Logging", "Random"]
 git-tree-sha1 = "0ee181ec08df7d7c911901ea38baf16f755114dc"
 uuid = "b5f81e59-6552-4d32-b1f0-c071b021bf89"
 version = "1.0.0"
+
+[[deps.IfElse]]
+git-tree-sha1 = "debdd00ffef04665ccbb3e150747a77560e8fad1"
+uuid = "615f187c-cbe4-4ef1-ba3b-2fcf58d6d173"
+version = "0.1.1"
 
 [[deps.InlineStrings]]
 git-tree-sha1 = "8f3d257792a522b4601c24a577954b0a8cd7334d"
@@ -2548,6 +2584,12 @@ git-tree-sha1 = "4f96c596b8c8258cc7d3b19797854d368f243ddc"
 uuid = "860ef19b-820b-49d6-a774-d7a799459cd3"
 version = "1.0.4"
 
+[[deps.Static]]
+deps = ["CommonWorldInvalidations", "IfElse", "PrecompileTools", "SciMLPublic"]
+git-tree-sha1 = "49440414711eddc7227724ae6e570c7d5559a086"
+uuid = "aedffcd0-7271-4cad-89d0-dc628f76c6d3"
+version = "1.3.1"
+
 [[deps.StaticArrays]]
 deps = ["LinearAlgebra", "PrecompileTools", "Random", "StaticArraysCore"]
 git-tree-sha1 = "0f529006004a8be48f1be25f3451186579392d47"
@@ -2857,6 +2899,12 @@ git-tree-sha1 = "58c2e8f49733034d33b461d45a7e874b4135b644"
 uuid = "b6f176f1-7aea-5357-ad67-1d3e565ea1c6"
 version = "1.2.5+0"
 
+[[deps.Xorg_libpciaccess_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl", "Zlib_jll"]
+git-tree-sha1 = "4909eb8f1cbf6bd4b1c30dd18b2ead9019ef2fad"
+uuid = "a65dc6b1-eb27-53a1-bb3e-dea574b5389e"
+version = "0.18.1+0"
+
 [[deps.Xorg_libxcb_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libXau_jll", "Xorg_libXdmcp_jll"]
 git-tree-sha1 = "bfcaf7ec088eaba362093393fe11aa141fa15422"
@@ -3005,6 +3053,12 @@ git-tree-sha1 = "9bf7903af251d2050b467f76bdbe57ce541f7f4f"
 uuid = "1183f4f0-6f2a-5f1a-908b-139f9cdfea6f"
 version = "0.2.2+0"
 
+[[deps.libdrm_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libpciaccess_jll"]
+git-tree-sha1 = "63aac0bcb0b582e11bad965cef4a689905456c03"
+uuid = "8e53e030-5e6c-5a89-a30b-be5b7263a166"
+version = "2.4.125+1"
+
 [[deps.libevdev_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
 git-tree-sha1 = "56d643b57b188d30cccc25e331d416d3d358e557"
@@ -3028,6 +3082,12 @@ deps = ["Artifacts", "JLLWrappers", "Libdl", "Zlib_jll"]
 git-tree-sha1 = "e015f211ebb898c8180887012b938f3851e719ac"
 uuid = "b53b4c65-9356-5827-b1ea-8c7a1a84506f"
 version = "1.6.55+0"
+
+[[deps.libva_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl", "Xorg_libX11_jll", "Xorg_libXext_jll", "Xorg_libXfixes_jll", "libdrm_jll"]
+git-tree-sha1 = "7dbf96baae3310fe2fa0df0ccbb3c6288d5816c9"
+uuid = "9a156e7d-b971-5f62-b2c9-67348b8fb97c"
+version = "2.23.0+0"
 
 [[deps.libvorbis_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Ogg_jll"]
@@ -3087,6 +3147,7 @@ version = "1.13.0+0"
 # ╠═b681548e-1514-4e9c-bfec-ccfd9c6ad4cd
 # ╠═1bff0761-5f9b-42de-b5ad-fb09cce3dafa
 # ╠═76c7bd3e-b04c-4e0c-a06c-e13f76f40eb2
+# ╠═52efdc4b-4a0a-4dbf-aca2-e46c896dcc71
 # ╠═2bb45200-d7ba-47a3-b82d-9c147b5d7601
 # ╠═80479ac3-897a-4aa7-8ce9-977fa4912bc6
 # ╠═50a4c97e-16ec-470f-80f7-c1ebcdb66855
@@ -3099,8 +3160,8 @@ version = "1.13.0+0"
 # ╟─4107cceb-d7c1-4783-9a3e-1c711d08e046
 # ╟─a407a99b-b40c-436c-a2a0-af2e19b347b8
 # ╟─c7a753a9-9d11-4847-abf5-428bcabf3880
-# ╠═6e062bd9-d20c-4e1d-b772-328bec8859ea
-# ╠═1291c9fd-80bf-4193-894c-5783787a6b95
+# ╟─6e062bd9-d20c-4e1d-b772-328bec8859ea
+# ╟─1291c9fd-80bf-4193-894c-5783787a6b95
 # ╠═6fceccd6-22cd-420d-8209-f4aad9e99269
 # ╠═81c2f93b-05b1-4eb0-9919-4ef76ecad233
 # ╠═17fbc55f-12a8-431e-ac00-b28304f2eb6c
@@ -3133,9 +3194,13 @@ version = "1.13.0+0"
 # ╟─4ca95124-8a7a-4e4f-9e65-ff7b2adf35a5
 # ╟─c8dc4f9d-a549-4dc2-82bd-38ffe949ea55
 # ╟─bfa23359-8bac-4db0-bac1-0885ebe8ec4b
+# ╟─e632a837-4533-4362-a6e1-988ade06a617
 # ╟─67763d8f-e1ac-4b1f-978f-4734af1e03ba
 # ╟─68ed85b2-7308-4ea7-b696-0f1951219592
 # ╟─9b35c13b-24ba-4c43-a621-a3f8ba45fe4a
+# ╟─33473b7a-e22f-4333-a2f2-374778c0d603
+# ╟─f3e24d8a-e35d-41de-92e6-0df290d3503c
+# ╟─2983afc0-c241-4799-b2f4-f60049da531c
 # ╟─2b3a1a65-8d3c-424e-a6cf-0e96646795f4
 # ╟─fa72774e-040a-4bc3-a759-5eb68c243fb4
 # ╟─3281dd3c-0453-4098-a6ed-4d771717033b
@@ -3152,7 +3217,7 @@ version = "1.13.0+0"
 # ╟─a660bf26-5b50-4910-b0ab-8e453623dc1a
 # ╟─a2a84394-1f18-48e3-a4dc-c03f64a3a1c0
 # ╟─9cd8c4c8-7d11-4fb0-92d5-439702aa9496
-# ╟─e9e9e16d-0b2c-45ce-aa5b-cdcda6b143f1
+# ╠═e9e9e16d-0b2c-45ce-aa5b-cdcda6b143f1
 # ╟─84e23b57-e5a4-4bf0-97ef-6b41b502b4e6
 # ╟─0a0324df-430f-4ac0-857b-4da6a7dca138
 # ╟─27031733-7ade-4bda-b464-5a9ade0b2950

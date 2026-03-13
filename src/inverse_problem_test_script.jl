@@ -56,14 +56,14 @@
         C,λ, dλdT, thickness,
         xpoints_number, tpoints_number; 
         regularization = IHT.NoRegularization(),
-        covariance = IHT.NoCovariance())
+        covariance = IHT.AR1Covariance(0.1 , 0.1))
 
 
-        IHT.regularization_loss(inv_probl)
-        IHT.constraints_loss(inv_probl)
+        @benchmark IHT.regularization_loss($inv_probl)
+        @benchmark IHT.constraints_loss($inv_probl)
         #@benchmark IHT.modify!($(inv_probl.optimizable.λ) , $[5.0, 4.0, 8.0] )
     
-        IHT.discrepancy( [ 21.0, 15.0, 10.2 , 2700*1e3 , 2700*1e3 , 2700*1e3] , inv_probl)
+        @benchmark IHT.discrepancy( $[ 21.0, 15.0, 10.2 , 2700*1e3 , 2700*1e3 , 2700*1e3] , $inv_probl)
 
         plot(inv_probl.residual)
 
@@ -75,8 +75,8 @@
 
         #Optimization.EnsembleProblem
         #ensemble_prob = Optimization.EnsembleProblem(optp, safety_copy = true)
-        res = solve(optp, optimizer , use_initial = true)         # Включает ваш x0 в начальный рой )#, options = Metaheuristics.Options(parallel_evaluation = true))
-        
+       res = solve(optp, optimizer )         #
+      #=  
         ensemble_prob = EnsembleProblem(
                         optp, 
                         prob_func = (prob, i, repeat) -> begin
@@ -91,3 +91,4 @@
 
         lam_coeffs_number = length(IHT.coeffs(inv_probl.optimizable.λ))
         res.u[lam_coeffs_number + 1 : end]/2700
+=#

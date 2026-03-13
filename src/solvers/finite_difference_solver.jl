@@ -206,14 +206,12 @@ function unified_fd_solver!( problem::HeatTransferProblem{DT, CF, LF, LDF, ITF, 
         
         Tmm1 = T1
         
-        @inbounds for m = 1 : M - 1 #% цикл по времени
+        @inbounds for m = 1 : M - 1 # time loop
             Tm = @view T[:,m] # Tm current time
             # filling current values of physical quantities
               @inbounds  for ii in 1 : N
                 ti = Tm[ii]
-                #abs(ti - Tmm1[ii]) >= 1e-8 || continue
                 λ =  problem.L_f(ti) # λ
-                #lam[ii] = λ
                 F[ii] = dd * λ / problem.C_f(ti) # Fm - (dx^-2)*dt*Cp/λ
                 phi[ii] = 0.25 * problem.Ld_f(ti)/λ #phi  - λ'/(4λ)
             end 
