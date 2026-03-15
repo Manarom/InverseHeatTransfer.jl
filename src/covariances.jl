@@ -61,8 +61,11 @@ function covariance_loss(p::SingleInverseProblem{DT, TN, N,
         two_ρ = 2.0 * ρ   
         loss = zero(DT)
 
+        #@show inv_den
+
         @inbounds for j in StaticInt(1) : StaticInt(TN)
-            
+           # @show j 
+
             s_squares = zero(DT) # squared amplitudes
             s_cross = zero(DT) # cross products
             
