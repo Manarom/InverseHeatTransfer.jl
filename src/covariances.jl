@@ -85,6 +85,7 @@ function covariance_loss(p::SingleInverseProblem{DT, TN, N,
             end
             s_cross *=  two_ρ
             loss += (s_squares  - s_cross) * inv_den
+           # @show loss
         end
     
         return loss/(N * TN)

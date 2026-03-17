@@ -1,6 +1,7 @@
 module WinPos
 
     using OrderedCollections, Interpolations, Tables
+    using DelimitedFiles
 
     struct DataPair
         name::String
@@ -139,6 +140,69 @@ which has `data_name.x` and `data_name.dat` files pair
             p_dict[n] = WinPosProject(n , p)
         end
         return p_dict
+    end
+    """
+    parse_folder_as_winpos_projects(dir ; name_matcher::String , variable_name::String = "T" , kwargs...)
+
+
+Searches the folder dir for subfolders containing files with `name_matcher`
+and interprets the data in these files as `DataPair` taking each column 
+starting from 2 as dependent variables `Y₁...Yₙ` and first column as the 
+independent.
+
+The structure of `dir` ,ust be the following:
+```julia
+# for the following structure `\\dir\\proj1\\T_measured.csv`, `\\dir\\proj2\\T_measured.csv`, 
+# `\\dir\\proj3\\T_measured1.csv` each folder contains a single file matching the `name_matcher`
+d = raw"dir"
+
+WD = parse_folder_as_winpos_projects(d , name_matcher = "T_measured" , variable_name = "T")
+
+# now WD is an OrderedDict with keys "proj1", "proj2" and "proj3"
+# each element of WD is a `WinPosProject` with `data` - `OrderedDict`
+# with keys "T1".."TN", where each element is the `DataPair` objetc
+```
+
+"""
+function parse_folder_as_winpos_projects(dir ; name_matcher::String , variable_name::String = "T" , kwargs...)
+		projs = OrderedDict{String , WinPosProject}()
+		for f in readdir(dir)
+			full_f = joinpath(dir , f)
+			isdir(full_f) || continue
+			wp = parse_files_to_data_pair(full_f , name_matcher , f ,  variable_name , kwargs...)
+			!isempty(wp) || continue
+			projs[f] = WinPosProject(f , wp)
+		end
+		return projs
+    end
+    function parse_files_to_data_pair(fold , 
+                name_matcher::String, project_name::String = "" , 
+                variable_name::String = "T"; kwargs...)
+            @assert isdir(fold) "Must be dir"
+            data = []
+            full_f = ""
+            for f in readdir(fold)
+                full_f = joinpath(fold , f)
+                isfile(full_f) || continue
+                contains(f , name_matcher) || continue
+                
+                data = readdlm(full_f; kwargs...)
+                break
+            end
+            t = data[: , 1]
+            Tnumb = size(data , 2) - 1
+            N = size(data , 1)
+            data_names = variable_name .* string.(collect(1 : Tnumb))
+            d = OrderedDict{String , DataPair}()
+            for i in 2 : Tnumb + 1
+                name = data_names[ i -  1]
+                d[name] = DataPair(name , full_f , full_f , project_name) # 			DataPair(name , xfile , yfile , project)
+                resize!(d[name].x , N)
+                copyto!(d[name].x , t)
+                resize!(d[name].y , N)
+                copyto!(d[name].y , data[: , i])
+            end
+	    return d
     end
 end
 

@@ -34,6 +34,9 @@ using FiniteDiff, OrderedCollections, Tables, CSV, DataFrames
 # ╔═╡ 7fe4cacf-7986-4f60-aa3d-a41777cd72c4
 using PlutoTables, Accessors, AccessorsExtra, JSON2
 
+# ╔═╡ ea4528b9-bf56-46d7-89a3-79586598da93
+using DelimitedFiles
+
 # ╔═╡ 9f370f71-8de3-4654-81cf-ea72a88b1d71
 using Gtk
 
@@ -46,7 +49,7 @@ using OptimizationNLopt
 # ╔═╡ 76c7bd3e-b04c-4e0c-a06c-e13f76f40eb2
 using HypertextLiteral
 
-# ╔═╡ bfbefd90-651c-4f80-a58f-e62f7666c1bd
+# ╔═╡ 52efdc4b-4a0a-4dbf-aca2-e46c896dcc71
 using Static
 
 # ╔═╡ 2bb45200-d7ba-47a3-b82d-9c147b5d7601
@@ -62,7 +65,7 @@ includet(joinpath(source_path, "InverseHeatTransfer.jl"))
 includet(joinpath(source_path, "WinPos.jl"))
 
 # ╔═╡ a6d591eb-20f2-476f-af19-9b0084ddf929
-import Main.InverseHeatTransfer as IHT
+IHT =  Main.InverseHeatTransfer
 
 # ╔═╡ 35958e8a-eb7a-4eff-89a0-f9c04aff2a37
 begin 
@@ -79,7 +82,7 @@ plot_common_args = (grid = true, gridlinewidth=3, gridstyle = :dot,minorgrid=tru
 md""" ## Loading experimental data from winpos project"""
 
 # ╔═╡ 450fb200-eec6-4e96-9ebd-81453c015830
-md" Load data from : $(@bind input_data_type Select([:winpos,:files]))"
+md" Load data from : $(@bind input_data_type Select([:winpos,:files] , default = :files))"
 
 # ╔═╡ 4107cceb-d7c1-4783-9a3e-1c711d08e046
 @bind load_folder Button("Reload folder")
@@ -95,33 +98,39 @@ end
 # ╔═╡ 1291c9fd-80bf-4193-894c-5783787a6b95
 md" use static folder $(@bind use_static_folder CheckBox(default = true))"
 
+# ╔═╡ 0a4ce046-5b43-425d-a3f2-da8d9867b181
+mutable struct DataConnector
+	all_names::Vector{String}
+	selected_names::Vector{String}
+	data :: Matrix{Float64}
+	data_cutted :: Matrix{Float64}
+	locations :: Vector{Float64}
+	total_thickness :: Float64
+	project:: WP.WinPosProject
+	
+end
+
+# ╔═╡ dcf0034b-e405-4f27-b853-acb7a58b9cc6
+t_cutted_min(d::DataConnector) = minimum(d.data_cutted[:,1])
+
+# ╔═╡ 4d27d75e-5e95-43c9-9e77-b9ae3d6c4bb9
+t_cutted_max(d::DataConnector) = maximum(d.data_cutted[:,1])
+
+# ╔═╡ 28b91e49-996c-4abc-9db4-30b515444aab
+function cut_data!(d::DataConnector , tmin , tmax)
+	t = @view d.data[: , 1]
+	f =@. (t < tmax) & (t > tmin) 
+	d.data_cutted = d.data[f,:]
+end
+
 # ╔═╡ 2e676f8c-909a-4fb7-b35e-57d08f802df7
-#typeof(JSON2.read(read(joinpath(fldrd,settings_file[]), String)))
-
-# ╔═╡ df99b7b7-5a0d-4b71-bf5c-415b5cfa3b2d
-md"""
-
-	Time region tmin = $(@bind t_min confirm(NumberField(range(0.0,1000.0,5000),0.0))) 
-
-	Time region tmax = $(@bind t_max confirm(NumberField(range(0.0,1000.0,5000),1000.0)))	
-	"""
-
-# ╔═╡ 9b9490a9-7718-489a-9808-937b72307123
-#=@bind thickness_data confirm(ColumnInput(
-    NamedTuple{Tuple(Symbol.(data_names))}(ntuple(_->0.0, length(data_names))), 
-    (
-        # Оптика _[∗] для словаря применяет виджет ТОЛЬКО к значениям (Value),
-        # оставляя ключи (Key) как статичные названия строк
-        (@o _[∗]) => NumberField(),
-		#(@o _[∗][1]) => Select(data_names),
-    )
-))=#
-
-# ╔═╡ 1fbc7b7d-9ad1-4187-917f-b0382b32ea3c
-md" #### Total thickness, mm = $(@bind thickness_mm NumberField(0.0:1e-3:100.0, default = 7.0))"
+data_changed = true
 
 # ╔═╡ 62069546-44fb-4a77-986d-f03624719e29
 md" ## Physical properties setup"
+
+# ╔═╡ fc5c1209-26ec-41d7-9238-e57d18330de1
+@bind refit Button("Refit!!")
 
 # ╔═╡ a46970c8-7c91-4795-83a9-41c56a7ca399
 md""" ### Compare to passport $(@bind show_passport CheckBox(default = true))"""
@@ -158,6 +167,29 @@ end
 
 # ╔═╡ 9b35c13b-24ba-4c43-a621-a3f8ba45fe4a
 md" ### Inverse problem setup"
+
+# ╔═╡ 33473b7a-e22f-4333-a2f2-374778c0d603
+md"""
+
+Covariance type $(@bind covariance_type Select(IHT.ALL_COVARIANCE_TYPES))
+
+Covariance parameter τ = $(@bind tau confirm(Slider(1e-3:1e-2:10 , show_value = true, default = 1.0)))
+
+Regularization type : $(@bind reg_type Select(IHT.ALL_REGULARIZATION_TYPES))
+
+Regularization multiplier α: $(@bind reg_multiplier confirm(NumberField(0.0 : 1e-3 : 1000 , default = 1e-3)))
+"""
+
+# ╔═╡ f3e24d8a-e35d-41de-92e6-0df290d3503c
+begin 
+	if covariance_type <: IHT.AR1Covariance
+		cargs = (tau , 1.0)
+	elseif covariance_type <: IHT.RelativeDiagonalCovariance
+		cargs  = (tau, 1.0)
+	else
+		cargs = Tuple([])
+	end
+end;
 
 # ╔═╡ 2b3a1a65-8d3c-424e-a6cf-0e96646795f4
 md" ### refit $(@bind is_fit_on CheckBox(default = false))"
@@ -223,7 +255,11 @@ Rho_Dict = Dict(
 );
 
 # ╔═╡ 7d37019a-34bf-43ca-aa81-8b6c29191473
-md" ### Density, kg/m³ $(@bind density confirm(Slider(200.0:0.1:4000, default = Rho_Dict[material_name], show_value = true)))"
+md"""
+
+### Density, kg/m³ $(@bind density confirm(NumberField(200.0:0.1:4000, default = Rho_Dict[material_name])))
+
+"""
 
 # ╔═╡ 5843fcfb-4e0e-480d-b263-e3f3ad6a7ac3
 if density != Rho_Dict[material_name]
@@ -286,7 +322,7 @@ end
 
 
 # ╔═╡ c7a753a9-9d11-4847-abf5-428bcabf3880
-begin 
+if !use_static_folder 
 	input_data_type
 	load_folder
 	loaded_path = select_folder_gtk()
@@ -298,57 +334,39 @@ working_folder = (!use_static_folder && isdir(loaded_path)) ? loaded_path : stat
 # ╔═╡ 81c2f93b-05b1-4eb0-9919-4ef76ecad233
 if is_winpos 
 	projects = WP.find_project_pairs(working_folder)
+else
+	projects  = WP.parse_folder_as_winpos_projects(working_folder ; name_matcher="Tmeasured", variable_name = "T")
 end;
+
+# ╔═╡ bb9c0022-086e-48fb-8746-cb3a819375f8
+projects
 
 # ╔═╡ 17fbc55f-12a8-431e-ac00-b28304f2eb6c
-is_winpos && md""" #### select project $(@bind cur_proj Select(collect(keys(projects)))) """
+md""" #### select projects to be taken into account: 
+
+
+$(@bind cur_proj confirm(MultiSelect(collect(keys(projects))))) 
+
+
+"""
+
+# ╔═╡ 054d932d-12be-4538-ab34-b5d3f465bf0f
+projects
 
 # ╔═╡ 304091a8-4206-49c2-9c98-cffb18a0e906
-if is_winpos 
-	selected_proj = projects[cur_proj]
-	all_data_names = collect(keys(selected_proj.data))
-	# try read settings
-	fldrd = joinpath(working_folder, selected_proj.name)
-	settings_file = filter(f->contains(f,"settings"), readdir(fldrd))
-	default_t_locations_d = nothing
-	if !isempty(settings_file)
-		try 
-			global default_t_locations_d = Dict(JSON2.read(read(joinpath(fldrd,settings_file[]), String)))
-			catch ex
-				@show ex
-		end
-	end
-else
-	all_data_names = "T" .* string.(1:10)
-end;
-
-# ╔═╡ a2a87cfe-5976-4902-b400-fabb19baa9c7
-	md""" #### Select project : 
-	$(@bind selected_variables confirm(MultiSelect(all_data_names))) 
-	"""
-
-# ╔═╡ 0177413c-0f89-4935-9963-5aeebd333b9a
-is_selected = length(selected_variables) > 0 
-
-# ╔═╡ 56a5f3c9-6a41-4326-83ab-2c19d65b3ed0
-if is_selected
-	if is_winpos
-			(ttt, TTT, winpos_data_names) = Main.WinPos.joindata(selected_proj, names = selected_variables)
-			T_measured = hcat(ttt,TTT)
-		else
-			hr_file = filter(f->  contains(f,"Tmeasured") , readdir(working_folder))
-			isempty(hr_file) && error("folder must constain file with  Tmeasured")
-			T_measured = CSV.read(joinpath(working_folder,hr_file[]), Tables.matrix)
+begin
+	all_data =Dict{String , DataConnector}()
+	for n in  cur_proj
+		selected_proj = projects[n]
+		all_data[selected_proj.name] = DataConnector(collect(keys(selected_proj.data)) , String[] , Matrix{Float64}(undef,0,0) , Matrix{Float64}(undef,0,0) , Float64[] , 0.0, selected_proj)
 	end
 end;
 
-# ╔═╡ 2c103d75-471e-4ed6-8598-6b0be0c9e195
-if is_winpos && length(selected_variables) >0
-	data_names = winpos_data_names
-else
-	
-	data_names = selected_variables
-end;
+# ╔═╡ 6c4cb363-3bda-4dfa-8499-8201a013895d
+@bind show_data_table Select(collect(keys(all_data)))
+
+# ╔═╡ fd47bc58-8a0c-4dd7-875c-bcc80a21e64e
+all_data
 
 # ╔═╡ fd51a6c8-6569-4bfd-86ac-883c648fe6d9
 function filter_couple_breakage!(T)
@@ -377,95 +395,6 @@ function filter_couple_breakage!(T)
 	return T
 end
 
-# ╔═╡ 4d584fde-e821-402c-8850-6d3876e6fb46
-if length(selected_variables) >0 
-	w = (T_measured[:,1] .>= t_min ) .& (T_measured[:,1] .<= t_max)
-	time_experimental = T_measured[w,1]
-	if !is_winpos
-		f =[Base.Fix2(in, selected_variables)(a) for a in all_data_names]
-		T_experimental = T_measured[w,2:end][:,f]	
-		
-	else
-		T_experimental = T_measured[w,2:end]
-		
-	end
-	filter_couple_breakage!(T_experimental)
-end;
-
-# ╔═╡ a207e8c4-ce27-405f-aafd-4505eb69ef1b
-if is_selected
-	minis  = minimum.(eachcol(T_experimental))
-	maxis  = maximum.(eachcol(T_experimental))
-end;
-
-# ╔═╡ 4f4d5be8-c2f0-4313-a84d-43408611838c
-if length(selected_variables) >=1
-	
-	p = Plots.plot(grid = true,gridlinewidth=3,gridstyle = :dot,minorgrid=true, box = :on, linewidth =3)
-	for (i , c) in enumerate(eachcol(T_experimental))
-		Plots.plot!(p,time_experimental , c, label = data_names[i], linewidth = 2)
-	end
-	
-	p
-end
-
-# ╔═╡ dbd1d788-120b-4678-bf3b-7541b9ea7341
-if is_winpos
-	tbl = WP.to_table(selected_proj; names = data_names, tmin = t_min, tmax = t_max)
-else
-	tbl = Tables.table(hcat(time_experimental, T_experimental), header =("x",data_names...) )
-end
-
-# ╔═╡ fc79d398-03d0-4f75-a777-41e2e27fee5e
-lam_T_rage = extrema(T_experimental)
-
-# ╔═╡ 16337bb4-438e-4b86-bdc5-b88ef210a960
-begin 
-	C_poly = IHT.ScaledPolynomial(IHT.BernsteinSymPoly(ntuple(_->density*1000.0 , basis_degree)), xmin = lam_T_rage[1], xmax =lam_T_rage[2])
-	c_x = Cp_Dict[material_name].x 
-	c_y = density.*Cp_Dict[material_name].y
-	flc = @. (c_x <= lam_T_rage[2]) & (c_x >= lam_T_rage[1])
-	c_x = c_x[flc]
-	c_y = c_y[flc]
-	if is_optimize_c
-		C = IHT.OptimizableVariable(C_poly, flag = is_optimize_c , lb = density*lower_cp_limit , ub = density * upper_cp_limit )
-	else
-
-		C = PW.polyfit!(C_poly, c_x,c_y)#linear_interpolation(c_x ,c_y , extrapolation_bc=Line())
-	end
-end;
-
-# ╔═╡ c8861fa2-9cb3-4349-9ece-eba285c24eab
-begin 
-	λ_poly = IHT.ScaledPolynomial(IHT.BernsteinSymPoly(ntuple(_->1.0 , basis_degree)), xmin = lam_T_rage[1], xmax =lam_T_rage[2])
-	
-	if is_optimize_lambda
-		
-		λ = IHT.OptimizableVariable(λ_poly, flag = is_optimize_lambda , lb = lower_lam_limit , ub = upper_lam_limit )
-		dλdT_poly =  IHT.PolynomialWrappers.derivative(λ_poly)
-		dλdT = IHT.OptimizableVariable(dλdT_poly, flag = false)
-		
-	else
-		l_x = L_Dict[material_name].x 
-		l_y = L_Dict[material_name].y
-		fl = @. (l_x <= lam_T_rage[2]) & (l_x >= lam_T_rage[1])
-		l_x = l_x[fl]
-		l_y = l_y[fl]
-		#Cp = linear_interpolation(cp_x ,density.*cp_y , extrapolation_bc=Line())
-		λ = PW.polyfit!(λ_poly, l_x, l_y)
-		dλdT = PW.derivative(λ)
-	end
-end;
-
-# ╔═╡ d71fd6d1-167d-40fb-a253-b0982e19c0d0
-@bind Ttest Slider(range(lam_T_rage[1],lam_T_rage[2],100), show_value = true)
-
-# ╔═╡ efe09dba-b787-4cda-8301-8735b1273192
-lam_T_rage
-
-# ╔═╡ e06ac758-c5ae-4cf6-84b1-11d51a56f200
-initial_distribution = mean(T_experimental[1,:])
-
 # ╔═╡ 6cd4f554-7242-4e97-b4cb-8549e3b70139
 function multi_values(names, default_values=nothing)
 	isnothing(default_values) && (default_values = zeros(length(names)))
@@ -482,68 +411,305 @@ function multi_values(names, default_values=nothing)
 	end
 end
 
-# ╔═╡ a3e907f7-1134-4a15-bae8-14b45646dd86
-@bind thickness_data  confirm(multi_values(data_names, nothing))
+# ╔═╡ 646aebc7-b3db-443f-888f-800d444b4fa3
+function fill_data_connector_data!(d::DataConnector)
+	isempty(d.selected_names) && return false
+	(ttt, TTT, winpos_data_names) = Main.WinPos.joindata(d.project, names = d.selected_names)
+	d.selected_names = winpos_data_names
+	d.data =  hcat(ttt,TTT)
+	d.data_cutted = copy(d.data)
+end
 
-# ╔═╡ 15acb806-8026-4d50-9b6f-906b14d48b62
-pretty_table(HTML,hcat(data_names, collect(thickness_data), minis, maxis), column_labels = ["names", "hᵢ", "Tmin", "Tmax"])
+# ╔═╡ 60458134-1de0-475e-ba64-24b6f33a2980
+function paired_selected_names(all_data , field_name :: Symbol = :selected_names)
+	out = Vector{Pair{String , String}}()
+	for (n,v) in all_data
+		append!(out , [ Pair(n , k)  for k in  getfield(v , field_name) ] )
 
-# ╔═╡ 73d06f8f-3a2c-46cf-993b-66d313bdf7eb
-therm_locations = collect(thickness_data) * 1e-3
+	end
+	return out
+end
+
+# ╔═╡ 6d0d7cb4-45fc-405f-8a5d-cf10ad5e380b
+function multi_values(all_data::AbstractDict, field_name::Symbol =  :selected_names , default_values=nothing)
+	PlutoUI.combine() do Child
+		@htl("""
+		<h6>field_name, mm</h6>
+		<ul>
+		$([
+			@htl("<li>$(join( [n , f] , ":")): $(Child( join( [n , f] , ":"), NumberField(0:1e-3:20 , default = 0.0)))</li>")
+			
+			for (n, f) in paired_selected_names(all_data)
+		])
+		</ul>
+		""")
+	end
+end
+
+# ╔═╡ 6a16435d-b71a-4a18-9407-dd68fe2dcccd
+
+
+# ╔═╡ 96b4c7c4-30a8-407c-9bd4-245f0ee0d9b2
+function project_selector(all_data , field_name::Symbol)
+
+		PlutoUI.combine() do Child
+		@htl("""
+		<ul>
+		$([
+			@htl("<li>$(name): \n $(Child(
+				name , 
+				MultiSelect(collect(getfield(v , field_name) ))
+			)
+								   )</li>")
+			for (name, v) in all_data
+				 ])
+		</ul>
+		""")
+	end
+
+end
+
+# ╔═╡ c30f95e5-93eb-4ab7-bc84-4bfe7092cf47
+@bind selected_variables_multi  confirm(project_selector(all_data , :all_names))
+
+# ╔═╡ 0177413c-0f89-4935-9963-5aeebd333b9a
+is_selected = !any(isempty , selected_variables_multi)
+
+# ╔═╡ bc6ecff4-2ade-4436-9630-be573eb1ea04
+begin 
+	is_selected
+	@bind thicknesses_mm confirm(multi_values(collect(keys(all_data))))
+end
+
+# ╔═╡ ca69ae4b-8428-4643-93a4-c4c1687b3d7e
+for n in keys(thicknesses_mm)
+	all_data[String(n)].total_thickness = 1e-3 * getfield(thicknesses_mm,n)
+end
+
+# ╔═╡ 56a5f3c9-6a41-4326-83ab-2c19d65b3ed0
+if is_selected
+		for  ki in keys(selected_variables_multi)
+			name = string(ki)
+			d = all_data[name]
+			d.selected_names = getfield(selected_variables_multi , ki)
+			fill_data_connector_data!(d)
+		end
+		
+end;
+
+# ╔═╡ b3c96eae-64a5-4245-85b6-b7b994e03ff7
+if is_selected
+	selected_variables_multi
+	@bind locations_data  confirm(multi_values(all_data))
+end
+
+# ╔═╡ 735d3901-2dee-40d9-9e74-bb0d71ddfda4
+begin # filling thickness data 
+	for (_,d) in all_data
+		n = length(d.selected_names)
+		d.locations = fill(0.0 , n)
+	end
+	for k in keys(locations_data)
+		(projn , sn) =Tuple(split(String(k) , ":"))
+		val = getfield(locations_data,k)
+		d_i = all_data[projn]
+		fl = d_i.selected_names .== sn
+		_v = @view d_i.locations[fl] 
+		fill!(_v , 1e-3 * val)
+	end
+end
+
+# ╔═╡ b1f00c55-5ce9-4a0f-a548-a8a9041d02fc
+begin 
+	is_data_ready = true
+	locations_data
+	thicknesses_mm
+	selected_variables_multi
+	cur_proj
+	refit
+	
+	for (_ , d) in all_data
+		
+		for fi in fieldnames(DataConnector)
+			global is_data_ready = is_data_ready && !isempty(getfield(d , fi)) 
+			if !is_data_ready 
+				display(String(fi) * " is not ready" )
+				break
+			end
+		end	
+		global is_data_ready = is_data_ready && all(Base.Fix2(>=,0.0) , d.locations)
+		is_data_ready = is_data_ready && d.total_thickness > 0.0
+		is_data_ready || break
+	end
+	is_data_ready
+
+end
+
+# ╔═╡ fc79d398-03d0-4f75-a777-41e2e27fee5e
+if is_data_ready 
+	(lmin , lmax) = (1e6 , 0.0)
+	for (_,d) in all_data
+		global lmin , lmax
+		t_data= @view d.data_cutted[:,2:end]
+		(lmin_cur , lmax_cur) = extrema(t_data)
+		(lmin_cur < lmin) && (lmin = lmin_cur) 
+		(lmax_cur > lmax) && (lmax = lmax_cur) 
+	end
+	lam_T_range = (lmin , lmax)
+end
+
+# ╔═╡ 16337bb4-438e-4b86-bdc5-b88ef210a960
+begin 
+	C_poly = IHT.ScaledPolynomial(IHT.BernsteinSymPoly(ntuple(_->density*1000.0 , basis_degree)), xmin = lam_T_range[1], xmax =lam_T_range[2])
+	c_x = Cp_Dict[material_name].x 
+	c_y = density.*Cp_Dict[material_name].y
+	flc = @. (c_x <= lam_T_range[2]) & (c_x >= lam_T_range[1])
+	c_x = c_x[flc]
+	c_y = c_y[flc]
+	if is_optimize_c
+		C = IHT.OptimizableVariable(C_poly, flag = is_optimize_c , lb = density*lower_cp_limit , ub = density * upper_cp_limit )
+	else
+
+		C = PW.polyfit!(C_poly, c_x,c_y)#linear_interpolation(c_x ,c_y , extrapolation_bc=Line())
+	end
+end;
+
+# ╔═╡ c8861fa2-9cb3-4349-9ece-eba285c24eab
+begin 
+	λ_poly = IHT.ScaledPolynomial(IHT.BernsteinSymPoly(ntuple(_->1.0 , basis_degree)), xmin = lam_T_range[1], xmax =lam_T_range[2])
+	
+	if is_optimize_lambda
+		
+		λ = IHT.OptimizableVariable(λ_poly, flag = is_optimize_lambda , lb = lower_lam_limit , ub = upper_lam_limit )
+		dλdT_poly =  IHT.PolynomialWrappers.derivative(λ_poly)
+		dλdT = IHT.OptimizableVariable(dλdT_poly, flag = false)
+		
+	else
+		l_x = L_Dict[material_name].x 
+		l_y = L_Dict[material_name].y
+		fl = @. (l_x <= lam_T_range[2]) & (l_x >= lam_T_range[1])
+		l_x = l_x[fl]
+		l_y = l_y[fl]
+		#Cp = linear_interpolation(cp_x ,density.*cp_y , extrapolation_bc=Line())
+		λ = PW.polyfit!(λ_poly, l_x, l_y)
+		dλdT = PW.derivative(λ)
+	end
+end;
+
+# ╔═╡ e06ac758-c5ae-4cf6-84b1-11d51a56f200
+initial_distribution = lam_T_range[1]
+
+# ╔═╡ d71fd6d1-167d-40fb-a253-b0982e19c0d0
+@bind Ttest Slider(range(lam_T_range[1],lam_T_range[2],100), show_value = true)
 
 # ╔═╡ 1318f293-f606-4a9f-8896-853b87c0665d
 begin
 	xpoints_number = dp_xpoints
 	tpoints_number = dp_tpoints
-	thickness = 1e-3 * thickness_mm
-	if any(Base.Fix2(<,0.0), (thickness, therm_locations...)) 
-		@warn "set thicknesses"
-	else
-		inds = sortperm(therm_locations)
-		
-		inv_probl = IHT.SingleInverseProblem(time_experimental, T_experimental[:,inds], initial_distribution, therm_locations[inds], C,λ, dλdT, thickness, xpoints_number, tpoints_number)
+	#thickness = 1e-3 * thickness_mm
+	if is_data_ready
+		probls = []
+		for (_,d) in all_data
+			therm_locations = d.locations
+			thickness = d.total_thickness
+			inds = sortperm(therm_locations)
+			cov = covariance_type(cargs...)
+			t = d.data_cutted[: , 1]
+			T = d.data_cutted[: , 2:end]
+			inv_probl = IHT.SingleInverseProblem(t, T[:,inds], initial_distribution, therm_locations[inds], C,λ, dλdT, thickness, xpoints_number, tpoints_number , covariance=cov , regularization = reg_type())
+			push!(probls , inv_probl)
+		end
+		parallel_probls =IHT.ParallelInverseProblems(Tuple(probls)...)
 	end
 end;
 
+# ╔═╡ fe228354-5f3f-433d-9f8b-7d888e9c5ecb
+begin 
+
+	for p in parallel_probls.problems
+		p.α[] = reg_multiplier
+	end
+end
+
+# ╔═╡ 4c9a5a5f-5839-4211-b561-7539dfa74a7a
+# plotting covariance 
+begin 
+	losses = (total = sum(IHT.evaluate_loss , parallel_probls.problems),
+			 covariance  = sum(IHT.covariance_loss,  parallel_probls.problems),
+			 constraints =sum(IHT.constraints_loss,  parallel_probls.problems),
+			 regularization = sum(p->p.α[]*IHT.regularization_loss(p), parallel_probls.problems))
+end
+
+# ╔═╡ d33fc044-c487-449f-8f7c-0bcfee603358
+parallel_probls
+
 # ╔═╡ 6cd83678-860c-41c8-b3cd-007725f9e01d
 begin 
-	t_dir = OHT.trange(inv_probl.direct_problem)
+	
 	bc_plot = Plots.plot(;plot_common_args...)
-	
-	Plots.plot!(bc_plot, t_dir ,inv_probl.direct_problem.bc_dwn.(t_dir), label = "lower bc"; plot_common_args...)
-	
-	Plots.plot!(bc_plot, t_dir ,inv_probl.direct_problem.bc_up.(t_dir), label = "upper bc"; plot_common_args...)
-	for (i,c) in enumerate(eachcol(inv_probl.Tdata_measured))
-		Plots.plot!(bc_plot, t_dir, c, label="T$(i)" )
+
+	for inv_probl in parallel_probls.problems
+		t_dir = OHT.trange(inv_probl.direct_problem)
+		Plots.plot!(bc_plot, t_dir ,inv_probl.direct_problem.bc_dwn.(t_dir), label = "lower bc"; plot_common_args...)
+		
+		Plots.plot!(bc_plot, t_dir ,inv_probl.direct_problem.bc_up.(t_dir), label = "upper bc"; plot_common_args...)
+		for (i,c) in enumerate(eachcol(inv_probl.Tdata_measured))
+			Plots.plot!(bc_plot, t_dir, c, label="T$(i)" )
+		end
+		xlabel!(bc_plot,"Time,s")
+		ylabel!(bc_plot,"Temperature,s")
 	end
-	xlabel!(bc_plot,"Time,s")
-	ylabel!(bc_plot,"Temperature,s")
 end
+
+# ╔═╡ 544201c6-90b3-48dd-9651-69ca3c5c4979
+bc_plot
+
+# ╔═╡ 2b0c5080-605a-4967-bbe3-6823ac9b8f54
+IHT.discrepancy!(IHT.fill_starting_vectors(parallel_probls)[1], parallel_probls)
+
+# ╔═╡ f5b13ec5-98f9-48bb-ad95-7dbd87e11f7b
+lam_test = OHT.thermal_conductivity(parallel_probls.problems[1].direct_problem, Ttest)
 
 # ╔═╡ e9e9e16d-0b2c-45ce-aa5b-cdcda6b143f1
 begin 
+	reg_multiplier
+	is_data_ready
+	
 	if is_fit_on 
-	(start, lb, ub)  =  IHT.fill_starting_vectors(inv_probl)
-	optp = OptimizationProblem(IHT.discrepancy, start, inv_probl, lb = lb, ub = ub , maxiters=pso_iters )
+	(start, lb, ub)  =  IHT.fill_starting_vectors(parallel_probls)
+	optp = OptimizationProblem(IHT.discrepancy!, start, parallel_probls, lb = lb, ub = ub , maxiters=pso_iters )
 	res = solve(optp, optimizer())
 		if is_after_fit
 			new_start = res.u
-			disc_before = IHT.discrepancy(new_start, inv_probl)
-			optp2= OptimizationProblem(IHT.discrepancy, new_start, inv_probl , lb = lb, ub = ub , maxiters=pso_iters)
+			disc_before = IHT.discrepancy!(new_start, parallel_probls)
+			optp2= OptimizationProblem(IHT.discrepancy!, new_start, parallel_probls , lb = lb, ub = ub , maxiters=pso_iters)
 			res2 = solve(optp2, NLopt.LN_COBYLA())
-			disc_after = IHT.discrepancy(res2.u, inv_probl)
+			disc_after = IHT.discrepancy!(res2.u, parallel_probls)
 			disc_before - disc_after
 		end
 	end
 	refresh_graph = false
 end
 
+# ╔═╡ 95dbc55f-ab5a-4828-a1e2-9a0c9a9ec19b
+begin 
+	refresh_graph
+	loss_table = IHT.loss_distribution_matrix(parallel_probls)
+	md"""
+	#### Loss function distribution over problems and types:
+	"""
+	
+end
+
+# ╔═╡ 672119a2-7a47-4813-a2d3-e0c15ee63491
+DataFrames.DataFrame(loss_table)
+
 # ╔═╡ f2943cf8-ffb9-4065-a272-1f344488dd0f
 begin 
 	refresh_graph
-	discr  = norm(inv_probl.residual)
+
 	# plotting fitted values 
-	(Tmin,Tmax) = (lam_T_rage[1],lam_T_rage[2])
+	(Tmin,Tmax) = (lam_T_range[1],lam_T_range[2])
 	Tplot = range(Tmin, Tmax, 100)
 	p_fit_lam = Plots.plot(Tplot, λ.(Tplot), label = "inverse", linewidth = 2,linecolor = :green)
 	if haskey(L_Dict, material_name) && show_passport
@@ -556,21 +722,28 @@ begin
 	title!(p_fit_lam, "Fitted VS measured")
 
 	# plotting temeprature distribution 
+	p_residual = Plots.plot(;plot_common_args...)
+	p_distr = Plots.plot(;plot_common_args...)
+	for inv_probl in parallel_probls.problems
+		discr = IHT.evaluate_loss(inv_probl)
+		Plots.plot!(p_distr , inv_probl.Tdata_evaluated, label = "fitted")
+		Plots.plot!(p_distr, inv_probl.Tdata_measured, linestyle = :dash, label = "measured"; plot_common_args...)
+		title!(p_distr,"discrepancy = $(discr)")
+		xlabel!(p_distr, "Timestep")
+		ylabel!(p_distr, "Temperature, ᵒC")
+		
+		
+		# ploting residuals
 	
-	p_distr = Plots.plot(inv_probl.Tdata_evaluated, label = "fitted")
-	Plots.plot!(p_distr, inv_probl.Tdata_measured, linestyle = :dash, label = "measured"; plot_common_args...)
-	title!(p_distr,"discrepancy = $(discr)")
-	xlabel!(p_distr, "Timestep")
-	ylabel!(p_distr, "Temperature, ᵒC")
-	
-	
-	# ploting residuals
-
-	p_residual = Plots.plot(inv_probl.residual, label = nothing ; plot_common_args...)
-	title!(p_residual, "Residuals")
-	xlabel!(p_residual, "Timestep")
-	ylabel!(p_residual, "ΔT, ᵒC")
+		Plots.plot!(p_residual , inv_probl.residual, label = nothing ; plot_common_args...)
+		title!(p_residual, "Residuals")
+		xlabel!(p_residual, "Timestep")
+		ylabel!(p_residual, "ΔT, ᵒC")
+	end
 end ;
+
+# ╔═╡ a660bf26-5b50-4910-b0ab-8e453623dc1a
+p_residual
 
 # ╔═╡ 538487b4-b2fc-42c2-ba69-663b2ca5b768
 begin 
@@ -584,9 +757,6 @@ ylims!(p_fit_lam, lam_y_scale_region)
 # ╔═╡ 042ea29b-63dd-43d0-a20f-68807c5f7cd4
 p_distr
 
-# ╔═╡ a660bf26-5b50-4910-b0ab-8e453623dc1a
-p_residual
-
 # ╔═╡ 27031733-7ade-4bda-b464-5a9ade0b2950
 begin 
 	name_poly =  material_name
@@ -598,6 +768,7 @@ begin
 	pp = PW.polyfit(PW.BernsteinSymPoly{basis_degree, Float64} , k , y_fit)
 	ppp = Plots.plot(x_fit,pp.(k), label = nothing)
 	Plots.plot!(ppp,x_fit,y_fit, marker=:circle, label = nothing; plot_common_args...)
+	Plots.scatter!([Ttest] ,[lam_test] )
 	title!(ppp,"""Polynomial fitting of passport,
 		   r²=  $(norm(y_fit .- pp.(k))/norm(y_fit))
 		   """)
@@ -618,24 +789,65 @@ begin
 	refresh_graph
 	p_hist = Plots.histogram()
 	#Plots.histogram(inv_probl.residual[:,1] )
+	for inv_probl in parallel_probls.problems
 	for (i,c) in enumerate(eachcol(inv_probl.residual))
 		bb = range(minimum(c),maximum(c),20)
 		Plots.histogram!(p_hist,c,bins = bb, alpha=0.5, label="T$(i)"; plot_common_args...)
 	end
+	end
 	p_hist
 end
 
-# ╔═╡ f5b13ec5-98f9-48bb-ad95-7dbd87e11f7b
-OHT.thermal_conductivity(inv_probl.direct_problem, Ttest)
+# ╔═╡ a1c795e4-1be0-46e0-b6a2-4eda990fd65e
+function time_range_selector(all_data::AbstractDict)
+	N = length(all_data)
+	PlutoUI.combine() do Child
+		@htl("""
+		<h6>Time range, tmin - tmax , s</h6>
+		<ul>
+		$([
+			@htl("<li>$(k): $(Child( k, RangeSlider( minimum(d.data[:,1]) : maximum(d.data[:,1]) )))</li>")
+			
+			for (k , d) in all_data
+		])
+		</ul>
+		""")
 
-# ╔═╡ ae6779d3-c8ef-4d28-a964-aba37b3c4cc0
-inv_probl.direct_problem.L_f
+	end
+end
 
-# ╔═╡ 9f7364d8-f68c-4595-a542-0566bcfd4194
-inv_probl.direct_problem.C_f
+# ╔═╡ df99b7b7-5a0d-4b71-bf5c-415b5cfa3b2d
+if is_selected
+	selected_variables_multi
+	@bind time_region  confirm(time_range_selector(all_data))
+end
 
-# ╔═╡ 886a718e-dae6-4bb7-bc4b-95ee2953e2ec
+# ╔═╡ 5be15388-cea2-4884-b8de-bff5be64e506
+if is_selected 
+	raw_data_plot = Plots.plot(;plot_common_args...)
+		
+	for (k,d) in all_data
+		rng = getfield(time_region , Symbol(k))
+		(tmin , tmax) = extrema(rng)
+		cut_data!(d , tmin , tmax)
+		!isempty(d.data_cutted) || continue
+		leg_str = first(eachsplit(k , "_"))
+		for (i , c) in enumerate(eachcol(d.data_cutted)[2:end])
+			Plots.plot!(raw_data_plot , d.data_cutted[:,1] , c , label = leg_str * ":" * d.selected_names[i]  , legend_position = :best   , linestyle = :auto;plot_common_args...)
+		end
+	end
+	raw_data_plot
+end
 
+# ╔═╡ dbd1d788-120b-4678-bf3b-7541b9ea7341
+begin
+	time_region
+	let d = all_data[show_data_table]
+		tmin_c = t_cutted_min(d)
+		tmax_c = t_cutted_max(d)
+		tbl = WP.to_table(d.project ; names = d.selected_names , tmin = tmin_c , tmax = tmax_c)
+	end
+end
 
 # ╔═╡ 87ae11cd-8c4f-4835-9a9f-852447a45c97
 #=write(joinpath(raw"D:\JULIA\JULIA_DEPOT\dev\InverseHeatTransfer.jl\test\test_data\binary_files","dasfsdf.json"), JSON2.write(Dict(:T1=>2.0, :T2=>3.0))) =#
@@ -652,6 +864,7 @@ AllocCheck = "9b6a8646-10ed-4001-bbdc-1d2f46dfbb1a"
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
 FFTW = "7a1cc6ca-52ef-59f5-83cd-3a7055c09341"
 FiniteDiff = "6a86dc24-6348-571c-b903-95158fe2bd41"
 FunctionWrappers = "069b7b12-0de2-55c6-9aab-29f3d0a68a2e"
@@ -705,7 +918,7 @@ Plots = "~1.41.6"
 PlutoPlotly = "~0.6.5"
 PlutoTables = "~0.1.7"
 PlutoUI = "~0.7.79"
-Polynomials = "~4.1.0"
+Polynomials = "~4.1.1"
 PrettyTables = "~3.2.3"
 ProfileCanvas = "~0.1.7"
 RecipesBase = "~1.3.4"
@@ -723,7 +936,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.12.5"
 manifest_format = "2.0"
-project_hash = "89010be731de123e78647aae395b4fcdbd883d11"
+project_hash = "f3e20b4285ce8429d74c0760f2010f680414869f"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "f7304359109c768cf32dc5fa2d371565bb63b68a"
@@ -843,9 +1056,9 @@ version = "0.1.102"
 
 [[deps.Adapt]]
 deps = ["LinearAlgebra", "Requires"]
-git-tree-sha1 = "7e35fca2bdfba44d797c53dfe63a51fabf39bfc0"
+git-tree-sha1 = "35ea197a51ce46fcd01c4a44befce0578a1aaeca"
 uuid = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
-version = "4.4.0"
+version = "4.5.0"
 weakdeps = ["SparseArrays", "StaticArrays"]
 
     [deps.Adapt.extensions]
@@ -1196,9 +1409,9 @@ uuid = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
 version = "1.7.0"
 
 [[deps.EnumX]]
-git-tree-sha1 = "7bebc8aad6ee6217c78c5ddcf7ed289d65d0263e"
+git-tree-sha1 = "c49898e8438c828577f04b92fc9368c388ac783c"
 uuid = "4e289a0a-7415-4d19-859d-a7e5c4648b56"
-version = "1.0.6"
+version = "1.0.7"
 
 [[deps.EpollShim_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
@@ -1388,9 +1601,9 @@ version = "1.8.2"
 
 [[deps.GR]]
 deps = ["Artifacts", "Base64", "DelimitedFiles", "Downloads", "GR_jll", "HTTP", "JSON", "Libdl", "LinearAlgebra", "Preferences", "Printf", "Qt6Wayland_jll", "Random", "Serialization", "Sockets", "TOML", "Tar", "Test", "p7zip_jll"]
-git-tree-sha1 = "ee0585b62671ce88e48d3409733230b401c9775c"
+git-tree-sha1 = "44716a1a667cb867ee0e9ec8edc31c3e4aa5afdc"
 uuid = "28b8d3ca-fb5f-59d9-8090-bfdbd6d07a71"
-version = "0.73.22"
+version = "0.73.24"
 
     [deps.GR.extensions]
     IJuliaExt = "IJulia"
@@ -1400,9 +1613,9 @@ version = "0.73.22"
 
 [[deps.GR_jll]]
 deps = ["Artifacts", "Bzip2_jll", "Cairo_jll", "FFMPEG_jll", "Fontconfig_jll", "FreeType2_jll", "GLFW_jll", "JLLWrappers", "JpegTurbo_jll", "Libdl", "Libtiff_jll", "Pixman_jll", "Qt6Base_jll", "Zlib_jll", "libpng_jll"]
-git-tree-sha1 = "7dd7173f7129a1b6f84e0f03e0890cd1189b0659"
+git-tree-sha1 = "be8a1b8065959e24fdc1b51402f39f3b6f0f6653"
 uuid = "d2c73de3-f751-5644-a686-071e5b155ba9"
-version = "0.73.22+0"
+version = "0.73.24+0"
 
 [[deps.GTK3_jll]]
 deps = ["ATK_jll", "Artifacts", "Cairo_jll", "Fontconfig_jll", "FreeType2_jll", "FriBidi_jll", "Glib_jll", "HarfBuzz_jll", "JLLWrappers", "Libdl", "Libepoxy_jll", "Pango_jll", "Pkg", "Wayland_jll", "Xorg_libX11_jll", "Xorg_libXcomposite_jll", "Xorg_libXcursor_jll", "Xorg_libXdamage_jll", "Xorg_libXext_jll", "Xorg_libXfixes_jll", "Xorg_libXi_jll", "Xorg_libXinerama_jll", "Xorg_libXrandr_jll", "Xorg_libXrender_jll", "at_spi2_atk_jll", "gdk_pixbuf_jll", "iso_codes_jll", "xkbcommon_jll"]
@@ -2146,22 +2359,24 @@ uuid = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
 version = "0.7.79"
 
 [[deps.Polynomials]]
-deps = ["LinearAlgebra", "OrderedCollections", "RecipesBase", "Requires", "Setfield", "SparseArrays"]
-git-tree-sha1 = "972089912ba299fba87671b025cd0da74f5f54f7"
+deps = ["LinearAlgebra", "OrderedCollections", "Setfield", "SparseArrays"]
+git-tree-sha1 = "2d99b4c8a7845ab1342921733fa29366dae28b24"
 uuid = "f27b6e38-b328-58d1-80ce-0feddd5e7a45"
-version = "4.1.0"
+version = "4.1.1"
 
     [deps.Polynomials.extensions]
     PolynomialsChainRulesCoreExt = "ChainRulesCore"
     PolynomialsFFTWExt = "FFTW"
     PolynomialsMakieExt = "Makie"
     PolynomialsMutableArithmeticsExt = "MutableArithmetics"
+    PolynomialsRecipesBaseExt = "RecipesBase"
 
     [deps.Polynomials.weakdeps]
     ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
     FFTW = "7a1cc6ca-52ef-59f5-83cd-3a7055c09341"
     Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
     MutableArithmetics = "d8a4904e-b15c-11e9-3269-09a3773c0cb0"
+    RecipesBase = "3cdcf5f2-1ef4-517c-9805-6587b60abb01"
 
 [[deps.PooledArrays]]
 deps = ["DataAPI", "Future"]
@@ -2199,9 +2414,9 @@ version = "1.3.3"
 
 [[deps.Preferences]]
 deps = ["TOML"]
-git-tree-sha1 = "522f093a29b31a93e34eaea17ba055d850edea28"
+git-tree-sha1 = "8b770b60760d4451834fe79dd483e318eee709c4"
 uuid = "21216c6a-2e73-6563-6e65-726566657250"
-version = "1.5.1"
+version = "1.5.2"
 
 [[deps.PrettyTables]]
 deps = ["Crayons", "LaTeXStrings", "Markdown", "PrecompileTools", "Printf", "REPL", "Reexport", "StringManipulation", "Tables"]
@@ -2250,27 +2465,33 @@ version = "1.4.0"
 
 [[deps.Qt6Base_jll]]
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "Fontconfig_jll", "Glib_jll", "JLLWrappers", "Libdl", "Libglvnd_jll", "OpenSSL_jll", "Vulkan_Loader_jll", "Xorg_libSM_jll", "Xorg_libXext_jll", "Xorg_libXrender_jll", "Xorg_libxcb_jll", "Xorg_xcb_util_cursor_jll", "Xorg_xcb_util_image_jll", "Xorg_xcb_util_keysyms_jll", "Xorg_xcb_util_renderutil_jll", "Xorg_xcb_util_wm_jll", "Zlib_jll", "libinput_jll", "xkbcommon_jll"]
-git-tree-sha1 = "34f7e5d2861083ec7596af8b8c092531facf2192"
+git-tree-sha1 = "d7a4bff94f42208ce3cf6bc8e4e7d1d663e7ee8b"
 uuid = "c0090381-4147-56d7-9ebc-da0b1113ec56"
-version = "6.8.2+2"
+version = "6.10.2+1"
 
 [[deps.Qt6Declarative_jll]]
-deps = ["Artifacts", "JLLWrappers", "Libdl", "Qt6Base_jll", "Qt6ShaderTools_jll"]
-git-tree-sha1 = "da7adf145cce0d44e892626e647f9dcbe9cb3e10"
+deps = ["Artifacts", "JLLWrappers", "Libdl", "Qt6Base_jll", "Qt6ShaderTools_jll", "Qt6Svg_jll"]
+git-tree-sha1 = "d5b7dd0e226774cbd87e2790e34def09245c7eab"
 uuid = "629bc702-f1f5-5709-abd5-49b8460ea067"
-version = "6.8.2+1"
+version = "6.10.2+1"
 
 [[deps.Qt6ShaderTools_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Qt6Base_jll"]
-git-tree-sha1 = "9eca9fc3fe515d619ce004c83c31ffd3f85c7ccf"
+git-tree-sha1 = "4d85eedf69d875982c46643f6b4f66919d7e157b"
 uuid = "ce943373-25bb-56aa-8eca-768745ed7b5a"
-version = "6.8.2+1"
+version = "6.10.2+1"
+
+[[deps.Qt6Svg_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl", "Qt6Base_jll"]
+git-tree-sha1 = "81587ff5ff25a4e1115ce191e36285ede0334c9d"
+uuid = "6de9746b-f93d-5813-b365-ba18ad4a9cf3"
+version = "6.10.2+0"
 
 [[deps.Qt6Wayland_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Qt6Base_jll", "Qt6Declarative_jll"]
-git-tree-sha1 = "8f528b0851b5b7025032818eb5abbeb8a736f853"
+git-tree-sha1 = "672c938b4b4e3e0169a07a5f227029d4905456f2"
 uuid = "e99dba38-086e-5de3-a5b1-6e4c66e897c3"
-version = "6.8.2+2"
+version = "6.10.2+1"
 
 [[deps.REPL]]
 deps = ["InteractiveUtils", "JuliaSyntaxHighlighting", "Markdown", "Sockets", "StyledStrings", "Unicode"]
@@ -2377,9 +2598,9 @@ version = "0.7.0"
 
 [[deps.SciMLBase]]
 deps = ["ADTypes", "Accessors", "Adapt", "ArrayInterface", "CommonSolve", "ConstructionBase", "Distributed", "DocStringExtensions", "EnumX", "FunctionWrappersWrappers", "IteratorInterfaceExtensions", "LinearAlgebra", "Logging", "Markdown", "Moshi", "PreallocationTools", "PrecompileTools", "Preferences", "Printf", "RecipesBase", "RecursiveArrayTools", "Reexport", "RuntimeGeneratedFunctions", "SciMLLogging", "SciMLOperators", "SciMLPublic", "SciMLStructures", "StaticArraysCore", "Statistics", "SymbolicIndexingInterface"]
-git-tree-sha1 = "821f71a498fa85726c528bd804f1ebe921792e27"
+git-tree-sha1 = "8787e28326c99b0c9c706b51da525ad09d03c56f"
 uuid = "0bca4576-84f4-4d90-8ffe-ffa030f20462"
-version = "2.144.0"
+version = "2.149.0"
 
     [deps.SciMLBase.extensions]
     SciMLBaseChainRulesCoreExt = "ChainRulesCore"
@@ -2533,9 +2754,9 @@ version = "1.2.1"
 
 [[deps.SparseMatrixColorings]]
 deps = ["ADTypes", "DocStringExtensions", "LinearAlgebra", "PrecompileTools", "Random", "SparseArrays"]
-git-tree-sha1 = "6ed48d9a3b22417c765dc273ae3e1e4de035e7c8"
+git-tree-sha1 = "7b2263c87aa890bf6d18ae05cedbe259754e3f34"
 uuid = "0a514795-09f3-496d-8182-132a7b665d35"
-version = "0.4.23"
+version = "0.4.24"
 
     [deps.SparseMatrixColorings.extensions]
     SparseMatrixColoringsCUDAExt = "CUDA"
@@ -3125,11 +3346,12 @@ version = "1.13.0+0"
 # ╠═04e1f887-ab80-433b-a431-b9b79d6c3be0
 # ╠═db3b05af-0b7c-4746-96a8-8fd34bfb8ac9
 # ╠═7fe4cacf-7986-4f60-aa3d-a41777cd72c4
+# ╠═ea4528b9-bf56-46d7-89a3-79586598da93
 # ╠═9f370f71-8de3-4654-81cf-ea72a88b1d71
 # ╠═b681548e-1514-4e9c-bfec-ccfd9c6ad4cd
 # ╠═1bff0761-5f9b-42de-b5ad-fb09cce3dafa
 # ╠═76c7bd3e-b04c-4e0c-a06c-e13f76f40eb2
-# ╠═bfbefd90-651c-4f80-a58f-e62f7666c1bd
+# ╠═52efdc4b-4a0a-4dbf-aca2-e46c896dcc71
 # ╠═2bb45200-d7ba-47a3-b82d-9c147b5d7601
 # ╠═80479ac3-897a-4aa7-8ce9-977fa4912bc6
 # ╠═50a4c97e-16ec-470f-80f7-c1ebcdb66855
@@ -3138,32 +3360,38 @@ version = "1.13.0+0"
 # ╠═35958e8a-eb7a-4eff-89a0-f9c04aff2a37
 # ╠═438a3909-9367-4660-a3ca-bd1786ab6016
 # ╟─db671921-13dc-497b-81e5-dcb4da0695f9
-# ╟─450fb200-eec6-4e96-9ebd-81453c015830
-# ╟─4107cceb-d7c1-4783-9a3e-1c711d08e046
-# ╟─a407a99b-b40c-436c-a2a0-af2e19b347b8
-# ╟─c7a753a9-9d11-4847-abf5-428bcabf3880
+# ╠═450fb200-eec6-4e96-9ebd-81453c015830
+# ╠═4107cceb-d7c1-4783-9a3e-1c711d08e046
+# ╠═a407a99b-b40c-436c-a2a0-af2e19b347b8
+# ╠═c7a753a9-9d11-4847-abf5-428bcabf3880
 # ╠═6e062bd9-d20c-4e1d-b772-328bec8859ea
 # ╠═1291c9fd-80bf-4193-894c-5783787a6b95
 # ╠═6fceccd6-22cd-420d-8209-f4aad9e99269
 # ╠═81c2f93b-05b1-4eb0-9919-4ef76ecad233
-# ╠═17fbc55f-12a8-431e-ac00-b28304f2eb6c
+# ╠═bb9c0022-086e-48fb-8746-cb3a819375f8
+# ╟─17fbc55f-12a8-431e-ac00-b28304f2eb6c
+# ╠═0a4ce046-5b43-425d-a3f2-da8d9867b181
+# ╠═dcf0034b-e405-4f27-b853-acb7a58b9cc6
+# ╠═4d27d75e-5e95-43c9-9e77-b9ae3d6c4bb9
+# ╠═28b91e49-996c-4abc-9db4-30b515444aab
+# ╠═054d932d-12be-4538-ab34-b5d3f465bf0f
 # ╠═304091a8-4206-49c2-9c98-cffb18a0e906
 # ╠═2e676f8c-909a-4fb7-b35e-57d08f802df7
-# ╠═a2a87cfe-5976-4902-b400-fabb19baa9c7
-# ╟─0177413c-0f89-4935-9963-5aeebd333b9a
+# ╠═0177413c-0f89-4935-9963-5aeebd333b9a
+# ╟─c30f95e5-93eb-4ab7-bc84-4bfe7092cf47
 # ╟─56a5f3c9-6a41-4326-83ab-2c19d65b3ed0
-# ╟─2c103d75-471e-4ed6-8598-6b0be0c9e195
-# ╟─4d584fde-e821-402c-8850-6d3876e6fb46
-# ╟─a207e8c4-ce27-405f-aafd-4505eb69ef1b
+# ╟─bc6ecff4-2ade-4436-9630-be573eb1ea04
 # ╟─df99b7b7-5a0d-4b71-bf5c-415b5cfa3b2d
-# ╟─4f4d5be8-c2f0-4313-a84d-43408611838c
-# ╟─15acb806-8026-4d50-9b6f-906b14d48b62
-# ╟─a3e907f7-1134-4a15-bae8-14b45646dd86
-# ╟─9b9490a9-7718-489a-9808-937b72307123
-# ╟─1fbc7b7d-9ad1-4187-917f-b0382b32ea3c
-# ╟─73d06f8f-3a2c-46cf-993b-66d313bdf7eb
+# ╟─5be15388-cea2-4884-b8de-bff5be64e506
+# ╟─b3c96eae-64a5-4245-85b6-b7b994e03ff7
+# ╟─6c4cb363-3bda-4dfa-8499-8201a013895d
 # ╟─dbd1d788-120b-4678-bf3b-7541b9ea7341
+# ╟─735d3901-2dee-40d9-9e74-bb0d71ddfda4
+# ╟─ca69ae4b-8428-4643-93a4-c4c1687b3d7e
+# ╟─fd47bc58-8a0c-4dd7-875c-bcc80a21e64e
+# ╟─b1f00c55-5ce9-4a0f-a548-a8a9041d02fc
 # ╟─62069546-44fb-4a77-986d-f03624719e29
+# ╟─fc5c1209-26ec-41d7-9238-e57d18330de1
 # ╟─8f65e989-1abe-4689-9c3f-fdb6cabd7eae
 # ╟─a46970c8-7c91-4795-83a9-41c56a7ca399
 # ╟─5843fcfb-4e0e-480d-b263-e3f3ad6a7ac3
@@ -3171,14 +3399,21 @@ version = "1.13.0+0"
 # ╟─4f3e1899-541d-4809-810c-f2e6b7ca1ad1
 # ╟─2bb61e43-384c-48ce-8a55-843726bf3f05
 # ╟─baffb68a-fb52-4bac-b484-4a215108aaed
-# ╟─538487b4-b2fc-42c2-ba69-663b2ca5b768
 # ╟─16337bb4-438e-4b86-bdc5-b88ef210a960
 # ╟─4ca95124-8a7a-4e4f-9e65-ff7b2adf35a5
 # ╟─c8dc4f9d-a549-4dc2-82bd-38ffe949ea55
 # ╟─bfa23359-8bac-4db0-bac1-0885ebe8ec4b
+# ╟─a660bf26-5b50-4910-b0ab-8e453623dc1a
+# ╟─538487b4-b2fc-42c2-ba69-663b2ca5b768
 # ╟─67763d8f-e1ac-4b1f-978f-4734af1e03ba
 # ╟─68ed85b2-7308-4ea7-b696-0f1951219592
 # ╟─9b35c13b-24ba-4c43-a621-a3f8ba45fe4a
+# ╟─33473b7a-e22f-4333-a2f2-374778c0d603
+# ╟─fe228354-5f3f-433d-9f8b-7d888e9c5ecb
+# ╟─f3e24d8a-e35d-41de-92e6-0df290d3503c
+# ╟─4c9a5a5f-5839-4211-b561-7539dfa74a7a
+# ╟─95dbc55f-ab5a-4828-a1e2-9a0c9a9ec19b
+# ╟─672119a2-7a47-4813-a2d3-e0c15ee63491
 # ╟─2b3a1a65-8d3c-424e-a6cf-0e96646795f4
 # ╟─fa72774e-040a-4bc3-a759-5eb68c243fb4
 # ╟─3281dd3c-0453-4098-a6ed-4d771717033b
@@ -3189,20 +3424,20 @@ version = "1.13.0+0"
 # ╟─c8861fa2-9cb3-4349-9ece-eba285c24eab
 # ╟─e06ac758-c5ae-4cf6-84b1-11d51a56f200
 # ╟─1318f293-f606-4a9f-8896-853b87c0665d
+# ╟─d33fc044-c487-449f-8f7c-0bcfee603358
 # ╟─6cd83678-860c-41c8-b3cd-007725f9e01d
+# ╟─544201c6-90b3-48dd-9651-69ca3c5c4979
 # ╟─f2943cf8-ffb9-4065-a272-1f344488dd0f
 # ╟─042ea29b-63dd-43d0-a20f-68807c5f7cd4
-# ╟─a660bf26-5b50-4910-b0ab-8e453623dc1a
 # ╟─a2a84394-1f18-48e3-a4dc-c03f64a3a1c0
 # ╟─9cd8c4c8-7d11-4fb0-92d5-439702aa9496
-# ╟─e9e9e16d-0b2c-45ce-aa5b-cdcda6b143f1
+# ╠═e9e9e16d-0b2c-45ce-aa5b-cdcda6b143f1
+# ╠═2b0c5080-605a-4967-bbe3-6823ac9b8f54
 # ╟─84e23b57-e5a4-4bf0-97ef-6b41b502b4e6
 # ╟─0a0324df-430f-4ac0-857b-4da6a7dca138
 # ╟─27031733-7ade-4bda-b464-5a9ade0b2950
-# ╟─f5b13ec5-98f9-48bb-ad95-7dbd87e11f7b
-# ╟─d71fd6d1-167d-40fb-a253-b0982e19c0d0
-# ╠═ae6779d3-c8ef-4d28-a964-aba37b3c4cc0
-# ╠═9f7364d8-f68c-4595-a542-0566bcfd4194
+# ╠═f5b13ec5-98f9-48bb-ad95-7dbd87e11f7b
+# ╠═d71fd6d1-167d-40fb-a253-b0982e19c0d0
 # ╠═fb2937d0-738b-4329-aef5-f3af1d17497a
 # ╠═efa9120f-5a45-41a0-9132-dc26f967fec3
 # ╠═023dc25f-6cf8-4802-83b4-77d1827cd2a7
@@ -3210,13 +3445,17 @@ version = "1.13.0+0"
 # ╟─6800ae42-c5b1-4d1e-84fb-a03015bf138f
 # ╟─ea412a80-0bf7-4ac6-9b90-8530a4c26008
 # ╠═4cf77d64-a720-41da-a9c2-5d875ea00135
-# ╠═efe09dba-b787-4cda-8301-8735b1273192
 # ╟─2bf91a7e-0da8-48e8-a779-962be2e7c03b
 # ╠═fba5bc8b-25cb-406b-aa13-f06c591e08c9
 # ╠═5135015e-0fcf-484a-86ad-3cb7e40849bd
 # ╟─fd51a6c8-6569-4bfd-86ac-883c648fe6d9
 # ╠═6cd4f554-7242-4e97-b4cb-8549e3b70139
-# ╠═886a718e-dae6-4bb7-bc4b-95ee2953e2ec
+# ╠═6d0d7cb4-45fc-405f-8a5d-cf10ad5e380b
+# ╠═646aebc7-b3db-443f-888f-800d444b4fa3
+# ╠═60458134-1de0-475e-ba64-24b6f33a2980
+# ╠═6a16435d-b71a-4a18-9407-dd68fe2dcccd
+# ╠═96b4c7c4-30a8-407c-9bd4-245f0ee0d9b2
+# ╠═a1c795e4-1be0-46e0-b6a2-4eda990fd65e
 # ╠═87ae11cd-8c4f-4835-9a9f-852447a45c97
 # ╠═58eb27e1-38c5-4a90-9e80-61f6213aa721
 # ╟─00000000-0000-0000-0000-000000000001
