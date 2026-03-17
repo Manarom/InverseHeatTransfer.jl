@@ -7,7 +7,7 @@ module OneDHeatTransfer
         export HeatTransferProblem , BFD1_EXP_EXP_EXP , BFD1_IMP_EXP_EXP , BFD1_CN_EXP_EXP , solve_problem!
         export DirichletBC, NeumanBC , temperature_field
         export PhysicalPropertyFunction, BoundaryFunction, InitialTFunction
-        export AbstractGrid, AbstractGridIterator, UniformGrid, eachx, eachtime, trange, xrange, tpoints, xpoints
+        export AbstractGrid, AbstractGridIterator, UniformGrid, eachx, eachtime, trange, xrange, tpoints, xpoints , timestep
 
 
         struct ProblemCache{Vtype, Mtype, N, DT}

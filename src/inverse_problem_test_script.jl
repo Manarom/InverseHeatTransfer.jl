@@ -6,8 +6,8 @@
     using OptimizationNLopt
     using OptimizationMetaheuristics
     import .InverseHeatTransfer as IHT
-     working_folder = raw"E:\JULIA\JULIA_DEPOT\dev\InverseHeatTransfer.jl\test\test_data\property_inversion_ansys_new\25ks"
-    #working_folder = raw"D:\JuliaDepoth\dev\InverseHeatTransfer.jl\test\test_data\property_inversion_ansys_new\25ks"
+    # working_folder = raw"E:\JULIA\JULIA_DEPOT\dev\InverseHeatTransfer.jl\test\test_data\property_inversion_ansys_new\25ks"
+    working_folder = raw"D:\JuliaDepoth\dev\InverseHeatTransfer.jl\test\test_data\property_inversion_ansys_new\25ks"
     hr_file = filter(f->  contains(f,"Tmeasured") , readdir(working_folder))
 	isempty(hr_file) && error("folder must constain file with  Tmeasured")
 	T_measured = CSV.read(joinpath(working_folder,hr_file[]), Tables.matrix)
@@ -56,27 +56,35 @@
         C,λ, dλdT, thickness,
         xpoints_number, tpoints_number; 
         regularization = IHT.NoRegularization(),
-        covariance = IHT.NoCovariance())
+        covariance = IHT.AR1Covariance(2.071 , 1.0))
 
 
-        IHT.regularization_loss(inv_probl)
-        IHT.constraints_loss(inv_probl)
+        #@benchmark IHT.regularization_loss($inv_probl)
+        #@benchmark IHT.constraints_loss($inv_probl)
         #@benchmark IHT.modify!($(inv_probl.optimizable.λ) , $[5.0, 4.0, 8.0] )
     
-        IHT.discrepancy( [ 21.0, 15.0, 10.2 , 2700*1e3 , 2700*1e3 , 2700*1e3] , inv_probl)
+        IHT.discrepancy!( [ 21.0, 15.0, 10.2 , 2700*1e3 , 2700*1e3 , 2700*1e3] , inv_probl)
+        @benchmark IHT.discrepancy!( $[ 21.0, 15.0, 10.2 , 2700*1e3 , 2700*1e3 , 2700*1e3] , $inv_probl)
 
         plot(inv_probl.residual)
 
         (x0, lb, ub) = IHT.fill_starting_vectors(inv_probl)
-	    optp = OptimizationProblem(IHT.discrepancy, x0, inv_probl, lb = lb, ub = ub )
+	    problems = (inv_probl , deepcopy(inv_probl) , deepcopy(inv_probl))
+        
+        parprob = IHT.ParallelInverseProblems(problems...)
+
+        @benchmark IHT.discrepancy!($x0, $parprob)
+        @benchmark IHT.discrepancy!($x0, $inv_probl)
+
+        optp = OptimizationProblem(IHT.discrepancy!, x0, parprob, lb = lb, ub = ub  ,  maxiters=100)
 	    #optimizer = PSO(N = 10*2*basis_degree,  options = Metaheuristics.Options(parallel_evaluation = true))
-        optimizer = OptimizationOptimJL.ParticleSwarm()
+        optimizer = OptimizationNLopt.NLopt.LN_COBYLA()
 
 
         #Optimization.EnsembleProblem
         #ensemble_prob = Optimization.EnsembleProblem(optp, safety_copy = true)
-        res = solve(optp,optimizer , use_initial = true)         # Включает ваш x0 в начальный рой )#, options = Metaheuristics.Options(parallel_evaluation = true))
-        
+       #res = solve(optp, optimizer )         #
+      #=  
         ensemble_prob = EnsembleProblem(
                         optp, 
                         prob_func = (prob, i, repeat) -> begin
@@ -91,3 +99,4 @@
 
         lam_coeffs_number = length(IHT.coeffs(inv_probl.optimizable.λ))
         res.u[lam_coeffs_number + 1 : end]/2700
+=#

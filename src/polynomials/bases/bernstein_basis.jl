@@ -44,17 +44,36 @@ end
 bern_max_locations(p::BernsteinSymPoly{N}) where {N} = [bern_max(p,i)[2] for i in 0 : N-1]
 bern_max_values(p::BernsteinSymPoly{N}) where {N} = [bern_max(p,i)[1] for i in 0 : N-1]
 
-function eval_scaled_poly(poly::Union{BernsteinSymPoly{N,S},BernsteinPoly{N,S}},x::T,a::T,b::T) where {N,T,S}
+function eval_scaled_poly_old_version(poly::Union{BernsteinSymPoly{N,S},BernsteinPoly{N,S}},x::T,a::T,b::T) where {N,T,S}
     R = promote_type(S, T)
     t = R( (x - a) / (b - a) )
+    _one_m_t = one(R) - t
     beta = MVector{N,R}(poly.coeffs)  # values in this vector are overridden
     @inbounds for j in 1 : (N - 1)
         for k in 1 : (N - j)
-            beta[k] = beta[k] * (1 - t) + beta[k + 1] * t
+            beta[k] = beta[k] * _one_m_t  + beta[k + 1] * t
         end
     end
     return beta[1]
 end
+
+@inline function eval_scaled_poly(poly::Union{BernsteinSymPoly{N,S},BernsteinPoly{N,S}}, x::T, a::T, b::T) where {N,T,S}
+    R = promote_type(S, T)
+    t = R((x - a) / (b - a))
+    _1_t = one(R) - t
+    coeffs = SVector{N, R}(poly.coeffs)
+    return _de_casteljau_recursive(coeffs, t, _1_t)
+end
+
+# Базовый случай: когда остался один коэффициент — это ответ
+@inline _de_casteljau_recursive(coeffs::SVector{1, R}, t, _1_t) where R = coeffs[1]
+
+
+@inline function _de_casteljau_recursive(coeffs::SVector{K, R}, t, _1_t) where {K, R}
+    next_coeffs = SVector{K - 1, R}(ntuple(i -> coeffs[i] * _1_t + coeffs[i+1] * t, Val(K-1)))
+    return _de_casteljau_recursive(next_coeffs, t, _1_t)
+end
+
 # BernsteinPoly   - standard for 
 left_scaler(::BernsteinPoly) = 0.0
 right_scaler(::BernsteinPoly) = 1.0
