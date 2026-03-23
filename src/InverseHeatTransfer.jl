@@ -3,14 +3,15 @@ module InverseHeatTransfer
     using Unrolled
     using InteractiveUtils
     using Static
-    import FunctionWrappers
-    
+    using Accessors
+    #import FunctionWrappers
+    @reexport using ScaledPolynomials
     export OptimizableVariable, SingleInverseProblem
     # Write your package code here.
     include(joinpath(".","solvers", "OneDHeatTransfer.jl"))
     @reexport using .OneDHeatTransfer
-    include(joinpath(".","polynomials", "PolynomialWrappers.jl"))
-    @reexport using .PolynomialWrappers
+    #include(joinpath(".","polynomials", "PolynomialWrappers.jl"))
+    #@reexport using .PolynomialWrappers
 
     abstract type AbstractInverseProblem end
     abstract type AbstractRegularization end
@@ -41,7 +42,7 @@ module InverseHeatTransfer
     `ub_coeffs`, there also should be a function to evaluate the derivative of `lb` and `ub` with respect to their 
     parameters.
     
-        Currently implemented for `ScaledPolynomial` from `PolynomialWrappers`
+        Currently implemented for `ScaledPolynomial` from `ScaledPolynomials`
         The following interface should be implemented to make it work for any particular type
     coeffs(::OV{N,DT,P}) where {N,DT,P} 
     lb_coeffs(::OV{N,DT,P})  
@@ -284,8 +285,8 @@ end
             is_l_single_number && fill!(_lb , lb)
 
             if (is_u_bounded[] && is_l_bounded[]) 
-                count_violations(PolynomialWrappers.coeffs(_ub),
-                 PolynomialWrappers.coeffs(_lb), lb_violation_fun) > 0 && error("Lower boundary $(_lb) is higher than $(_ub)") 
+                count_violations(ScaledPolynomials.coeffs(_ub),
+                 ScaledPolynomials.coeffs(_lb), lb_violation_fun) > 0 && error("Lower boundary $(_lb) is higher than $(_ub)") 
             end    
             B = MVector{N,Bool}
             if isa(flag, Bool) 
@@ -301,12 +302,12 @@ end
                                      ub_violation_fun)
     end
 
-    coeffs(o::OVS) = PolynomialWrappers.coeffs(o.p)
+    coeffs(o::OVS) = ScaledPolynomials.coeffs(o.p)
 
-    lb_coeffs(ov::OVS)  =  PolynomialWrappers.coeffs(ov.lb)
-    ub_coeffs(ov::OVS)  =  PolynomialWrappers.coeffs(ov.ub)
+    lb_coeffs(ov::OVS)  =  ScaledPolynomials.coeffs(ov.lb)
+    ub_coeffs(ov::OVS)  =  ScaledPolynomials.coeffs(ov.ub)
 
-    derivative!(ov_der::OVS, ov::OVS) = PolynomialWrappers.derivative!(ov_der.p, ov.p)
+    derivative!(ov_der::OVS, ov::OVS) = ScaledPolynomials.derivative!(ov_der.p, ov.p)
 
     # const POSSIBLE_TAGS = (:lam, :C, )
 """
@@ -734,8 +735,8 @@ has the same objects for  λ, λ' and cₚ, hence the problem can be simplified
     fill_starting_vectors(pp::ParallelInverseProblems) = fill_starting_vectors(pp.problems[1])
     function discrepancy!(x , pp::ParallelInverseProblems{TP, N, T}) where {TP , N , T}
         return sum(ntuple( N ) do i 
-            discrepancy!(x , pp.problems[i])
-        end)
+                    discrepancy!(x , pp.problems[i])
+            end)/N # total discrepancy divided by the problems number 
     end
 
     function loss_distribution(p::SingleInverseProblem)
@@ -753,10 +754,12 @@ has the same objects for  λ, λ' and cₚ, hence the problem can be simplified
 			 regularization = sum(p->p.α[] * regularization_loss(p), parallel_probls.problems))
     end
     function loss_distribution_matrix(parallel_probls::ParallelInverseProblems)
-        (total = [evaluate_loss(p) for p in  parallel_probls.problems],
-			 covariance  = [covariance_loss(p) for p in  parallel_probls.problems],
-			 constraints =[p.ψ[] * constraints_loss(p) for p in  parallel_probls.problems],
-			 regularization = [ p.α[] * regularization_loss(p) for p in parallel_probls.problems]
+        (
+            total = [evaluate_loss(p) for p in  parallel_probls.problems],
+			covariance  = [covariance_loss(p) for p in  parallel_probls.problems],
+			constraints =[p.ψ[] * constraints_loss(p) for p in  parallel_probls.problems],
+			regularization = [ p.α[] * regularization_loss(p) for p in parallel_probls.problems]
+
              )
     end
     const ALL_REGULARIZATION_TYPES = subtypes(AbstractRegularization)
