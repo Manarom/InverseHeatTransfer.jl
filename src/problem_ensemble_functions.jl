@@ -27,13 +27,7 @@ function regularization_scan(alphas , after_call )
     function prob_func(prob, i, repeat)
         p_new = deepcopy(prob.p)
         α = alphas[i] 
-        #if isa(p_new , SingleInverseProblem)
-        #    p_new.α[] = α
-        #elseif isa(p_new , ParallelInverseProblems)
-            for p in p_new.problems
-                p.α[] = α
-            end
-        #end
+        set_regularization_multiplier!(p_new , α)
         @show α
         return after_call(prob, p = p_new)
     end
@@ -47,6 +41,7 @@ function find_l_corner_index(x, y)
     p2 = [x[end], y[end]]
     
     distances = Float64[]
+    
     for i in eachindex(x)
         p0 = [x[i], y[i]]
         # distance

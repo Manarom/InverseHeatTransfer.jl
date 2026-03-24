@@ -109,6 +109,9 @@ md" ## Physical properties setup"
 # ╔═╡ fc5c1209-26ec-41d7-9238-e57d18330de1
 @bind refit Button("Refit!!")
 
+# ╔═╡ 2b3a1a65-8d3c-424e-a6cf-0e96646795f4
+md" ### refit $(@bind is_fit_on CheckBox(default = false))"
+
 # ╔═╡ a46970c8-7c91-4795-83a9-41c56a7ca399
 md""" ### Compare to passport $(@bind show_passport CheckBox(default = true))"""
 
@@ -157,6 +160,16 @@ Regularization type : $(@bind reg_type Select(IHT.ALL_REGULARIZATION_TYPES))
 Regularization multiplier α: $(@bind reg_multiplier confirm(NumberField(0.0 : 1e-3 : 1000 , default = 1e-3)))
 """
 
+# ╔═╡ c8cd1797-b631-4fdf-a51f-67e22c86c55a
+md"""
+	### L-curve analysis $(@bind use_l_curve CheckBox(default = false))
+
+	α points number $(@bind l_curve_points_number Select(3:100 , default = 20) )
+	"""
+
+# ╔═╡ 0a0324df-430f-4ac0-857b-4da6a7dca138
+md"addtitional fit $(@bind is_after_fit CheckBox(default = false))"
+
 # ╔═╡ f3e24d8a-e35d-41de-92e6-0df290d3503c
 begin 
 	if covariance_type <: IHT.AR1Covariance
@@ -167,9 +180,6 @@ begin
 		cargs = Tuple([])
 	end
 end;
-
-# ╔═╡ 2b3a1a65-8d3c-424e-a6cf-0e96646795f4
-md" ### refit $(@bind is_fit_on CheckBox(default = false))"
 
 # ╔═╡ fa72774e-040a-4bc3-a759-5eb68c243fb4
 md" Λ(T) parameters number $(@bind basis_degree Select(1:100, default = 4))"
@@ -186,44 +196,39 @@ md"""
 """
 
 # ╔═╡ d02ec3fd-1b0d-4bc3-92e9-adedc8bf2c8c
-md" ##### Global optimizer iterations number $(@bind pso_iters Select(10:10:10000 , default = 100))"
+md" ##### Global optimizer iterations number $(@bind pso_iters Select(10:10:10000 , default = 200))"
 
 # ╔═╡ 9cd8c4c8-7d11-4fb0-92d5-439702aa9496
 md" ### OPTIMIZATION "
 
-# ╔═╡ c8cd1797-b631-4fdf-a51f-67e22c86c55a
-md"""
-	### L-curve analysis $(@bind use_l_curve CheckBox(default = false))
-
-	α points number $(@bind l_curve_points_number Select(3:100 , default = 5) )
-
-	use logarithmic scale $(@bind is_l_curve_logscale CheckBox( default = true))
-
-	"""
+# ╔═╡ aea6fc8f-5ee2-40a3-aebd-942c45eec0d6
+md" Use logarithmic scale $(@bind is_l_curve_logscale CheckBox( default = true))"
 
 # ╔═╡ a8f5cc07-b2bd-445c-8797-ffe78a25641b
 begin 
 	if is_l_curve_logscale
-		l_culve_alphas_default_range = range(-8.0 , 3 , 1000)
+		l_culve_alphas_default_range = range(-4.0 , 2 , 1000)
 	else
 		l_culve_alphas_default_range = range(1e-6 ,10 , 1000)
 	end
 end
 
 # ╔═╡ eb70f6d9-301f-4e0f-91a2-0e911b1a6dd9
-md" #### α plot range: $(@bind l_curve_alpha confirm(RangeSlider(l_culve_alphas_default_range)) )"
+md"""
+
+#### log10(α) search range: $(@bind l_curve_alpha confirm(RangeSlider(l_culve_alphas_default_range)) )
+
+
+"""
+
+# ╔═╡ 10f7c083-a697-4b7e-87ea-de2791ed1a30
+md" α = $(10 .^extrema(l_curve_alpha)) " 
 
 # ╔═╡ bce5f7ae-49c5-4520-a0f6-6215e5078674
 includet(joinpath(source_path, "problem_ensemble_functions.jl"))
 
-# ╔═╡ 72fe8630-73c6-49d9-bf32-31b9e58046d2
-ensmbl
-
 # ╔═╡ 84e23b57-e5a4-4bf0-97ef-6b41b502b4e6
 optimizer
-
-# ╔═╡ 0a0324df-430f-4ac0-857b-4da6a7dca138
-md"addtitional fit $(@bind is_after_fit CheckBox(default = false))"
 
 # ╔═╡ fb2937d0-738b-4329-aef5-f3af1d17497a
 Cp_Dict = Dict(
@@ -628,10 +633,7 @@ end;
 
 # ╔═╡ fe228354-5f3f-433d-9f8b-7d888e9c5ecb
 begin 
-
-	for p in parallel_probls.problems
-		p.α[] = reg_multiplier
-	end
+	IHT.set_regularization_multiplier!(parallel_probls , reg_multiplier)
 end
 
 # ╔═╡ d33fc044-c487-449f-8f7c-0bcfee603358
@@ -657,6 +659,127 @@ end
 
 # ╔═╡ 544201c6-90b3-48dd-9651-69ca3c5c4979
 bc_plot
+
+# ╔═╡ dd8fb4fa-fa67-4e26-988d-3ede79bc9540
+if use_l_curve
+	#res_l = is_after_fit ? res2 : res 
+	
+	alpha_range = collect(range(extrema(l_curve_alpha)... , length=l_curve_points_number))
+	
+	alphas = is_l_curve_logscale ? 10.0 .^alpha_range : alpha_range
+
+	#prob_fun = Main.regularization_scan(alphas , Optimization.remake)
+	lcurve_probs = IHT.ParallelInverseProblems(Tuple(probls)...)
+	
+	(_start, _lb, _ub)  =  IHT.fill_starting_vectors(lcurve_probs)
+	#@. _start = res_l.u
+	
+	
+	sols = Dict{Int , Any}()
+	Threads.@sync for i in 1:length(alphas)
+		 Threads.@spawn begin
+			p_i = deepcopy(lcurve_probs)
+			IHT.set_regularization_multiplier!(p_i , alphas[i])
+			optp_i = OptimizationProblem(IHT.discrepancy!, 
+										 _start, 
+										 p_i,
+										 lb = _lb, ub = _ub)
+			sols[i] = solve(optp_i, optimizer()  , maxiters=pso_iters )
+		 end
+	end
+
+	
+end
+
+# ╔═╡ cf8665e2-07d9-4464-b833-0531205408e9
+if  use_l_curve
+	l_curve_cov_loss = similar(alphas)
+	l_curve_reg_loss = similar(alphas)
+	l_curve_total_loss = similar(alphas)
+	for (i , r) in sols
+		IHT.discrepancy!(r.u , lcurve_probs)
+		_loss_full = IHT.loss_distribution(lcurve_probs)
+		l_curve_cov_loss[i] = _loss_full.covariance
+		l_curve_reg_loss[i] = _loss_full.regularization/alphas[i]
+		l_curve_total_loss[i] = _loss_full.total
+	end
+	l_curve_ind = sortperm(l_curve_cov_loss)
+	permute!(l_curve_cov_loss, l_curve_ind)
+	permute!(l_curve_reg_loss,l_curve_ind)
+	permute!(l_curve_total_loss, l_curve_ind)
+	permute!(alphas,l_curve_ind)
+end
+
+# ╔═╡ 2614e5ad-0d45-4046-abfd-053dd872c17c
+if use_l_curve
+		best_alf_Index = Main.find_l_corner_index(log10.(l_curve_cov_loss) , log10.(l_curve_reg_loss))
+
+	l_curve_best_alpha = alphas[best_alf_Index]
+
+end
+
+# ╔═╡ 3f8c5c6a-f902-4b1e-abc1-7b572c8d2505
+if use_l_curve
+	md"""
+	##### L-curve methods suggests to try α = $(l_curve_best_alpha)
+	"""
+end
+
+# ╔═╡ 1c32440c-32af-414c-9a7a-d6cc83685f7c
+if  use_l_curve 
+	lessem16 = t -> t <= 1e16
+	scale_type = (any(lessem16 , l_curve_cov_loss) || any(lessem16 , l_curve_reg_loss) ) ? :identity : :log10
+
+	scale_args = (xscale = scale_type, yscale = scale_type)
+	
+
+	
+	reg_plot = Plots.scatter(;plot_common_args...)
+	Plots.scatter!(reg_plot , alphas , l_curve_cov_loss , label = "model " ; scale_args... , plot_common_args...)
+	
+	Plots.scatter!(reg_plot , alphas , l_curve_reg_loss , label = "reg " ; scale_args..., plot_common_args...)
+	
+	Plots.scatter!(reg_plot , alphas , l_curve_total_loss, label = "total " ; scale_args..., plot_common_args...)
+
+	
+	min_min_y = min(minimum(l_curve_best_alpha), minimum(l_curve_cov_loss))
+	max_max_y = maximum(l_curve_total_loss)
+
+	Plots.plot!(reg_plot ,[l_curve_best_alpha , l_curve_best_alpha]  , [min_min_y , max_max_y] , label = "best" , legend_position = :best ; scale_args..., plot_common_args...)
+
+	
+	xlabel!(reg_plot , "Regularization multiplier , α")
+	ylabel!(reg_plot , "log(loss)")
+	title!(reg_plot , " Best α = $(l_curve_best_alpha)")
+	
+	l_curve_plot = Plots.plot(;plot_common_args...)
+	Plots.scatter!(l_curve_plot , l_curve_cov_loss , l_curve_reg_loss ; scale_args..., plot_common_args...)
+	xlabel!(l_curve_plot , "Model prediction loss")
+	ylabel!(l_curve_plot , "Regularization loss"  )
+	
+end;
+
+# ╔═╡ e5569bf4-b14f-4806-bbce-38096e2f837b
+use_l_curve && reg_plot
+
+# ╔═╡ 985eb56b-c964-4be8-973a-cec2c99df494
+use_l_curve && l_curve_plot
+
+# ╔═╡ c2564f33-dcf5-45fe-a462-70fe105bcf0a
+if false 
+	prob_fun =  IHT.regularization_scan(alphas , Optimization.remake)
+	opt_l_curve_probl = OptimizationProblem(IHT.discrepancy!, 
+										 _start, 
+										 deepcopy(lcurve_probs),
+										 lb = _lb, ub = _ub)
+	ensmbl =  Optimization.EnsembleProblem(
+                    opt_l_curve_probl, 
+                    prob_func = prob_fun
+    ) 
+
+	res_ensemble = solve(ensmbl, optimizer(), EnsembleThreads(), trajectories = length(alphas) ,  maxiters=pso_iters)
+
+end
 
 # ╔═╡ f5b13ec5-98f9-48bb-ad95-7dbd87e11f7b
 lam_test = OHT.thermal_conductivity(parallel_probls.problems[1].direct_problem, Ttest)
@@ -799,100 +922,6 @@ begin
 	p_hist
 end
 
-# ╔═╡ 6c03b643-d2f1-44d9-bf6d-de29d454944f
-typeof(optp)
-
-# ╔═╡ dd8fb4fa-fa67-4e26-988d-3ede79bc9540
-if use_l_curve
-	res_l = is_after_fit ? res : res2 
-	alpha_range = collect(range(extrema(l_curve_alpha)... , length=l_curve_points_number))
-	alphas = is_l_curve_logscale ? 10.0 .^alpha_range : alpha_range
-
-	#prob_fun = Main.regularization_scan(alphas , Optimization.remake)
-	(_start, _lb, _ub)  =  IHT.fill_starting_vectors(parallel_probls)
-	@. _start = res_l.u
-	
-	
-	sols = Dict{Int , Any}()
-	 Threads.@sync for i in 1:length(alphas)
-		 Threads.@spawn begin
-			p_i = deepcopy(parallel_probls)
-			optp_i = OptimizationProblem(IHT.discrepancy!, 
-										 _start, 
-										 p_i,
-										 lb = _lb, ub = _ub)
-			sols[i] = solve(optp_i, optimizer()  , maxiters=pso_iters )
-		 end
-	end
-	#= ensmbl =  Optimization.EnsembleProblem(
-                    opt_l_curve, 
-                    prob_func = prob_fun
-    ) =#
-
-	#res_ensemble = solve(ensmbl, optimizer(), EnsembleThreads(), trajectories = length(alphas))
-
-	
-end
-
-# ╔═╡ ad7767ed-ada6-4b1a-aae7-5c7d9f9f53cb
-sols
-
-# ╔═╡ a2a98c69-7a0c-40ab-a901-77ee952c4649
-alphas
-
-# ╔═╡ cf8665e2-07d9-4464-b833-0531205408e9
-if  use_l_curve
-	#x_coords = [log10(sol.p.covariance(sol.p.residual, sol.p.t_grid.dt)) for sol in res_ensemble]
-	#y_coords = [log10(sum(finite_difference_regularization_loss(ov) for ov in sol.p.optimizable)) for sol in res_ensemble]
-	l_curve_cov_loss = similar(alphas)
-	l_curve_reg_loss = similar(alphas)
-	l_curve_total_loss = similar(alphas)
-	for (i , r) in enumerate(res_ensemble)
-		IHT.discrepancy!(r.u , parallel_probls)
-		_loss_full = IHT.loss_distribution(parallel_probls)
-		l_curve_cov_loss[i] = _loss_full.covariance
-		l_curve_reg_loss[i] = _loss_full.regularization
-		l_curve_total_loss[i] = _loss_full.total
-	end
-end
-
-# ╔═╡ 1c32440c-32af-414c-9a7a-d6cc83685f7c
-if  use_l_curve 
-	
-	best_alf_Index = Main.find_l_corner_index(log10.(l_curve_cov_loss) , log10.(l_curve_reg_loss))
-
-	l_curve_best_alpha = alphas[best_alf_Index]
-	
-	reg_plot = Plots.plot(;plot_common_args...)
-	Plots.plot!(reg_plot , alphas , l_curve_cov_loss , xscale = :log10 , yscale = :log10, label = "model prediction loss" ; plot_common_args...)
-	
-	Plots.plot!(reg_plot , alphas , l_curve_reg_loss , xscale = :log10 , yscale = :log10, label = "regularization loss" ; plot_common_args...)
-	
-	Plots.plot!(reg_plot , alphas , l_curve_total_loss , xscale = :log10 , yscale = :log10, label = "total loss" ; plot_common_args...)
-
-	
-	min_min_y = min(minimum(l_curve_best_alpha), minimum(l_curve_cov_loss))
-	max_max_y = maximum(l_curve_total_loss)
-
-	Plots.plot!(reg_plot ,[l_curve_best_alpha , l_curve_best_alpha]  , [min_min_y , max_max_y] , xscale = :log10 , yscale = :log10, label = "L-curve best α = $(l_curve_best_alpha)" , legend_position = :outerbottom ; plot_common_args...)
-
-	
-	xlabel!(reg_plot , "Regularization multiplier , α")
-	ylabel!(reg_plot , "log(loss)")
-
-	l_curve_plot = Plots.plot(;plot_common_args...)
-	Plots.scatter!(l_curve_plot , l_curve_cov_loss , l_curve_reg_loss , yscale = :log10 , xscale = :log10 )
-	xlabel!(l_curve_plot , "Regularization loss")
-	ylabel!(l_curve_plot , "model prediction loss")
-	
-end;
-
-# ╔═╡ e5569bf4-b14f-4806-bbce-38096e2f837b
-use_l_curve && reg_plot
-
-# ╔═╡ 985eb56b-c964-4be8-973a-cec2c99df494
-use_l_curve && l_curve_plot
-
 # ╔═╡ a1c795e4-1be0-46e0-b6a2-4eda990fd65e
 function time_range_selector(all_data::AbstractDict)
 	N = length(all_data)
@@ -991,6 +1020,7 @@ end
 # ╟─b1f00c55-5ce9-4a0f-a548-a8a9041d02fc
 # ╟─62069546-44fb-4a77-986d-f03624719e29
 # ╟─fc5c1209-26ec-41d7-9238-e57d18330de1
+# ╟─2b3a1a65-8d3c-424e-a6cf-0e96646795f4
 # ╟─8f65e989-1abe-4689-9c3f-fdb6cabd7eae
 # ╟─a46970c8-7c91-4795-83a9-41c56a7ca399
 # ╟─5843fcfb-4e0e-480d-b263-e3f3ad6a7ac3
@@ -1002,18 +1032,24 @@ end
 # ╟─4ca95124-8a7a-4e4f-9e65-ff7b2adf35a5
 # ╟─c8dc4f9d-a549-4dc2-82bd-38ffe949ea55
 # ╟─bfa23359-8bac-4db0-bac1-0885ebe8ec4b
-# ╠═a660bf26-5b50-4910-b0ab-8e453623dc1a
+# ╟─a660bf26-5b50-4910-b0ab-8e453623dc1a
 # ╟─538487b4-b2fc-42c2-ba69-663b2ca5b768
 # ╟─67763d8f-e1ac-4b1f-978f-4734af1e03ba
 # ╟─68ed85b2-7308-4ea7-b696-0f1951219592
 # ╟─9b35c13b-24ba-4c43-a621-a3f8ba45fe4a
 # ╟─33473b7a-e22f-4333-a2f2-374778c0d603
+# ╟─672119a2-7a47-4813-a2d3-e0c15ee63491
+# ╟─c8cd1797-b631-4fdf-a51f-67e22c86c55a
+# ╟─eb70f6d9-301f-4e0f-91a2-0e911b1a6dd9
+# ╟─10f7c083-a697-4b7e-87ea-de2791ed1a30
+# ╟─3f8c5c6a-f902-4b1e-abc1-7b572c8d2505
+# ╟─e5569bf4-b14f-4806-bbce-38096e2f837b
+# ╟─985eb56b-c964-4be8-973a-cec2c99df494
+# ╟─0a0324df-430f-4ac0-857b-4da6a7dca138
 # ╟─fe228354-5f3f-433d-9f8b-7d888e9c5ecb
 # ╟─f3e24d8a-e35d-41de-92e6-0df290d3503c
-# ╠═4c9a5a5f-5839-4211-b561-7539dfa74a7a
+# ╟─4c9a5a5f-5839-4211-b561-7539dfa74a7a
 # ╟─95dbc55f-ab5a-4828-a1e2-9a0c9a9ec19b
-# ╟─672119a2-7a47-4813-a2d3-e0c15ee63491
-# ╟─2b3a1a65-8d3c-424e-a6cf-0e96646795f4
 # ╟─fa72774e-040a-4bc3-a759-5eb68c243fb4
 # ╟─3281dd3c-0453-4098-a6ed-4d771717033b
 # ╟─bbc2d0df-28bf-4754-bbdf-bece0bbfe76b
@@ -1031,21 +1067,15 @@ end
 # ╟─a2a84394-1f18-48e3-a4dc-c03f64a3a1c0
 # ╟─9cd8c4c8-7d11-4fb0-92d5-439702aa9496
 # ╠═e9e9e16d-0b2c-45ce-aa5b-cdcda6b143f1
-# ╠═6c03b643-d2f1-44d9-bf6d-de29d454944f
-# ╟─c8cd1797-b631-4fdf-a51f-67e22c86c55a
+# ╟─aea6fc8f-5ee2-40a3-aebd-942c45eec0d6
 # ╠═a8f5cc07-b2bd-445c-8797-ffe78a25641b
-# ╠═eb70f6d9-301f-4e0f-91a2-0e911b1a6dd9
-# ╟─bce5f7ae-49c5-4520-a0f6-6215e5078674
+# ╠═bce5f7ae-49c5-4520-a0f6-6215e5078674
 # ╠═dd8fb4fa-fa67-4e26-988d-3ede79bc9540
-# ╠═ad7767ed-ada6-4b1a-aae7-5c7d9f9f53cb
-# ╠═a2a98c69-7a0c-40ab-a901-77ee952c4649
-# ╠═72fe8630-73c6-49d9-bf32-31b9e58046d2
 # ╠═cf8665e2-07d9-4464-b833-0531205408e9
+# ╠═2614e5ad-0d45-4046-abfd-053dd872c17c
 # ╠═1c32440c-32af-414c-9a7a-d6cc83685f7c
-# ╟─e5569bf4-b14f-4806-bbce-38096e2f837b
-# ╟─985eb56b-c964-4be8-973a-cec2c99df494
-# ╟─84e23b57-e5a4-4bf0-97ef-6b41b502b4e6
-# ╟─0a0324df-430f-4ac0-857b-4da6a7dca138
+# ╠═84e23b57-e5a4-4bf0-97ef-6b41b502b4e6
+# ╠═c2564f33-dcf5-45fe-a462-70fe105bcf0a
 # ╟─27031733-7ade-4bda-b464-5a9ade0b2950
 # ╟─f5b13ec5-98f9-48bb-ad95-7dbd87e11f7b
 # ╟─d71fd6d1-167d-40fb-a253-b0982e19c0d0
@@ -1055,9 +1085,9 @@ end
 # ╟─23902c7d-5973-4868-8488-e0c7634573c4
 # ╟─6800ae42-c5b1-4d1e-84fb-a03015bf138f
 # ╟─ea412a80-0bf7-4ac6-9b90-8530a4c26008
-# ╠═4cf77d64-a720-41da-a9c2-5d875ea00135
+# ╟─4cf77d64-a720-41da-a9c2-5d875ea00135
 # ╠═2bf91a7e-0da8-48e8-a779-962be2e7c03b
-# ╠═fba5bc8b-25cb-406b-aa13-f06c591e08c9
+# ╟─fba5bc8b-25cb-406b-aa13-f06c591e08c9
 # ╟─5135015e-0fcf-484a-86ad-3cb7e40849bd
 # ╟─fd51a6c8-6569-4bfd-86ac-883c648fe6d9
 # ╟─6cd4f554-7242-4e97-b4cb-8549e3b70139

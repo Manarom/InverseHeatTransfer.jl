@@ -673,14 +673,17 @@ include("covariances.jl")
     discrepancy(x , p::SingleInverseProblem{DT}) where DT
 
 Evaluates the weighted least-sqaure discrepancy of the corresponding inverse problem 
+fills parameters -> solves heat transfer problem -> updates residuals -> evaluates total loss
 """
 function discrepancy!(x , p::SingleInverseProblem{DT}) where DT
-
         update_all_optimizables!(p , x) # refreshes the values of parameters without solving the direct problem 
         solve_direct_problem!(p) # solves the direct problem 
         fill_residual!(p) # fills residual matrix 
         return evaluate_loss(p)
-
+    end
+    set_regularization_multiplier!(s::SingleInverseProblem{DT} , α::DT) where DT = begin 
+        s.α[] = α
+        return nothing
     end
     """
     evaluate_loss(p :: SingleInverseProblem{DT}) where DT
@@ -723,23 +726,30 @@ has the same objects for  λ, λ' and cₚ, hence the problem can be simplified
     struct ParallelInverseProblems{TP <: Tuple, N, T}
         problems::TP
         loss_vect::MVector{N,T}
-        function ParallelInverseProblems(probls::T...) where T <: SingleInverseProblem{DT} where DT <: Number
+        function ParallelInverseProblems(probls::SingleInverseProblem{DT}...) where DT
             N = length(probls)
-            loss_vect = MVector{N , DT}(ntuple( N ) do i 
-                evaluate_loss(probls[i])
-            end
+            loss_vect = MVector{N , DT}(
+                ntuple( N ) do i 
+                    evaluate_loss(probls[i])
+                end
             )
             new{typeof(probls) , N , DT}(probls , loss_vect)
         end
     end
     fill_starting_vectors(pp::ParallelInverseProblems) = fill_starting_vectors(pp.problems[1])
-    function discrepancy!(x , pp::ParallelInverseProblems{TP, N, T}) where {TP , N , T}
-        return sum(ntuple( N ) do i 
-                    discrepancy!(x , pp.problems[i])
-            end)/N # total discrepancy divided by the problems number 
-    end
 
-    function loss_distribution(p::SingleInverseProblem)
+    function discrepancy!(x , pp::ParallelInverseProblems{TP, N, T}) where {TP , N , T}
+        return sum(
+            ntuple( N ) do i 
+                discrepancy!(x , pp.problems[i])
+            end
+            )/N 
+            # total discrepancy divided by the problems number 
+    end
+    set_regularization_multiplier!(pp::ParallelInverseProblems , val) = foreach(pp.problems) do p 
+        set_regularization_multiplier!(p , val)
+    end
+    function loss_distribution(p::SingleInverseProblem )
         return (
                 total = evaluate_loss(p),
 			    covariance  = covariance_loss(p),
@@ -748,7 +758,8 @@ has the same objects for  λ, λ' and cₚ, hence the problem can be simplified
         )
     end
     function loss_distribution(parallel_probls::ParallelInverseProblems)
-        return (total = sum(evaluate_loss , parallel_probls.problems),
+        return (
+             total = sum(evaluate_loss , parallel_probls.problems),
 			 covariance  = sum(covariance_loss,  parallel_probls.problems),
 			 constraints =sum(constraints_loss,  parallel_probls.problems),
 			 regularization = sum(p->p.α[] * regularization_loss(p), parallel_probls.problems))
@@ -760,7 +771,7 @@ has the same objects for  λ, λ' and cₚ, hence the problem can be simplified
 			constraints =[p.ψ[] * constraints_loss(p) for p in  parallel_probls.problems],
 			regularization = [ p.α[] * regularization_loss(p) for p in parallel_probls.problems]
 
-             )
+        )
     end
     const ALL_REGULARIZATION_TYPES = subtypes(AbstractRegularization)
     const ALL_COVARIANCE_TYPES = subtypes(AbstractCovariance)
@@ -768,4 +779,5 @@ has the same objects for  λ, λ' and cₚ, hence the problem can be simplified
     @recipe function f(m::OptimizableVariable)
         return (m.p)
     end
+    include("problem_ensemble_functions.jl")
 end
