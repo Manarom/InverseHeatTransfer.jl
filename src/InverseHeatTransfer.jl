@@ -4,14 +4,12 @@ module InverseHeatTransfer
     using InteractiveUtils
     using Static
     using Accessors
-    #import FunctionWrappers
     @reexport using ScaledPolynomials
     export OptimizableVariable, SingleInverseProblem
-    # Write your package code here.
+
     include(joinpath(".","solvers", "OneDHeatTransfer.jl"))
+
     @reexport using .OneDHeatTransfer
-    #include(joinpath(".","polynomials", "PolynomialWrappers.jl"))
-    #@reexport using .PolynomialWrappers
 
     abstract type AbstractInverseProblem end
     abstract type AbstractRegularization end
@@ -20,23 +18,13 @@ module InverseHeatTransfer
     struct  FiniteDifferenceRegularization <: AbstractRegularization end
     struct FixedDiagonalRegularization <: AbstractRegularization end
 
-
-
-
     abstract type AbstractCovariance  end
     struct NoCovariance <: AbstractCovariance end  
    
- 
-
     const SupportedFlagType{N} = Union{Bool, AbstractVector{Bool}, NTuple{N,Bool}} where N
-    #=struct BinaryPredicate{D}  
-        f::FunctionWrappers.FunctionWrapper{Bool,Tuple{D,D}} 
-    end
-    
-    (f::BinaryPredicate{D})(x::D,y::D) where D = f.f(x,y)=# #this was slow
 
 """
-    wrappes any modifiable and callcable variable of type P, which has parameters accessabel by `coeffs` function
+    Wrappes any modifiable and callcable variable of type P, which has parameters accessabel by `coeffs` function
     and can be bounded by `lb` and `ub` constraints, constraints violation can be checked  with  `lb_violation_fun`
     and `ub_violation_fun` functions. The parameters of `ub` and `lb` objects should be accessable by `lb_coeffs` and 
     `ub_coeffs`, there also should be a function to evaluate the derivative of `lb` and `ub` with respect to their 

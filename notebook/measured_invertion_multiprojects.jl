@@ -30,6 +30,7 @@ begin
 	import InverseHeatTransfer
 	using DataFrames
 	using CSV
+	using RecipesBase
 end
 
 # ╔═╡ 2bb45200-d7ba-47a3-b82d-9c147b5d7601
@@ -61,19 +62,29 @@ md""" ## Loading experimental data from winpos project"""
 # ╔═╡ 450fb200-eec6-4e96-9ebd-81453c015830
 md" Load data from : $(@bind input_data_type Select([:winpos,:files] , default = :files))"
 
-# ╔═╡ 4107cceb-d7c1-4783-9a3e-1c711d08e046
-@bind load_folder Button("Reload folder")
-
 # ╔═╡ a407a99b-b40c-436c-a2a0-af2e19b347b8
 is_winpos = input_data_type == :winpos;
 
 # ╔═╡ 6e062bd9-d20c-4e1d-b772-328bec8859ea
 begin 
-	md""" #### working folder $(@bind static_folder TextField(90, default = realpath(default_data_fodler))) """
+	md""" #### working folder $(@bind working_folder TextField(90, default = realpath(default_data_fodler))) """
 end
 
-# ╔═╡ 1291c9fd-80bf-4193-894c-5783787a6b95
-md" use static folder $(@bind use_static_folder CheckBox(default = true))"
+# ╔═╡ 81c2f93b-05b1-4eb0-9919-4ef76ecad233
+begin 
+	projs_wp = WP.find_project_pairs(working_folder)
+	projs_txt  = WP.parse_folder_as_winpos_projects(working_folder ; name_matcher="Tmeasured", variable_name = "T")
+	projects = merge(projs_wp , projs_txt)
+end;
+
+# ╔═╡ 17fbc55f-12a8-431e-ac00-b28304f2eb6c
+md""" #### select projects to be taken into account: 
+
+
+$(@bind cur_proj confirm(MultiSelect(collect(keys(projects)) , default = ["10ks" , "2ks"]))) 
+
+
+"""
 
 # ╔═╡ 0a4ce046-5b43-425d-a3f2-da8d9867b181
 mutable struct DataConnector
@@ -100,8 +111,26 @@ function cut_data!(d::DataConnector , tmin , tmax)
 	d.data_cutted = d.data[f,:]
 end
 
+# ╔═╡ 054d932d-12be-4538-ab34-b5d3f465bf0f
+projects
+
+# ╔═╡ 304091a8-4206-49c2-9c98-cffb18a0e906
+begin
+	all_data =Dict{String , DataConnector}()
+	for n in  cur_proj
+		selected_proj = projects[n]
+		all_data[selected_proj.name] = DataConnector(collect(keys(selected_proj.data)) , String[] , Matrix{Float64}(undef,0,0) , Matrix{Float64}(undef,0,0) , Float64[] , 0.0, selected_proj)
+	end
+end;
+
 # ╔═╡ 2e676f8c-909a-4fb7-b35e-57d08f802df7
 data_changed = true
+
+# ╔═╡ 6c4cb363-3bda-4dfa-8499-8201a013895d
+@bind show_data_table Select(collect(keys(all_data)))
+
+# ╔═╡ fd47bc58-8a0c-4dd7-875c-bcc80a21e64e
+all_data
 
 # ╔═╡ 62069546-44fb-4a77-986d-f03624719e29
 md" ## Physical properties setup"
@@ -330,53 +359,6 @@ function select_folder_gtk()
     return open_dialog("Выберите папку", action=GtkFileChooserAction.SELECT_FOLDER)
 end
 
-
-# ╔═╡ c7a753a9-9d11-4847-abf5-428bcabf3880
-if !use_static_folder 
-	input_data_type
-	load_folder
-	loaded_path = select_folder_gtk()
-end
-
-# ╔═╡ 6fceccd6-22cd-420d-8209-f4aad9e99269
-working_folder = (!use_static_folder && isdir(loaded_path)) ? loaded_path : static_folder
-
-# ╔═╡ 81c2f93b-05b1-4eb0-9919-4ef76ecad233
-if is_winpos 
-	projects = WP.find_project_pairs(working_folder)
-else
-	projects  = WP.parse_folder_as_winpos_projects(working_folder ; name_matcher="Tmeasured", variable_name = "T")
-end;
-
-# ╔═╡ bb9c0022-086e-48fb-8746-cb3a819375f8
-projects
-
-# ╔═╡ 17fbc55f-12a8-431e-ac00-b28304f2eb6c
-md""" #### select projects to be taken into account: 
-
-
-$(@bind cur_proj confirm(MultiSelect(collect(keys(projects)) , default = ["10ks" , "2ks"]))) 
-
-
-"""
-
-# ╔═╡ 054d932d-12be-4538-ab34-b5d3f465bf0f
-projects
-
-# ╔═╡ 304091a8-4206-49c2-9c98-cffb18a0e906
-begin
-	all_data =Dict{String , DataConnector}()
-	for n in  cur_proj
-		selected_proj = projects[n]
-		all_data[selected_proj.name] = DataConnector(collect(keys(selected_proj.data)) , String[] , Matrix{Float64}(undef,0,0) , Matrix{Float64}(undef,0,0) , Float64[] , 0.0, selected_proj)
-	end
-end;
-
-# ╔═╡ 6c4cb363-3bda-4dfa-8499-8201a013895d
-@bind show_data_table Select(collect(keys(all_data)))
-
-# ╔═╡ fd47bc58-8a0c-4dd7-875c-bcc80a21e64e
-all_data
 
 # ╔═╡ fd51a6c8-6569-4bfd-86ac-883c648fe6d9
 function filter_couple_breakage!(T)
@@ -988,18 +970,13 @@ end
 # ╠═35958e8a-eb7a-4eff-89a0-f9c04aff2a37
 # ╠═438a3909-9367-4660-a3ca-bd1786ab6016
 # ╟─db671921-13dc-497b-81e5-dcb4da0695f9
-# ╟─450fb200-eec6-4e96-9ebd-81453c015830
-# ╟─4107cceb-d7c1-4783-9a3e-1c711d08e046
-# ╟─a407a99b-b40c-436c-a2a0-af2e19b347b8
-# ╟─c7a753a9-9d11-4847-abf5-428bcabf3880
+# ╠═450fb200-eec6-4e96-9ebd-81453c015830
+# ╠═a407a99b-b40c-436c-a2a0-af2e19b347b8
 # ╟─6e062bd9-d20c-4e1d-b772-328bec8859ea
-# ╟─1291c9fd-80bf-4193-894c-5783787a6b95
-# ╟─6fceccd6-22cd-420d-8209-f4aad9e99269
-# ╟─81c2f93b-05b1-4eb0-9919-4ef76ecad233
-# ╟─bb9c0022-086e-48fb-8746-cb3a819375f8
+# ╠═81c2f93b-05b1-4eb0-9919-4ef76ecad233
 # ╟─17fbc55f-12a8-431e-ac00-b28304f2eb6c
-# ╟─0a4ce046-5b43-425d-a3f2-da8d9867b181
-# ╟─dcf0034b-e405-4f27-b853-acb7a58b9cc6
+# ╠═0a4ce046-5b43-425d-a3f2-da8d9867b181
+# ╠═dcf0034b-e405-4f27-b853-acb7a58b9cc6
 # ╟─4d27d75e-5e95-43c9-9e77-b9ae3d6c4bb9
 # ╟─28b91e49-996c-4abc-9db4-30b515444aab
 # ╠═054d932d-12be-4538-ab34-b5d3f465bf0f

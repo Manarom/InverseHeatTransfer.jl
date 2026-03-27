@@ -1,8 +1,13 @@
 module WinPos
 
     using OrderedCollections, Interpolations, Tables
-    using DelimitedFiles
+    using DelimitedFiles , RecipesBase
+    using HDF5
 
+    export WinPosProject , parse_folder_as_winpos_projects , 
+            find_project_pairs , to_matrix , to_table , 
+            DataPair , read_winposfile , write_winposfile
+    
     struct DataPair
         name::String
         xfile::String
@@ -24,14 +29,22 @@ module WinPos
     """
     read_winposfile!(vec::Vector{T}, filename::String, ::Type{F}  = Float32) where {F <: Number, T <:Number}
 
-Reads data from winpos format file to a vector of `Float64`, `Type{F}` shows the type of data in file 
+Reads data from winpos format file to a vector of `Float64`, 
+`Type{F}` shows the type of data in file 
 """
-function read_winposfile!(vec::Vector{T}, filename::String, ::Type{F}  = Float32) where {F <: Number, T <:Number}
-        bytes = read(filename) # reads the data to UInt8
-        n = length(bytes) ÷ 4
-        resize!(vec, n)
-        copyto!(vec, 1, reinterpret(F, bytes), 1, n)
-        return vec
+    function read_winposfile!(vec::Vector{T}, filename::String, ::Type{F}  = Float32) where {F <: Number, T <:Number}
+            bytes = read(filename) # reads the data to UInt8
+            n = length(bytes) ÷ 4
+            resize!(vec, n)
+            copyto!(vec, 1, reinterpret(F, bytes), 1, n)
+            return vec
+        end
+    function write_winposfile(vec::Vector{T}, filename::String, ::Type{F}  = Float32) where {F <: Number, T <:Number}
+        _vec = F.(vec)
+        open(filename , "w" ) do io 
+            write(io , _vec )
+        end
+        return nothing 
     end
     read_winposfile(filename) = read_winposfile!(Float64[],filename)
     """
@@ -53,10 +66,38 @@ function fill_data!(d::DataPair)
     Base.iterate(p::WinPosProject) = Base.iterate(p.data)
     Base.iterate(p::WinPosProject,j) = Base.iterate(p.data,j)
     Base.length(p::WinPosProject) = Base.length(p.data)
+    Base.show(io::IO , p::WinPosProject) = begin 
+        str = join(string.(keys(p.data)) , ",")
+        println(io , " WinPosProject named $(p.name) contains : $(str) " )  
+    end
+   """
+    write_winpos_project(p::WinPosProject , root_folder; new_name::Union{String , Nothing} = nothing)
+
+Writes project creating folder with its name and files corresponding `DataPair`'s
+"""
+function write_winpos_project(p::WinPosProject , root_folder; new_name::Union{String , Nothing} = nothing)
+        !isdir(root_folder) && error("provide folder")
+        _name = isnothing(new_name) ? p.name : new_name
+        proj_folder = joinpath(root_folder , _name)
+        isdir(proj_folder) || mkdir(proj_folder)
+        for (k , d) in p
+            is_data_filled(d) ||  fill_data!(d)
+            d_file_name = joinpath(proj_folder , k*".dat")
+            x_file_name = joinpath(proj_folder , k*".x")
+            write_winposfile(d.y , d_file_name)
+            write_winposfile(d.x , x_file_name)
+        end
+    end
+
+    mutable struct WinPosProjectsGroup
+        name::String
+        projects::OrderedDict{String , WinPosProject}
+    end
+    Base.get_index(wpg::WinPosProjectsGroup , i::Int) =  
     """
     joindata(proj::WinPosProject)
 
-Function joins data by names in a single 
+Function joins data by names in a single matrix , all `y's` are interpolated according the first x in names
 """
 function joindata(proj::WinPosProject; names = nothing, tmin = nothing, tmax = nothing)
         names = filter_data_names(proj , names)
@@ -88,7 +129,12 @@ function joindata(proj::WinPosProject; names = nothing, tmin = nothing, tmax = n
     end
     is_data_consistent(a,b) = !isempty(a) && !isempty(b) && (length(a) == length(b))
     is_data_consistent(d::DataPair) = is_data_consistent( d.x , d.y )
-    function to_matrix(proj::WinPosProject; kwargs...) 
+    """
+    to_matrix(proj::WinPosProject; kwargs...)
+
+Extracts matrix from winpos project data  according to the input variables names 
+"""
+function to_matrix(proj::WinPosProject; kwargs...) 
         out = joindata(proj ; kwargs...)
         mat = hcat(out.x , out.y)
         names = ("x", out.names...)
@@ -99,12 +145,12 @@ function joindata(proj::WinPosProject; names = nothing, tmin = nothing, tmax = n
         return Tables.table(data, header = names)
     end
 """
-    find_project_pairs(root_folder::String;include_subfolders::Bool=false)
+    find_winpos_projects(root_folder::String; include_subfolders::Bool=false)
     
 Searches input folder (and if include_subfolders = true  all subfolders) for winpos files
 which has `data_name.x` and `data_name.dat` files pair   
 """
-    function find_project_pairs(root_folder::String;include_subfolders::Bool=false)
+    function find_winpos_projects(root_folder::String; include_subfolders::Bool=false)
         projects = OrderedDict{String, OrderedDict{String, DataPair}}()
         for (folder, subdirs, files) in  walkdir(root_folder)
             # Skip if no .x files (not a project)
@@ -139,7 +185,7 @@ which has `data_name.x` and `data_name.dat` files pair
         for (n , p) in projects
             p_dict[n] = WinPosProject(n , p)
         end
-        return p_dict
+        return WinPosProjectsGroup(root_folder , p_dict)
     end
     """
     parse_folder_as_winpos_projects(dir ; name_matcher::String , variable_name::String = "T" , kwargs...)
@@ -173,7 +219,7 @@ function parse_folder_as_winpos_projects(dir ; name_matcher::String , variable_n
 			!isempty(wp) || continue
 			projs[f] = WinPosProject(f , wp)
 		end
-		return projs
+		return WinPosProject(dir , projs)
     end
     function parse_files_to_data_pair(fold , 
                 name_matcher::String, project_name::String = "" , 
@@ -204,6 +250,35 @@ function parse_folder_as_winpos_projects(dir ; name_matcher::String , variable_n
             end
 	    return d
     end
+
+
+    @recipe function f(d::DataPair)
+        label --> d.name
+        return (d.x , d.y )
+    end
+    @recipe function f(wp::WinPosProject; selected_keys = nothing , xmin = nothing, xmax = nothing)
+        has_keys = isnothing(selected_keys)
+        for (k , d) in wp
+            has_keys || k ∈ selected_keys || continue
+            (x , y) = cut_by_x(d , xmin = xmin , xmax = xmax)
+            @series begin
+                label := "$(k)"
+                (x , y)
+            end
+        end    
+    end
+    """
+    Is a package to work with file projects stored according the following scheme:
+
+    `folder_name//A.dat`
+    `folder_name//A.x`
+    `folder_name//B.dat`
+    `folder_name//B.x`
+
+    `folder_name` is the project name , `A.x` and `A.dat`  store `x` and `y` data 
+    
+    """
+    WinPos
 end
 
 
