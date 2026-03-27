@@ -55,20 +55,47 @@ Loads data from attached files
 function fill_data!(d::DataPair)
         read_winposfile!(d.x , d.xfile)
         read_winposfile!(d.y , d.yfile)
+        return nothing
     end
-    struct WinPosProject
+    fill_data!(dp::Pair{String , DataPair}) = fill_data!(last(dp))
+    abstract type AbstractWinPosProject{D} end
+    struct WinPosProject <: AbstractWinPosProject{DataPair}
         name::String
         data::OrderedDict{String , DataPair}
+        path::String
     end
-    filter_data_names(proj::WinPosProject, ::Nothing) = keys(proj.data)
-    filter_data_names(proj::WinPosProject, names) = filter(Base.Fix1(haskey,proj.data), names)
-    Base.getindex(p::WinPosProject, k)  = p.data[k]
-    Base.iterate(p::WinPosProject) = Base.iterate(p.data)
-    Base.iterate(p::WinPosProject,j) = Base.iterate(p.data,j)
-    Base.length(p::WinPosProject) = Base.length(p.data)
+    mutable struct WinPosProjectsGroup <: AbstractWinPosProject{WinPosProject}
+        name::String
+        data::OrderedDict{String , WinPosProject}
+        path::String
+    end
+    filter_data_names(proj::AbstractWinPosProject, ::Nothing) = keys(proj.data)
+    filter_data_names(proj::AbstractWinPosProject, names) = filter(Base.Fix1(haskey,proj.data), names)
+    Base.getindex(p::AbstractWinPosProject, k::String)  = p.data[k]
+    Base.getindex(p::AbstractWinPosProject , i::Int) = (i <= length(p.data)) ? p.data[iterate(keys(p.data) , i)[1]] : error("out of range")
+    
+    Base.iterate(p::AbstractWinPosProject) = Base.iterate(p.data)
+    Base.iterate(p::AbstractWinPosProject , j) = Base.iterate(p.data , j)
+    
+    Base.length(p::AbstractWinPosProject) = Base.length(p.data)
+    Base.eltype(::Type{WinPosProjectsGroup}) = Pair{String, WinPosProject}
+    Base.eltype(::Type{WinPosProject}) = Pair{String, DataPair}
+    Base.keys(p::AbstractWinPosProject) = keys(p.data)
+
+    has_name(p::AbstractWinPosProject , name::String) = haskey(p.data , name)
     Base.show(io::IO , p::WinPosProject) = begin 
-        str = join(string.(keys(p.data)) , ",")
+        str = join(string.(keys(p.data)) , " , ")
         println(io , " WinPosProject named $(p.name) contains : $(str) " )  
+    end
+    Base.show(io::IO , p::WinPosProjectsGroup) = begin 
+        str = join(string.(keys(p.data)) , " , ")
+        println(io , " WinPosProjects group named $(p.name) contains : $(str) " )  
+    end
+    fill_data!(p::AbstractWinPosProject) = foreach(fill_data! , p)
+    fill_data!(p::Pair{String , T}) where T <: AbstractWinPosProject = fill_data!(last(p))
+
+    fill_data!(p::WinPosProject , names) = foreach(p) do (k,d)
+        (k ∈ names) && fill_data!(d)
     end
    """
     write_winpos_project(p::WinPosProject , root_folder; new_name::Union{String , Nothing} = nothing)
@@ -88,12 +115,43 @@ function write_winpos_project(p::WinPosProject , root_folder; new_name::Union{St
             write_winposfile(d.x , x_file_name)
         end
     end
+function export_to_hdf5(group::WinPosProjectsGroup, fullfilename::Union{String , Nothing}=nothing ; 
+        opentype::String="w" , overwrite_groups::Bool= true , group_name::Union{String , Nothing}= nothing )
 
-    mutable struct WinPosProjectsGroup
-        name::String
-        projects::OrderedDict{String , WinPosProject}
+    root_name = isnothing(group_name) ? group.name : group.name
+    fullfilename = if isnothing(fullfilename) 
+        joinpath(group.path , root_name*".hdf5") 
+    else
+        fullfilename
     end
-    Base.get_index(wpg::WinPosProjectsGroup , i::Int) =  
+    opentype = if (opentype != "w") &&  !isfile(fullfilename)
+         "w"  
+    else
+        opentype
+    end 
+    h5open(fullfilename, opentype) do h5
+        g_root = _delete_if_owerwrite_or_create!(h5 , root_name , overwrite_groups)   
+        attributes(g_root)["path"] = group.path
+        for (p_name, project) in group
+            g_proj = _delete_if_owerwrite_or_create!(g_root, p_name , overwrite_groups)
+            attributes(g_proj)["path"] = project.path
+            for (s_name, data_pair) in project
+                g_sensor = _delete_if_owerwrite_or_create!(g_proj, s_name , overwrite_groups)
+
+                attributes(g_sensor)["xfile"] = data_pair.xfile
+                attributes(g_sensor)["yfile"] = data_pair.yfile
+                
+                g_sensor["x"] = data_pair.x
+                g_sensor["y"] = data_pair.y
+            end
+        end
+    end
+end
+function _delete_if_owerwrite_or_create!(root , new_name , overwrite)   
+# internal function to check if this group is already exist 
+    haskey(root , new_name) && overwrite && delete_object(root , new_name)
+    return haskey(root , new_name) ? root[new_name] : create_group(root, new_name)
+end
     """
     joindata(proj::WinPosProject)
 
@@ -151,7 +209,7 @@ Searches input folder (and if include_subfolders = true  all subfolders) for win
 which has `data_name.x` and `data_name.dat` files pair   
 """
     function find_winpos_projects(root_folder::String; include_subfolders::Bool=false)
-        projects = OrderedDict{String, OrderedDict{String, DataPair}}()
+        projects = OrderedDict{String, Tuple{OrderedDict{String, DataPair} , String}}()
         for (folder, subdirs, files) in  walkdir(root_folder)
             # Skip if no .x files (not a project)
             x_files = filter(f -> endswith(lowercase(f), ".x"), files)
@@ -159,6 +217,7 @@ which has `data_name.x` and `data_name.dat` files pair
             
             # This is a project folder
             project_name = basename(folder)
+            project_path = folder
             project_dict = OrderedDict{String, DataPair}()
             
             for x_file in x_files
@@ -178,14 +237,15 @@ which has `data_name.x` and `data_name.dat` files pair
             end
             
             # Only add if we found valid pairs
-            !isempty(project_dict) && (projects[project_name] = project_dict)
+            !isempty(project_dict) && (projects[project_name] = (project_dict ,  project_path))
             include_subfolders && break
         end
+        
         p_dict = OrderedDict{String, WinPosProject}()
         for (n , p) in projects
-            p_dict[n] = WinPosProject(n , p)
+            p_dict[n] = WinPosProject(n , p[1] , p[2])
         end
-        return WinPosProjectsGroup(root_folder , p_dict)
+        return WinPosProjectsGroup(basename(root_folder) , p_dict , root_folder)
     end
     """
     parse_folder_as_winpos_projects(dir ; name_matcher::String , variable_name::String = "T" , kwargs...)
@@ -219,7 +279,7 @@ function parse_folder_as_winpos_projects(dir ; name_matcher::String , variable_n
 			!isempty(wp) || continue
 			projs[f] = WinPosProject(f , wp)
 		end
-		return WinPosProject(dir , projs)
+		return WinPosProject(basename(dir) , projs , dir)
     end
     function parse_files_to_data_pair(fold , 
                 name_matcher::String, project_name::String = "" , 
