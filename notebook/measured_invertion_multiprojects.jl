@@ -403,6 +403,22 @@ function multi_values(names, default_values=nothing)
 	end
 end
 
+# ╔═╡ 6d0d7cb4-45fc-405f-8a5d-cf10ad5e380b
+function multi_values(all_data::AbstractDict, field_name::Symbol =  :selected_names , default_values=nothing)
+	PlutoUI.combine() do Child
+		@htl("""
+		<h6>field_name, mm</h6>
+		<ul>
+		$([
+			@htl("<li>$(join( [n , f] , ":")): $(Child( join( [n , f] , ":"), NumberField(0:1e-3:20 , default = 0.0)))</li>")
+			
+			for (n, f) in paired_selected_names(all_data)
+		])
+		</ul>
+		""")
+	end
+end
+
 # ╔═╡ 646aebc7-b3db-443f-888f-800d444b4fa3
 function fill_data_connector_data!(d::DataConnector)
 	isempty(d.selected_names) && return false
@@ -420,22 +436,6 @@ function paired_selected_names(all_data , field_name :: Symbol = :selected_names
 
 	end
 	return out
-end
-
-# ╔═╡ 6d0d7cb4-45fc-405f-8a5d-cf10ad5e380b
-function multi_values(all_data::AbstractDict, field_name::Symbol =  :selected_names , default_values=nothing)
-	PlutoUI.combine() do Child
-		@htl("""
-		<h6>field_name, mm</h6>
-		<ul>
-		$([
-			@htl("<li>$(join( [n , f] , ":")): $(Child( join( [n , f] , ":"), NumberField(0:1e-3:20 , default = 0.0)))</li>")
-			
-			for (n, f) in paired_selected_names(all_data)
-		])
-		</ul>
-		""")
-	end
 end
 
 # ╔═╡ 96b4c7c4-30a8-407c-9bd4-245f0ee0d9b2

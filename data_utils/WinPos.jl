@@ -4,9 +4,10 @@ module WinPos
     using DelimitedFiles , RecipesBase
     using HDF5
 
-    export WinPosProject , parse_folder_as_winpos_projects , 
+    export WinPosProject , DataPair , WinPosProjectsGroup 
+    export parse_folder_as_winpos_projects , 
             find_project_pairs , to_matrix , to_table , 
-            DataPair , read_winposfile , write_winposfile
+            DataPair , read_winposfile , write_winposfile , export_to_hdf5
     
             
     struct DataPair
@@ -82,8 +83,8 @@ function fill_data!(d::DataPair)
     Base.eltype(::Type{WinPosProjectsGroup}) = Pair{String, WinPosProject}
     Base.eltype(::Type{WinPosProject}) = Pair{String, DataPair}
     Base.keys(p::AbstractWinPosProject) = keys(p.data)
-
-    has_name(p::AbstractWinPosProject , name::String) = haskey(p.data , name)
+    Base.haskey(p::AbstractWinPosProject , name) = haskey(p.data , name)
+    
     Base.show(io::IO , p::WinPosProject) = begin 
         str = join(string.(keys(p.data)) , " , ")
         println(io , " WinPosProject named $(p.name) contains : $(str) " )  
@@ -116,12 +117,53 @@ function write_winpos_project(p::WinPosProject , root_folder; new_name::Union{St
             write_winposfile(d.x , x_file_name)
         end
     end
-function export_to_hdf5(group::WinPosProjectsGroup, fullfilename::Union{String , Nothing}=nothing ; 
-        opentype::String="w" , overwrite_groups::Bool= true , group_name::Union{String , Nothing}= nothing )
 
-    root_name = isnothing(group_name) ? group.name : group.name
+function add_winpos_proj_to_hdf5!(hdf_branch_handle , project_name , 
+                    project :: WinPosProject , 
+                    overwrite_groups::Bool  , 
+                    add_path_info::Bool=false)
+
+        g_proj = _delete_if_owerwrite_or_create!(hdf_branch_handle, project_name , overwrite_groups)
+        add_path_info && (attributes(g_proj)["path"] = project.path)
+        for (s_name, data_pair) in project
+            g_sensor = _delete_if_owerwrite_or_create!(g_proj, s_name , overwrite_groups)
+
+            add_path_info && (attributes(g_sensor)["xfile"] = data_pair.xfile)
+            add_path_info && (attributes(g_sensor)["yfile"] = data_pair.yfile)
+            
+            g_sensor["x"] = data_pair.x
+            g_sensor["y"] = data_pair.y
+        end
+
+end
+function export_to_hdf5(project::WinPosProject, fullfilename::Union{String , Nothing}=nothing ; 
+        opentype::String="w" , overwrite_groups::Bool= true , group_name::Union{String , Nothing}= nothing  , 
+        add_path_info::Bool = false)
+
+    root_name = !isnothing(group_name) ? group_name : project.name 
+    (fullfilename, opentype) = _check_hdf5_filename_opentype(fullfilename , project , root_name , opentype)
+    h5open(fullfilename, opentype) do h5
+         add_winpos_proj_to_hdf5!(h5 , root_name , project , overwrite_groups , add_path_info)
+    end
+
+end
+function export_to_hdf5(projects::WinPosProjectsGroup, fullfilename::Union{String , Nothing}=nothing ; 
+        opentype::String="w" , overwrite_groups::Bool= true , group_name::Union{String , Nothing}= nothing  , 
+        add_path_info::Bool = false)
+
+    root_name = !isnothing(group_name) ? group_name : projects.name 
+    (fullfilename, opentype) = _check_hdf5_filename_opentype(fullfilename , projects , root_name , opentype)
+    h5open(fullfilename, opentype) do h5
+        g_root = _delete_if_owerwrite_or_create!(h5 , root_name , overwrite_groups)   
+        add_path_info && (attributes(g_root)["path"] = projects.path)
+        foreach(projects) do (p_name, project)
+            add_winpos_proj_to_hdf5!(g_root , p_name , project , overwrite_groups , add_path_info)
+        end
+    end
+end
+function _check_hdf5_filename_opentype(fullfilename , projects::AbstractWinPosProject , root_name , opentype)
     fullfilename = if isnothing(fullfilename) 
-        joinpath(group.path , root_name*".hdf5") 
+        joinpath(projects.path , root_name*".hdf5") 
     else
         fullfilename
     end
@@ -130,24 +172,9 @@ function export_to_hdf5(group::WinPosProjectsGroup, fullfilename::Union{String ,
     else
         opentype
     end 
-    h5open(fullfilename, opentype) do h5
-        g_root = _delete_if_owerwrite_or_create!(h5 , root_name , overwrite_groups)   
-        attributes(g_root)["path"] = group.path
-        for (p_name, project) in group
-            g_proj = _delete_if_owerwrite_or_create!(g_root, p_name , overwrite_groups)
-            attributes(g_proj)["path"] = project.path
-            for (s_name, data_pair) in project
-                g_sensor = _delete_if_owerwrite_or_create!(g_proj, s_name , overwrite_groups)
-
-                attributes(g_sensor)["xfile"] = data_pair.xfile
-                attributes(g_sensor)["yfile"] = data_pair.yfile
-                
-                g_sensor["x"] = data_pair.x
-                g_sensor["y"] = data_pair.y
-            end
-        end
-    end
+    return (fullfilename , opentype)
 end
+
 function _delete_if_owerwrite_or_create!(root , new_name , overwrite)   
 # internal function to check if this group is already exist 
     haskey(root , new_name) && overwrite && delete_object(root , new_name)
