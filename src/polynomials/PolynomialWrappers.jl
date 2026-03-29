@@ -1,6 +1,7 @@
 module PolynomialWrappers
-    using LinearAlgebra, Interpolations, Polynomials, LegendrePolynomials, StaticArrays, RecipesBase, FFTW
+    using LinearAlgebra,  LegendrePolynomials, StaticArrays, RecipesBase
 
+    #using Interpolations
     import Base.Broadcast: broadcastable
 
     export BernsteinSymPoly, StandPoly , LegPoly , ChebPoly , ScaledPolynomial , AbstractPoly , VanderMatrix
@@ -95,7 +96,7 @@ const POLY_NAMES_TYPES_DICT = Base.ImmutableDict(
 
     end
 
-    bases_folder = joinpath(".","bases")
+    bases_folder = joinpath(@__DIR__(),"bases")
     include(joinpath(bases_folder,"stand_basis.jl"))
     include(joinpath(bases_folder,"bernstein_basis.jl"))
     include(joinpath(bases_folder,"chebyshev_basis.jl"))

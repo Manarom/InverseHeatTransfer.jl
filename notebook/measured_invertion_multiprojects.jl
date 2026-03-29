@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.21
+# v0.20.24
 
 using Markdown
 using InteractiveUtils
@@ -570,7 +570,8 @@ begin
 		C = IHT.OptimizableVariable(C_poly, flag = is_optimize_c , lb = density*lower_cp_limit , ub = density * upper_cp_limit )
 	else
 
-		C = PW.polyfit!(C_poly, c_x,c_y)#linear_interpolation(c_x ,c_y , extrapolation_bc=Line())
+		#C = PW.polyfit!(C_poly, c_x,c_y)#linear_interpolation(c_x ,c_y , extrapolation_bc=Line())
+		C =linear_interpolation(c_x ,c_y , extrapolation_bc=Line())
 	end
 end;
 
@@ -3385,17 +3386,17 @@ version = "1.13.0+0"
 # ╟─5be15388-cea2-4884-b8de-bff5be64e506
 # ╟─b3c96eae-64a5-4245-85b6-b7b994e03ff7
 # ╟─6c4cb363-3bda-4dfa-8499-8201a013895d
-# ╟─dbd1d788-120b-4678-bf3b-7541b9ea7341
+# ╠═dbd1d788-120b-4678-bf3b-7541b9ea7341
 # ╟─735d3901-2dee-40d9-9e74-bb0d71ddfda4
 # ╟─ca69ae4b-8428-4643-93a4-c4c1687b3d7e
-# ╟─fd47bc58-8a0c-4dd7-875c-bcc80a21e64e
-# ╟─b1f00c55-5ce9-4a0f-a548-a8a9041d02fc
+# ╠═fd47bc58-8a0c-4dd7-875c-bcc80a21e64e
+# ╠═b1f00c55-5ce9-4a0f-a548-a8a9041d02fc
 # ╟─62069546-44fb-4a77-986d-f03624719e29
-# ╟─fc5c1209-26ec-41d7-9238-e57d18330de1
-# ╟─8f65e989-1abe-4689-9c3f-fdb6cabd7eae
-# ╟─a46970c8-7c91-4795-83a9-41c56a7ca399
-# ╟─5843fcfb-4e0e-480d-b263-e3f3ad6a7ac3
-# ╟─7d37019a-34bf-43ca-aa81-8b6c29191473
+# ╠═fc5c1209-26ec-41d7-9238-e57d18330de1
+# ╠═8f65e989-1abe-4689-9c3f-fdb6cabd7eae
+# ╠═a46970c8-7c91-4795-83a9-41c56a7ca399
+# ╠═5843fcfb-4e0e-480d-b263-e3f3ad6a7ac3
+# ╠═7d37019a-34bf-43ca-aa81-8b6c29191473
 # ╟─4f3e1899-541d-4809-810c-f2e6b7ca1ad1
 # ╟─2bb61e43-384c-48ce-8a55-843726bf3f05
 # ╟─baffb68a-fb52-4bac-b484-4a215108aaed
@@ -3403,8 +3404,8 @@ version = "1.13.0+0"
 # ╟─4ca95124-8a7a-4e4f-9e65-ff7b2adf35a5
 # ╟─c8dc4f9d-a549-4dc2-82bd-38ffe949ea55
 # ╟─bfa23359-8bac-4db0-bac1-0885ebe8ec4b
-# ╟─a660bf26-5b50-4910-b0ab-8e453623dc1a
-# ╟─538487b4-b2fc-42c2-ba69-663b2ca5b768
+# ╠═a660bf26-5b50-4910-b0ab-8e453623dc1a
+# ╠═538487b4-b2fc-42c2-ba69-663b2ca5b768
 # ╟─67763d8f-e1ac-4b1f-978f-4734af1e03ba
 # ╟─68ed85b2-7308-4ea7-b696-0f1951219592
 # ╟─9b35c13b-24ba-4c43-a621-a3f8ba45fe4a
@@ -3413,7 +3414,7 @@ version = "1.13.0+0"
 # ╟─f3e24d8a-e35d-41de-92e6-0df290d3503c
 # ╟─4c9a5a5f-5839-4211-b561-7539dfa74a7a
 # ╟─95dbc55f-ab5a-4828-a1e2-9a0c9a9ec19b
-# ╟─672119a2-7a47-4813-a2d3-e0c15ee63491
+# ╠═672119a2-7a47-4813-a2d3-e0c15ee63491
 # ╟─2b3a1a65-8d3c-424e-a6cf-0e96646795f4
 # ╟─fa72774e-040a-4bc3-a759-5eb68c243fb4
 # ╟─3281dd3c-0453-4098-a6ed-4d771717033b
