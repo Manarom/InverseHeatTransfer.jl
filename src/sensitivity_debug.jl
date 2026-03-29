@@ -2,10 +2,11 @@ using Plots
 using DifferentialEquations
 using Polynomials
 using Revise
+
+import ScaledPolynomials as PW
 plotly()
 include(raw"./solvers/OneDHeatTransfer.jl")
-include(raw"./polynomials/PolynomialWrappers.jl")
-PW = PolynomialWrappers
+
 OHT = OneDHeatTransfer
 includet("sensitivity_analysis.jl")
 T_range = (20.0,1000.0)

@@ -1,2 +1,7 @@
 /Manifest*.toml
 .vscode
+debug_*
+test/test_data/property_inversion_ansys_new/thermal_conductivity.txt
+test/test_data/property_inversion_ansys_new/thermal_conductivity.txt
+src/debug2.jl
+test/test_data/binary_files/*
