@@ -1,8 +1,9 @@
 
 module DataConnector
 	include("WinPos.jl")
+	using StaticArrays , OrderedCollections , RecipesBase , Reexport
 	using .WinPos
-	using StaticArrays , OrderedCollections , RecipesBase
+	export SampleProperties , DataSelector , DataSelectorsGroup , combine_selected_data
 """
 Structure to store the information on temperature experiment
 
@@ -14,12 +15,12 @@ Structure to store the information on temperature experiment
 	mutable struct SampleProperties
 		sensors_locations :: OrderedDict{String , Float64}
 		material::String
-		comments::AsbtractString
+		comments::String
 		thickness::Float64
 		SampleProperties(;
 			sensors_locations  = OrderedDict{String , Float64}() , 
 			material ::String = "unknown" , 
-			comments ::AsbtractString = "" , 
+			comments ::String = "" , 
 			thickness ::Float64 = 0.0) = new(sensors_locations , material , comments , thickness)
 	end
 """
@@ -27,7 +28,7 @@ Structure to connect selected sensors names, sample properties and `WinPosProjec
 
 - `tmin_tmax` - time range which can be used to select the timerange to trim measured data 
 - `selected_names` - stores selected names 
-- `sample_properties` - stores sample properties
+- `sample_properties` - stores sample properties [`SampleProperties`](@ref)
 
 """
 	struct DataSelector{P}
@@ -53,7 +54,7 @@ Structure to connect selected sensors names, sample properties and `WinPosProjec
 			)
 		end
 	end
-
+	name(d::DataSelector) = d.project.name
 	select!(d::DataSelector , names)  = foreach(names) do n 
 		select!(d , n)
 	end
@@ -124,19 +125,44 @@ function combine_selected_data(d::DataSelector)
 	end
 	struct DataSelectorsGroup
 		d::OrderedDict{String , DataSelector}
-		function DataSelectorsGroup(projects::WinPosProjectsGroup)
+		name::String
+		function DataSelectorsGroup(projects::WinPosProjectsGroup; name::String = "no name")
 			d = OrderedDict{String , DataSelector}(
 				Pair(n , DataSelector(project = p))  for (n , p) in projects	
 			)
-			new(d)
+			name = (name == "no name") ? projects.name : name
+			new(d , name)
 		end
 		function DataSelectorsGroup(p::T ...) where T <: Pair{String , DataSelector}
-			new(OrderedDict{String , DataSelector}(p...))
+			n = name(last(first(p)))
+			new(OrderedDict{String , DataSelector}(p...) , n)
+		end
+		function DataSelectorsGroup(p::T ...) where T <: Pair{String , WinPosProject}
+			n = WinPos.name(last(first(p)))
+			new(OrderedDict{String , DataSelector}( pj[1]=>DataSelector(project = pj[2]) for  pj in p ) , n)
 		end
 	end
 	select!(d::DataSelectorsGroup , name::String , selected_names) = haskey(d.d , name) && select!(d.d[name] , selected_names)
 	unselect!(d::DataSelectorsGroup , name::String , selected_names) = haskey(d.d , name) && unselect!(d.d[name] , selected_names)
 	selected_data(d :: DataSelectorsGroup) = Iterators.map(selected_data , values(d.d))
-	selected_data_cutted(d :: DataSelectorsGroup) = Iterators.map(selected_data_cutted , values(d.d))
+	selected_data_cutted(d :: DataSelectorsGroup ) = Iterators.map(selected_data_cutted , values(d.d))
+	combine_selected_data(d :: DataSelectorsGroup ) = Iterators.map(combine_selected_data , values(d.d))
+	Base.getindex(d::DataSelectorsGroup , key::String) = d.d[key] 
+	Base.getindex(d::DataSelectorsGroup , i::Int) = (i <= length(d.d)) ? d.d[iterate(keys(d.d) , i)[1]] : error("out of range")
+
+	function WinPos.export_to_hdf5(projects::DataSelectorsGroup, fullfilename::Union{String , Nothing}=nothing ; 
+        opentype::String="w" , overwrite_groups::Bool= true , group_name::Union{String , Nothing}= nothing  , 
+        add_path_info::Bool = false)
+
+		root_name = !isnothing(group_name) ? group_name : projects.name 
+		(fullfilename, opentype) = WinPos._check_hdf5_filename_opentype(fullfilename , projects , root_name , opentype)
+		h5open(fullfilename, opentype) do h5
+			g_root = _delete_if_owerwrite_or_create!(h5 , root_name , overwrite_groups)   
+			add_path_info && (attributes(g_root)["path"] = projects.path)
+			foreach(projects) do (p_name, project)
+				add_winpos_proj_to_hdf5!(g_root , p_name , project , overwrite_groups , add_path_info)
+			end
+		end
+	end
 
 end

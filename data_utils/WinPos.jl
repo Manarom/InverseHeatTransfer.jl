@@ -6,7 +6,7 @@ module WinPos
 
     export WinPosProject , DataPair , WinPosProjectsGroup 
     export parse_folder_as_winpos_projects , 
-            find_project_pairs , to_matrix , to_table , 
+            find_winpos_projects , to_matrix , to_table , 
             DataPair , read_winposfile , write_winposfile , export_to_hdf5
     
             
@@ -18,6 +18,10 @@ module WinPos
         x::Vector{Float64}
         y::Vector{Float64}
         DataPair(name , xfile , yfile , project) = new(name , xfile , yfile , project, Float64[], Float64[])
+        DataPair(;name , xfile , yfile , project , x::T , y::T) where T <: Vector{Float64} = begin 
+            length(x) == length(y) || error("x and y vectors must be of the same size")
+            return new(name , xfile , yfile , project, Float64[], Float64[])
+        end
     end
     function cut_by_x(dp::DataPair; xmin::Union{Nothing,T} = nothing, xmax::Union{Nothing,T} = nothing) where T<: Number
         xmin = isnothing(xmin) ? -Inf : xmin
@@ -35,6 +39,7 @@ Reads data from winpos format file to a vector of `Float64`,
 `Type{F}` shows the type of data in file 
 """
     function read_winposfile!(vec::Vector{T}, filename::String, ::Type{F}  = Float32) where {F <: Number, T <:Number}
+            isfile(filename) || return vec
             bytes = read(filename) # reads the data to UInt8
             n = length(bytes) ÷ 4
             resize!(vec, n)
@@ -60,6 +65,7 @@ function fill_data!(d::DataPair)
         return nothing
     end
     fill_data!(dp::Pair{String , DataPair}) = fill_data!(last(dp))
+    is_data_filled(dp::Pair{String , DataPair}) = is_data_filled(last(dp))
     abstract type AbstractWinPosProject{D} end
     struct WinPosProject <: AbstractWinPosProject{DataPair}
         name::String
@@ -71,13 +77,16 @@ function fill_data!(d::DataPair)
         data::OrderedDict{String , WinPosProject}
         path::String
     end
+    is_data_filled(dp::Pair{String , WinPosProject}) = all(is_data_filled, last(dp))
+    is_data_filled(p::AbstractWinPosProject) = all(is_data_filled , p)
+
     filter_data_names(proj::AbstractWinPosProject, ::Nothing) = keys(proj.data)
     filter_data_names(proj::AbstractWinPosProject, names) = filter(Base.Fix1(haskey,proj.data), names)
     Base.getindex(p::AbstractWinPosProject, k::String)  = p.data[k]
     Base.getindex(p::AbstractWinPosProject , i::Int) = (i <= length(p.data)) ? p.data[iterate(keys(p.data) , i)[1]] : error("out of range")
-    
-    Base.iterate(p::AbstractWinPosProject) = Base.iterate(p.data)
-    Base.iterate(p::AbstractWinPosProject , j) = Base.iterate(p.data , j)
+    name(p::AbstractWinPosProject) = p.name
+    Base.iterate(p::AbstractWinPosProject) = iterate(p.data)
+    Base.iterate(p::AbstractWinPosProject , j) = iterate(p.data , j)
     
     Base.length(p::AbstractWinPosProject) = Base.length(p.data)
     Base.eltype(::Type{WinPosProjectsGroup}) = Pair{String, WinPosProject}
@@ -105,6 +114,7 @@ function fill_data!(d::DataPair)
 Writes project creating folder with its name and files corresponding `DataPair`'s
 """
 function write_winpos_project(p::WinPosProject , root_folder; new_name::Union{String , Nothing} = nothing)
+
         !isdir(root_folder) && error("provide folder")
         _name = isnothing(new_name) ? p.name : new_name
         proj_folder = joinpath(root_folder , _name)
@@ -118,13 +128,52 @@ function write_winpos_project(p::WinPosProject , root_folder; new_name::Union{St
         end
     end
 
+function load_winpos_project_from_hdf5(h5file_name::String) 
+    !isfile(h5file_name) && error("Incorrect filename $(h5file_name)")
+    return h5open(h5file_name) do h5 
+        root_node_name = first(keys(h5))
+        root_node = h5[root_node_name]
+        !haskey(attributes(root_node) , "type") && error("attribute type unspecified")
+        root_type =  attributes(root_node)["type"]
+        @show root_type
+        return if root_type == "WinPosProjectsGroup"
+            projs = OrderedDict{String , WinPosProject}()
+            for k in keys(h5)
+                cur_node = h5[k]
+                projs[k] = load_winpos_project_from_hdf5(cur_node , k)
+            end
+            WinPosProjectsGroup(root_node_name , projs , h5file_name )
+        elseif root_type == "WinPosProject"
+            load_winpos_project_from_hdf5(root_node)
+        end
+    end
+end
+function load_winpos_project_from_hdf5(hdf_branch_handle , name::Union{String , Nothing} = nothing)#::HDF5.Group)
+    #@show hdf_branch_handle
+    p_name = isnothing(name) ? first(keys(hdf_branch_handle)) : haskey(hdf_branch_handle , name ) ? name : error("Incorrect branch name_matcher")
+    root_node = hdf_branch_handle[p_name]
+    p_path = haskey(attributes(root_node), "path") ? attributes(root_node)["path"] : ""
+    project = WinPosProject(p_name , OrderedDict{String , DataPair}() ,p_path)
+    for s_name  in keys(root_node)
+        g_sensor = root_node[s_name]
+        x_data = read(g_sensor, "x")
+        y_data = read(g_sensor, "y")
+        x_file = haskey(attributes(g_sensor), "xfile") ? attributes(g_sensor)["xfile"] : ""
+        y_file = haskey(attributes(g_sensor), "yfile") ? attributes(g_sensor)["yfile"] : ""
+        project.data[s_name] = DataPair(name = s_name , x=x_data, 
+                                        y=y_data, xfile=x_file, 
+                                        yfile=y_file , project = p_name )
+    end
+    return project
+end
 function add_winpos_proj_to_hdf5!(hdf_branch_handle , project_name , 
                     project :: WinPosProject , 
                     overwrite_groups::Bool  , 
                     add_path_info::Bool=false)
-
+        
         g_proj = _delete_if_owerwrite_or_create!(hdf_branch_handle, project_name , overwrite_groups)
         add_path_info && (attributes(g_proj)["path"] = project.path)
+        attributes(g_proj)["type"] = "WinPosProject"
         for (s_name, data_pair) in project
             g_sensor = _delete_if_owerwrite_or_create!(g_proj, s_name , overwrite_groups)
 
@@ -136,10 +185,28 @@ function add_winpos_proj_to_hdf5!(hdf_branch_handle , project_name ,
         end
 
 end
+"""
+    export_to_hdf5(project::WinPosProject, fullfilename::Union{String , Nothing}=nothing ; 
+        opentype::String="w" , overwrite_groups::Bool= true , group_name::Union{String , Nothing}= nothing  , 
+        add_path_info::Bool = false , autofill::Bool=true)
+
+Saves `WinPosProject` to hdf5 file
+Input arguments 
+
+- `project` 
+- `fullfilename` 
+- `opentype` attribute for [`HDF5.h5open`](@ref)
+- `overwrite_groups` if true all variables with the same name will be rewritten , otherwise returns error
+- `group_name` custom name for the project if nothing the name of root group will be the same as the name of the project 
+- `add_path_info` if true the path will be added to the attributes
+- `autofill` if true the project data will be automatically refilled before the  saving 
+
+"""
 function export_to_hdf5(project::WinPosProject, fullfilename::Union{String , Nothing}=nothing ; 
         opentype::String="w" , overwrite_groups::Bool= true , group_name::Union{String , Nothing}= nothing  , 
-        add_path_info::Bool = false)
+        add_path_info::Bool = true , autofill::Bool=true)
 
+    autofill && !is_data_filled(project) && fill_data!(project)
     root_name = !isnothing(group_name) ? group_name : project.name 
     (fullfilename, opentype) = _check_hdf5_filename_opentype(fullfilename , project , root_name , opentype)
     h5open(fullfilename, opentype) do h5
@@ -149,14 +216,16 @@ function export_to_hdf5(project::WinPosProject, fullfilename::Union{String , Not
 end
 function export_to_hdf5(projects::WinPosProjectsGroup, fullfilename::Union{String , Nothing}=nothing ; 
         opentype::String="w" , overwrite_groups::Bool= true , group_name::Union{String , Nothing}= nothing  , 
-        add_path_info::Bool = false)
+        add_path_info::Bool = true , autofill::Bool=true)
 
+    autofill && is_data_filled(projects) && fill_data!(projects)
     root_name = !isnothing(group_name) ? group_name : projects.name 
     (fullfilename, opentype) = _check_hdf5_filename_opentype(fullfilename , projects , root_name , opentype)
     h5open(fullfilename, opentype) do h5
         g_root = _delete_if_owerwrite_or_create!(h5 , root_name , overwrite_groups)   
         add_path_info && (attributes(g_root)["path"] = projects.path)
-        foreach(projects) do (p_name, project)
+        attributes(g_root)["type"] = "WinPosProjectsGroup"
+        foreach(projects) do (p_name , project)
             add_winpos_proj_to_hdf5!(g_root , p_name , project , overwrite_groups , add_path_info)
         end
     end
@@ -187,6 +256,7 @@ Function joins data by names in a single matrix , all `y's` are interpolated acc
 """
 function joindata(proj::WinPosProject; names = nothing, tmin = nothing, tmax = nothing)
         names = filter_data_names(proj , names)
+        isempty(names) && return ( ; x = Float64[] , y = Float64[], names = String[])
         n1 = first(names)
         (!haskey(proj.data , n1) || isempty(proj.data)) && return Float64[]
         d1 = proj.data[n1]

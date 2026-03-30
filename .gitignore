@@ -5,3 +5,4 @@ test/test_data/*
 *debug*
 test/test_data/binary_files/*
 *backup*
+*.hdf5
