@@ -25,7 +25,10 @@ Structure to store the information on temperature experiment
 	end
 """
 Structure to connect selected sensors names, sample properties and `WinPosProject`
-
+The idea is that some sensors data should be assiciated with the sample properties in
+a single structure. The data (thermocouple measurements) can be trimmed in time and 
+combined into single matrix with `[time , T1...TN]` with [`combine_selected_data`](@ref)
+Further several [`DataSelector`](@ref) objects can be combined into [`DataSelectorsGroup`](@ref)
 - `tmin_tmax` - time range which can be used to select the timerange to trim measured data 
 - `selected_names` - stores selected names 
 - `sample_properties` - stores sample properties [`SampleProperties`](@ref)
@@ -78,7 +81,7 @@ set_location!(d::DataSelector , name::String , value::Float64) = hasname(d , nam
 	"""
     sensors_locations(ds :: DataSelector)
 
-returns the vector of sensors locations
+returns sensors locations
 """
 function sensors_locations(ds :: DataSelector)
 		isempty(ds.sample_properties.sensors_locations) && return Float64[] 
@@ -164,5 +167,10 @@ function combine_selected_data(d::DataSelector)
 			end
 		end
 	end
+	"""
+		Initially, all measurements are stored in one folder. However, a single sample may involve
+	multiple measurement projects, and a specific material may have several different samples.
 
+	"""
+	DataConnector
 end

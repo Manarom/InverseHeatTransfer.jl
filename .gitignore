@@ -3,6 +3,6 @@ Manifest*.toml
 debug_*
 test/test_data/*
 *debug*
-test/test_data/binary_files/*
+data_utils/binary_files/*
 *backup*
 *.hdf5
