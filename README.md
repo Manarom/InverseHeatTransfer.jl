@@ -13,12 +13,12 @@ $$
 where
 
 $$ 
-    \lambda -\ thermal\ conductivity, Kg/m^3 * J/(Kg*K)    \\
-    C - thermal \ capacity,    \\
-    C = C_p \cdot \rho     \\
-    C_p -\ specific \ heat, J/(kg*K), \\
-    \rho -\ density,\ kg/m^2 \\
-    T_t = \frac{\partial T} {\partial t}  \\
+    \lambda -\ thermal\ conductivity, Kg/m^3 * J/(Kg*K) \\
+    C - thermal \ capacity,\\
+    C = C_p \cdot \rho\\
+    C_p -\ specific \ heat, J/(kg*K),\\
+    \rho -\ density,\ kg/m^2\\
+    T_t = \frac{\partial T} {\partial t} \\
     T_x = \frac{\partial T} {\partial x} \\
     T_{xx} = \frac{\partial ^2 T} {\partial x ^2}\\
  $$ 
