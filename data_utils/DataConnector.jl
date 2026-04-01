@@ -2,6 +2,7 @@
 module DataConnector
 	include("WinPos.jl")
 	using StaticArrays , OrderedCollections , RecipesBase , Reexport
+	using HDF5
 	using .WinPos
 	export SampleProperties , DataSelector , DataSelectorsGroup , combine_selected_data
 """
@@ -136,7 +137,7 @@ function combine_selected_data(d::DataSelector)
 			name = (name == "no name") ? projects.name : name
 			new(d , name)
 		end
-		function DataSelectorsGroup(p::T ...) where T <: Pair{String , DataSelector}
+		function DataSelectorsGroup(p::Pair{String ,  <:DataSelector} ...)
 			n = name(last(first(p)))
 			new(OrderedDict{String , DataSelector}(p...) , n)
 		end
@@ -145,6 +146,7 @@ function combine_selected_data(d::DataSelector)
 			new(OrderedDict{String , DataSelector}( pj[1]=>DataSelector(project = pj[2]) for  pj in p ) , n)
 		end
 	end
+	
 	select!(d::DataSelectorsGroup , name::String , selected_names) = haskey(d.d , name) && select!(d.d[name] , selected_names)
 	unselect!(d::DataSelectorsGroup , name::String , selected_names) = haskey(d.d , name) && unselect!(d.d[name] , selected_names)
 	selected_data(d :: DataSelectorsGroup) = Iterators.map(selected_data , values(d.d))
@@ -153,18 +155,33 @@ function combine_selected_data(d::DataSelector)
 	Base.getindex(d::DataSelectorsGroup , key::String) = d.d[key] 
 	Base.getindex(d::DataSelectorsGroup , i::Int) = (i <= length(d.d)) ? d.d[iterate(keys(d.d) , i)[1]] : error("out of range")
 
-	function WinPos.export_to_hdf5(projects::DataSelectorsGroup, fullfilename::Union{String , Nothing}=nothing ; 
-        opentype::String="w" , overwrite_groups::Bool= true , group_name::Union{String , Nothing}= nothing  , 
-        add_path_info::Bool = false)
+
+	function WinPos.export_to_hdf5(projects::DataSelectorsGroup,
+		 	fullfilename::String ; 
+        	opentype::String = "w" , 
+			overwrite_groups::Bool= true ,
+			group_name::Union{String , Nothing}= nothing , 
+        	add_path_info::Bool = false)
 
 		root_name = !isnothing(group_name) ? group_name : projects.name 
-		(fullfilename, opentype) = WinPos._check_hdf5_filename_opentype(fullfilename , projects , root_name , opentype)
+		#(fullfilename, opentype) = WinPos._check_hdf5_filename_opentype(fullfilename , projects , root_name , opentype)
 		h5open(fullfilename, opentype) do h5
-			g_root = _delete_if_owerwrite_or_create!(h5 , root_name , overwrite_groups)   
-			add_path_info && (attributes(g_root)["path"] = projects.path)
-			foreach(projects) do (p_name, project)
-				add_winpos_proj_to_hdf5!(g_root , p_name , project , overwrite_groups , add_path_info)
+			g_root = WinPos._delete_if_overwrite_or_create_group!(h5 , root_name , overwrite_groups)   
+			add_path_info && (attributes(g_root)["path"] = fullfilename)
+			foreach(projects.d) do (p_name, data_selector)
+				WinPos.add_winpos_proj_to_hdf5!(g_root , p_name , 
+							data_selector.project , 
+							overwrite_groups , add_path_info)
+				combined_data_branch = WinPos._delete_if_overwrite_or_create_group!(g_root , "combined_data" , true)
+				data_combined = combine_selected_data(data_selector)	
+				for (name , val) in pairs(data_combined)
+					if haskey(combined_data_branch , name)
+    						delete_object(combined_data_branch , name)
+					end
+					combined_data_branch[name] = val
+				end	
 			end
+
 		end
 	end
 	"""
