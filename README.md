@@ -3,22 +3,23 @@
 [![Build Status](https://github.com/Manarom/InverseHeatTransfer.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/Manarom/InverseHeatTransfer.jl/actions/workflows/CI.yml?query=branch%3Amain)
 
 
-Formulates the problem to solve the following equation:
+Solves direct problem and wrapps the heat transfer problem for the optimization 
+
 $$
-  \frac{C}{λ}Tₜ= Tₓₓ + \frac{λ'}{λ}(Tₓ)² \\
-   T(x,0) = Tᵢ(x)
+
+  \frac{C}{\lambda}Tₜ= Tₓₓ + \frac{\lambda'}{\lambda}(T_x)² \\
+   T(x,0) = T_i(x)
+
 $$
-where
 
-$λ$ - thermal conductivity, Kg/m^3 * J/(Kg*K)    
-
-$C$ - thermal capacity,    $C = Cp*ρ$    $Cp$ - specific heat, J/(kg*K), $ρ$ - density, kg/m³ 
-
-$Tₜ = ∂T/∂t$  
-
-$Tₓ = ∂T/∂x$ 
-
-$Tₓₓ = ∂²T/∂x²$ 
+$\lambda$ - thermal conductivity, $Kg/m^3 * J/(Kg*K)$    
+$C$ - thermal capacity,    
+$C = C_p \cdot \rho $    
+$C_p$ - specific heat, $J/(kg*K)$, 
+$\rho$ - density, $kg/m^2$ 
+$T_t = \frac{\partial T} {\partial t}$  
+$T_x = \frac{\partial T} {\partial x}$ 
+$T_{xx} = \frac{\partial ^2 T} {\partial x ^2}$ 
 
 
 Dirichlet conditions:
@@ -38,7 +39,7 @@ $$
 $$
 
 
-Finite - difference schemes 
+Direct problem Finite - difference schemes 
 
 1.) Fully explicit
 
@@ -50,3 +51,4 @@ TODO:
 
 
  - SpectralMethods + OrdinaryDiffEq
+ - Sensitivity analysis
