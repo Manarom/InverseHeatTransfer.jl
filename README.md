@@ -6,11 +6,11 @@
 Solves direct problem and wrapps the heat transfer problem for the optimization 
 
 $$
-
   \frac{C}{\lambda}Tₜ= Tₓₓ + \frac{\lambda'}{\lambda}(T_x)² \\
    T(x,0) = T_i(x)
-
 $$
+
+where
 
 $$ 
     \lambda -\ thermal\ conductivity, Kg/m^3 * J/(Kg*K)    \\
