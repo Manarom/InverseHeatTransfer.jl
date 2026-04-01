@@ -25,16 +25,21 @@ $$
 
 
 Dirichlet conditions:
+
 $$
     T(0,t) = f(t)
     T(H,t) = g(t)
 $$
+
 Dirichlet conditions:
+
 $$
     Tₓ(0,t) = f(t)
     Tₓ(H,t) = g(t)
 $$
+
 Robin conditions:
+
 $$
     Tₓ(0,t) = f(T)
     Tₓ(H,t) = g(T)
