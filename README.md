@@ -2,60 +2,54 @@
 
 [![Build Status](https://github.com/Manarom/InverseHeatTransfer.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/Manarom/InverseHeatTransfer.jl/actions/workflows/CI.yml?query=branch%3Amain)
 
+> [!IMPORTANT]  
+> **This package is under active development!** Features and API are subject to change. ❗
 
-Solves direct problem and wrapps the heat transfer problem for the optimization 
+**InverseHeatTransfer.jl** is a Julia package designed to solve direct and inverse heat conduction problems. It provides numerical solvers for temperature distribution and robust optimization wrappers for parameter estimation.
 
-$$
-  \frac{C}{\lambda}Tₜ= Tₓₓ + \frac{\lambda'}{\lambda}(T_x)² \\
-   T(x,0) = T_i(x)
-$$
+## Mathematical Model
 
-where
-
-$$ 
-    \lambda -\ thermal\ conductivity, Kg/m^3 * J/(Kg*K) \\
-    C - thermal \ capacity,\\
-    C = C_p \cdot \rho\\
-    C_p -\ specific \ heat, J/(kg*K),\\
-    \rho -\ density,\ kg/m^2\\
-    T_t = \frac{\partial T} {\partial t} \\
-    T_x = \frac{\partial T} {\partial x} \\
-    T_{xx} = \frac{\partial ^2 T} {\partial x ^2}\\
- $$ 
-
-
-Dirichlet conditions:
+The package solves the 1D heat equation in the following form:
 
 $$
-    T(0,t) = f(t) \\
-    T(H,t) = g(t)
+\frac{C}{\lambda} \frac{\partial T}{\partial t} = \frac{\partial^2 T}{\partial x^2} + \frac{\lambda'}{\lambda} \left( \frac{\partial T}{\partial x} \right)^2
 $$
 
-Dirichlet conditions:
-
+With initial conditions:
 $$
-    Tₓ(0,t) = f(t) \\
-    Tₓ(H,t) = g(t)
+T(x, 0) = T_i(x)
 $$
 
-Robin conditions:
+### Physical Parameters:
+- $\lambda$ — Thermal conductivity $[W/(m \cdot K)]$
+- $C$ — Volumetric heat capacity $[J/(m^3 \cdot K)]$, where $C = C_p \cdot \rho$
+- $C_p$ — Specific heat $[J/(kg \cdot K)]$
+- $\rho$ — Density $[kg/m^3]$
 
-$$
-    Tₓ(0,t) = f(T) \\
-    Tₓ(H,t) = g(T)
-$$
+## Inverse Problem & Regularization
 
+For ill-posed inverse problems, the package implements advanced estimation and regularization techniques:
 
-Direct problem Finite - difference schemes 
+*   **Tikhonov Regularization:** Used to ensure solution stability by penalizing high-frequency oscillations in the parameter space.
+*   **Weighted Regression:** Supports various weighting strategies for the discrepancy function to handle measurement noise:
+    *   **Diagonal Weighting:** Independent weights for each data point.
+    *   **Proportional Weighting:** Weights scaled according to the magnitude of the measured values.
+    *   **AR(1) Weighting Function:** Accounts for first-order autoregressive correlations in measurement errors.
 
-1.) Fully explicit
+## Sequential Inverse Solver
 
-2.) Fullly implicit
+The library includes a specialized type for the **sequential solving** of inverse problems. This allows for:
+*   Simultaneous estimation of $\lambda$ and $C_p$ across multiple experimental datasets.
+*   A **joint discrepancy function** that aggregates residuals from several measurements with different heating regimes.
+*   Improved parameter identifiability by leveraging diverse thermal loading scenarios within a single optimization framework.
 
-3.) Crank-Nicolson
+## Numerical Solvers (Direct Problem)
 
-TODO:
+The direct problem is solved using the following Finite Difference Schemes:
+1. **Fully Explicit**
+2. **Fully Implicit**
+3. **Crank-Nicolson**
 
-
- - SpectralMethods + OrdinaryDiffEq
- - Sensitivity analysis
+## Roadmap (TODO)
+- [ ] Integration of **Spectral Methods** via `OrdinaryDiffEq.jl`.
+- [ ] Advanced **Sensitivity Analysis** for inverse problems.
