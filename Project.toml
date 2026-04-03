@@ -1,6 +1,6 @@
 name = "InverseHeatTransfer"
 uuid = "2c8319c5-a44e-4544-92ed-020a4e1f37f0"
-version = "1.0.0-DEV"
+version = "1.0.0"
 authors = ["Roman Mironov"]
 
 [workspace]
