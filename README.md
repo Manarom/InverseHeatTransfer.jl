@@ -7,6 +7,18 @@
 
 **InverseHeatTransfer.jl** is a Julia package designed to solve direct and inverse heat conduction problems. It provides numerical solvers for temperature distribution and robust optimization wrappers for parameter estimation.
 
+## Installation
+
+Since this package and its core dependency are not yet in the General registry, install them directly via URL:
+
+```julia
+using Pkg
+# Required dependency
+Pkg.add(url="https://github.com/Manarom/ScaledPolynomials.jl.git")
+# This package
+Pkg.add(url="https://github.com/Manarom/InverseHeatTransfer.jl.git")
+```
+
 ## Mathematical Model
 
 The package solves the 1D heat equation in the following form:
