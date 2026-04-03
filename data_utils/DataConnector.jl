@@ -69,7 +69,9 @@ Further several [`DataSelector`](@ref) objects can be combined into [`DataSelect
 	isselected(d::DataSelector , name) = name ∈ d.selected_names
 	select!(d::DataSelector , name::String) = hasname(d , name) && push!(d.selected_names , name) 
 	unselect!(d::DataSelector , name:: String) = isselected(d , name) && delete!(d.selected_names , name)
-
+	selected_names(d::DataSelector) = collect(d.selected_names)
+	tmin(d::DataSelector) = first(d.tmin_tmax)
+	tmax(d::DataSelector) = last(d.tmin_tmax)
 	"""
     set_location!(d::DataSelector , name::String , value::Float64)
 
@@ -124,7 +126,8 @@ function combine_selected_data(d::DataSelector)
 				time_data = time_data,
 				temperatures = temperatures, 
 				initial_distribution = initial_distribution,
-				sensors_locations = _sensors_locations 
+				sensors_locations = _sensors_locations,
+				sample_thickness = d.sample_properties.thickness
 			)
 	end
 	struct DataSelectorsGroup
@@ -156,33 +159,109 @@ function combine_selected_data(d::DataSelector)
 	Base.getindex(d::DataSelectorsGroup , i::Int) = (i <= length(d.d)) ? d.d[iterate(keys(d.d) , i)[1]] : error("out of range")
 
 
-	function WinPos.export_to_hdf5(projects::DataSelectorsGroup,
+	"""
+    WinPos.export_to_hdf5(projects::DataSelectorsGroup,
 		 	fullfilename::String ; 
         	opentype::String = "w" , 
 			overwrite_groups::Bool= true ,
 			group_name::Union{String , Nothing}= nothing , 
-        	add_path_info::Bool = false)
+        	add_path_info::Bool = true)
+
+Exports `DataSelectorsGroup` to HDF5 file
+"""
+function WinPos.export_to_hdf5(projects::DataSelectorsGroup,
+		 	fullfilename::String ; 
+        	opentype::String = "w" , 
+			overwrite_groups::Bool= true ,
+			group_name::Union{String , Nothing}= nothing , 
+        	add_path_info::Bool = true)
 
 		root_name = !isnothing(group_name) ? group_name : projects.name 
 		#(fullfilename, opentype) = WinPos._check_hdf5_filename_opentype(fullfilename , projects , root_name , opentype)
 		h5open(fullfilename, opentype) do h5
 			g_root = WinPos._delete_if_overwrite_or_create_group!(h5 , root_name , overwrite_groups)   
 			add_path_info && (attributes(g_root)["path"] = fullfilename)
+			WinPos._set_if_overwrite_or_create_attribute!(g_root , "type" , "DataSelectorsGroup" , true)
+
 			foreach(projects.d) do (p_name, data_selector)
-				WinPos.add_winpos_proj_to_hdf5!(g_root , p_name , 
+				proj_branch = WinPos._delete_if_overwrite_or_create_group!(g_root , p_name , overwrite_groups)
+
+				WinPos._set_if_overwrite_or_create_attribute!(proj_branch , "type" , "DataSelector" , true)
+
+				WinPos.add_winpos_proj_to_hdf5!(proj_branch , data_selector.project.name , 
 							data_selector.project , 
 							overwrite_groups , add_path_info)
-				combined_data_branch = WinPos._delete_if_overwrite_or_create_group!(g_root , "combined_data" , true)
-				data_combined = combine_selected_data(data_selector)	
-				for (name , val) in pairs(data_combined)
-					if haskey(combined_data_branch , name)
-    						delete_object(combined_data_branch , name)
-					end
-					combined_data_branch[name] = val
-				end	
+							
+				# adding combined_data to the project group
+				add_combined_data_to_hdf5!(proj_branch , data_selector)
+				add_sample_properties_to_hdf5!(proj_branch , data_selector)
+				proj_branch["selected_sensors"] = selected_names(data_selector)
+				proj_branch["tmin"] = tmin(data_selector)
+				proj_branch["tmax"] = tmax(data_selector)
 			end
-
 		end
+	end
+	function WinPos.load_from_hdf5(file_name::Union{String , HDF5.File , HDF5.Group}  ,::Type{D}) where D <: DataSelectorsGroup
+		WinPos.assert_data_type(file_name , D)
+		load_data_selectors_group_from_hdf5(file_name)
+	end
+	function load_data_selectors_group_from_hdf5(file :: String)
+		@assert isfile(file) "Not a file $(file)"
+		return h5open(file) do h5 
+			#	root_node_name = first(keys(h5))
+    			#root_node = h5[root_node_name]
+				load_data_selectors_group_from_hdf5(h5)
+			end
+	end
+	function load_data_selectors_group_from_hdf5(branch :: Union{HDF5.File , HDF5.Group})
+		root_type = WinPos.read_data_type(branch)
+		(isnothing(root_type) || (root_type != "DataSelectorsGroup")) && error("Incorrect branch type")
+		root_node = branch[first(keys(branch))]
+		for k in keys(root_node)
+			cur_node = root_node[k]
+			WinPos.check_data_type(cur_node , DataSelector) || continue
+			@show k
+			for q in keys(cur_node)
+				@show q
+				sub_node = cur_node[q]
+				WinPos.check_data_type(sub_node , WinPos.WinPosProject) || continue
+				return WinPos.load_winpos_project_from_hdf5(sub_node)
+			end
+		end
+	end
+	"""
+    add_sample_properties_to_hdf5!(proj_branch , data_selector::DataSelector)
+
+Adds sample properties to `proj_branch` from `DataSelector` object
+"""
+function add_sample_properties_to_hdf5!(proj_branch , data_selector::DataSelector)
+		
+		sample_branch = WinPos._delete_if_overwrite_or_create_group!(proj_branch , "sample_properties" , true)
+		
+		for fi in fieldnames(SampleProperties)
+			fi_str = String(fi)
+			val = getfield(data_selector.sample_properties , fi)
+			if  isa(val , AbstractString)
+				WinPos._set_if_overwrite_or_create_attribute!(sample_branch , fi_str , val , true)
+			elseif isa(val , Number)
+				sample_branch[fi_str] = val
+			end
+			sens = WinPos._delete_if_overwrite_or_create_group!(sample_branch , "sensors_locations" , true)
+			for (k , v) in data_selector.sample_properties.sensors_locations
+				sens[k] = v
+			end
+		end
+	end
+	function add_combined_data_to_hdf5!(proj_branch , data_selector::DataSelector)
+		combined_data_branch = WinPos._delete_if_overwrite_or_create_group!(proj_branch , "combined_data" , true)
+		data_combined = combine_selected_data(data_selector)	
+		for (name , val) in pairs(data_combined)
+			name_str = String(name)
+			if haskey(combined_data_branch , name_str)
+				delete_object(combined_data_branch , name_str)
+			end
+			combined_data_branch[name_str] = val
+		end	
 	end
 	"""
 		Initially, all measurements are stored in one folder. However, a single sample may involve

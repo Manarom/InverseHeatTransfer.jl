@@ -8,7 +8,7 @@ module WinPos
     export parse_folder_as_winpos_projects , 
             find_winpos_projects , to_matrix , to_table , 
             DataPair , read_winposfile , write_winposfile , export_to_hdf5 , 
-            load_winpos_project_from_hdf5
+            load_winpos_project_from_hdf5 , load_from_hdf5
     
             
     struct DataPair
@@ -114,11 +114,11 @@ function fill_data!(d::DataPair)
     
     Base.show(io::IO , p::WinPosProject) = begin 
         str = join(string.(keys(p.data)) , " , ")
-        println(io , " WinPosProject named $(p.name) contains : $(str) " )  
+        println(io , " WinPosProject named `$(p.name)` contains : $(str) sensors data" )  
     end
     Base.show(io::IO , p::WinPosProjectsGroup) = begin 
         str = join(string.(keys(p.data)) , " , ")
-        println(io , " WinPosProjects group named $(p.name) contains : $(str) " )  
+        println(io , " WinPosProjects group named $(p.name) contains : $(str) WinPos projects" )  
     end
     fill_data!(p::AbstractWinPosProject) = foreach(fill_data! , p)
     fill_data!(p::Pair{String , T}) where T <: AbstractWinPosProject = fill_data!(last(p))
@@ -147,6 +147,28 @@ function write_winpos_project(p::WinPosProject , root_folder; new_name::Union{St
     end
 no_branch_key_error(branch , k) = error("""There is no key `$(k)`, in branch `$(branch)` , available keys: `$(keys(branch))`""")
 
+function load_from_hdf5(h5_file::Union{String , HDF5.File , HDF5.Group}  , D::DataType) #where D <: AbstractWinPosProject
+    assert_data_type(h5_file , D)
+    return load_winpos_project_from_hdf5(h5_file)
+end
+assert_data_type(h5_file::Union{String , HDF5.File , HDF5.Group} , ::Type{D}) where D  = check_data_type(h5_file , D) ? nothing : error("Unknown data type $(nameof(D))") 
+function check_data_type(h5_file::Union{String , HDF5.File , HDF5.Group} , ::Type{D}) where D
+    data_type = read_data_type(h5_file)
+    isnothing(data_type)  && return false 
+    ( Symbol(data_type) != nameof(D) ) && return false 
+    return true
+end
+function read_data_type(h5_file::AbstractString) 
+    !isfile(h5_file) && return nothing
+    return h5open(h5_file) do h5
+         read_data_type(h5)
+    end
+end
+function read_data_type(h5::Union{HDF5.File , HDF5.Group})
+    root_node_name = first(keys(h5))
+    root_node = h5[root_node_name]
+    return  read_attribute_otherwise(root_node , "type" , nothing)    
+end
 """
     load_winpos_project_from_hdf5(h5file_name::String , project_name::Union{String , Nothing} = nothing)
 
@@ -165,12 +187,12 @@ function load_winpos_project_from_hdf5(h5file_name::String , project_name::Union
         #@show root_node_name
         root_node = h5[root_node_name]
         
-        root_type =  read_attribute_otherwise(root_node , "type" , DomainError(""" 
-                                                                                attribute `type` is not specified """))
-
+        #root_type =  read_attribute_otherwise(root_node , "type" , DomainError(""" 
+                                                                                #attribute `type` is not specified """))
+        root_type = read_data_type(h5)
+        isnothing(root_type) && error("""  attribute `type` is not specified """)
         is_wpp = root_type == "WinPosProject"
         is_wpg = root_type == "WinPosProjectsGroup"
-        #@show root_type
         if !isnothing(project_name) 
             if is_wpp 
                 (project_name != root_node_name) && no_branch_key_error(root_node , project_name)
