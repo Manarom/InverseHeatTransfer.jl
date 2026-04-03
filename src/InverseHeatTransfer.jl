@@ -7,7 +7,7 @@ module InverseHeatTransfer
     @reexport using ScaledPolynomials
     export OptimizableVariable, SingleInverseProblem
 
-    include(joinpath(".","solvers", "OneDHeatTransfer.jl"))
+    include(joinpath(@__DIR__, "solvers", "OneDHeatTransfer.jl"))
 
     @reexport using .OneDHeatTransfer
 
