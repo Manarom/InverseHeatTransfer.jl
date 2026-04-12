@@ -1,0 +1,21 @@
+
+
+Структура организации файла проекта для решения ОЗ 
+
+/Session_ID (или Sample_ID)
+Attributes: date, device_id, operator_name.
+    /Measurements (Группа для WinPosProject)
+        /Raw (Бинарные данные .x, .dat)
+    /Processed (Отфильтрованные или обрезанные данные через DataSelector)
+        /Setup (Группа для DataConnector)
+            Attributes: thickness, sensor_positions, initial_temperature.
+    /InverseProblem (Группа для результатов)
+        Attributes: estimated_conductivity, estimated_diffusivity, residuals, solver_status.
+
+
+/Sample_ID (Group + Attributes: thickness, date, technician)
+    /WinPosData (Group containing all measurement projects)
+        /Project_1 (Group)
+            /Sensor_A/x (Dataset)
+            /Sensor_A/y (Dataset)
+    /DataSelector (Group + Attributes: start_time, end_time, active_sensors, filter_params)
