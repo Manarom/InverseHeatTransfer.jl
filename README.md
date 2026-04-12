@@ -28,6 +28,7 @@ $$
 $$
 
 With initial conditions:
+
 $$
 T(x, 0) = T_i(x)
 $$
