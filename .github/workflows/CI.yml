@@ -41,8 +41,8 @@ jobs:
       - name: Install Unregistered Dependencies
         shell: julia --color=yes {0}
         run: |
-          using Pkg
-          Pkg.add(url="https://github.com/Manarom/ScaledPolynomials.jl.git")
-          Pkg.instantiate()
+          using Pkg;
+          Pkg.add(url="https://github.com/Manarom/ScaledPolynomials.jl.git");
+          Pkg.instantiate();
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
