@@ -5,6 +5,7 @@ p = InverseHeatTransfer.ScaledPolynomial(InverseHeatTransfer.BernsteinSymPoly((1
 lb = (2.0,5.0,4.0)
 ub = (3.0,7.0,5.0)
 flag = (true, true, false)
+
 o = InverseHeatTransfer.OptimizableVariable(p, lb = lb, ub = ub)
 I = InverseHeatTransfer
 @test I.parnumber(o) == 3

@@ -36,6 +36,12 @@ jobs:
         with:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
-      - uses: julia-actions/cache@v3
+      - uses: julia-actions/cache@v2
+      - name: Install Unregistered Dependencies
+        shell: julia --color=yes {0}
+        run: 
+          using Pkg
+          Pkg.add(url="https://github.com/Manarom/ScaledPolynomials.jl.git")
+          Pkg.instantiate()
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1

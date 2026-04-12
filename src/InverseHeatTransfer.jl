@@ -3,14 +3,13 @@ module InverseHeatTransfer
     using Unrolled
     using InteractiveUtils
     using Static
-    import FunctionWrappers
-    
+    using Accessors
+    @reexport using ScaledPolynomials
     export OptimizableVariable, SingleInverseProblem
-    # Write your package code here.
-    include(joinpath(".","solvers", "OneDHeatTransfer.jl"))
+
+    include(joinpath(@__DIR__, "solvers", "OneDHeatTransfer.jl"))
+
     @reexport using .OneDHeatTransfer
-    include(joinpath(".","polynomials", "PolynomialWrappers.jl"))
-    @reexport using .PolynomialWrappers
 
     abstract type AbstractInverseProblem end
     abstract type AbstractRegularization end
@@ -19,29 +18,19 @@ module InverseHeatTransfer
     struct  FiniteDifferenceRegularization <: AbstractRegularization end
     struct FixedDiagonalRegularization <: AbstractRegularization end
 
-
-
-
     abstract type AbstractCovariance  end
     struct NoCovariance <: AbstractCovariance end  
    
- 
-
     const SupportedFlagType{N} = Union{Bool, AbstractVector{Bool}, NTuple{N,Bool}} where N
-    #=struct BinaryPredicate{D}  
-        f::FunctionWrappers.FunctionWrapper{Bool,Tuple{D,D}} 
-    end
-    
-    (f::BinaryPredicate{D})(x::D,y::D) where D = f.f(x,y)=# #this was slow
 
 """
-    wrappes any modifiable and callcable variable of type P, which has parameters accessabel by `coeffs` function
+    Wrappes any modifiable and callcable variable of type P, which has parameters accessabel by `coeffs` function
     and can be bounded by `lb` and `ub` constraints, constraints violation can be checked  with  `lb_violation_fun`
     and `ub_violation_fun` functions. The parameters of `ub` and `lb` objects should be accessable by `lb_coeffs` and 
     `ub_coeffs`, there also should be a function to evaluate the derivative of `lb` and `ub` with respect to their 
     parameters.
     
-        Currently implemented for `ScaledPolynomial` from `PolynomialWrappers`
+        Currently implemented for `ScaledPolynomial` from `ScaledPolynomials`
         The following interface should be implemented to make it work for any particular type
     coeffs(::OV{N,DT,P}) where {N,DT,P} 
     lb_coeffs(::OV{N,DT,P})  
@@ -284,8 +273,8 @@ end
             is_l_single_number && fill!(_lb , lb)
 
             if (is_u_bounded[] && is_l_bounded[]) 
-                count_violations(PolynomialWrappers.coeffs(_ub),
-                 PolynomialWrappers.coeffs(_lb), lb_violation_fun) > 0 && error("Lower boundary $(_lb) is higher than $(_ub)") 
+                count_violations(ScaledPolynomials.coeffs(_ub),
+                 ScaledPolynomials.coeffs(_lb), lb_violation_fun) > 0 && error("Lower boundary $(_lb) is higher than $(_ub)") 
             end    
             B = MVector{N,Bool}
             if isa(flag, Bool) 
@@ -301,12 +290,12 @@ end
                                      ub_violation_fun)
     end
 
-    coeffs(o::OVS) = PolynomialWrappers.coeffs(o.p)
+    coeffs(o::OVS) = ScaledPolynomials.coeffs(o.p)
 
-    lb_coeffs(ov::OVS)  =  PolynomialWrappers.coeffs(ov.lb)
-    ub_coeffs(ov::OVS)  =  PolynomialWrappers.coeffs(ov.ub)
+    lb_coeffs(ov::OVS)  =  ScaledPolynomials.coeffs(ov.lb)
+    ub_coeffs(ov::OVS)  =  ScaledPolynomials.coeffs(ov.ub)
 
-    derivative!(ov_der::OVS, ov::OVS) = PolynomialWrappers.derivative!(ov_der.p, ov.p)
+    derivative!(ov_der::OVS, ov::OVS) = ScaledPolynomials.derivative!(ov_der.p, ov.p)
 
     # const POSSIBLE_TAGS = (:lam, :C, )
 """
@@ -672,14 +661,17 @@ include("covariances.jl")
     discrepancy(x , p::SingleInverseProblem{DT}) where DT
 
 Evaluates the weighted least-sqaure discrepancy of the corresponding inverse problem 
+fills parameters -> solves heat transfer problem -> updates residuals -> evaluates total loss
 """
 function discrepancy!(x , p::SingleInverseProblem{DT}) where DT
-
         update_all_optimizables!(p , x) # refreshes the values of parameters without solving the direct problem 
         solve_direct_problem!(p) # solves the direct problem 
         fill_residual!(p) # fills residual matrix 
         return evaluate_loss(p)
-
+    end
+    set_regularization_multiplier!(s::SingleInverseProblem{DT} , α::DT) where DT = begin 
+        s.α[] = α
+        return nothing
     end
     """
     evaluate_loss(p :: SingleInverseProblem{DT}) where DT
@@ -722,23 +714,30 @@ has the same objects for  λ, λ' and cₚ, hence the problem can be simplified
     struct ParallelInverseProblems{TP <: Tuple, N, T}
         problems::TP
         loss_vect::MVector{N,T}
-        function ParallelInverseProblems(probls::T...) where T <: SingleInverseProblem{DT} where DT <: Number
+        function ParallelInverseProblems(probls::SingleInverseProblem{DT}...) where DT
             N = length(probls)
-            loss_vect = MVector{N , DT}(ntuple( N ) do i 
-                evaluate_loss(probls[i])
-            end
+            loss_vect = MVector{N , DT}(
+                ntuple( N ) do i 
+                    evaluate_loss(probls[i])
+                end
             )
             new{typeof(probls) , N , DT}(probls , loss_vect)
         end
     end
     fill_starting_vectors(pp::ParallelInverseProblems) = fill_starting_vectors(pp.problems[1])
-    function discrepancy!(x , pp::ParallelInverseProblems{TP, N, T}) where {TP , N , T}
-        return sum(ntuple( N ) do i 
-            discrepancy!(x , pp.problems[i])
-        end)
-    end
 
-    function loss_distribution(p::SingleInverseProblem)
+    function discrepancy!(x , pp::ParallelInverseProblems{TP, N, T}) where {TP , N , T}
+        return sum(
+            ntuple( N ) do i 
+                discrepancy!(x , pp.problems[i])
+            end
+            )/N 
+            # total discrepancy divided by the problems number 
+    end
+    set_regularization_multiplier!(pp::ParallelInverseProblems , val) = foreach(pp.problems) do p 
+        set_regularization_multiplier!(p , val)
+    end
+    function loss_distribution(p::SingleInverseProblem )
         return (
                 total = evaluate_loss(p),
 			    covariance  = covariance_loss(p),
@@ -747,17 +746,20 @@ has the same objects for  λ, λ' and cₚ, hence the problem can be simplified
         )
     end
     function loss_distribution(parallel_probls::ParallelInverseProblems)
-        return (total = sum(evaluate_loss , parallel_probls.problems),
+        return (
+             total = sum(evaluate_loss , parallel_probls.problems),
 			 covariance  = sum(covariance_loss,  parallel_probls.problems),
 			 constraints =sum(constraints_loss,  parallel_probls.problems),
 			 regularization = sum(p->p.α[] * regularization_loss(p), parallel_probls.problems))
     end
     function loss_distribution_matrix(parallel_probls::ParallelInverseProblems)
-        (total = [evaluate_loss(p) for p in  parallel_probls.problems],
-			 covariance  = [covariance_loss(p) for p in  parallel_probls.problems],
-			 constraints =[p.ψ[] * constraints_loss(p) for p in  parallel_probls.problems],
-			 regularization = [ p.α[] * regularization_loss(p) for p in parallel_probls.problems]
-             )
+        (
+            total = [evaluate_loss(p) for p in  parallel_probls.problems],
+			covariance  = [covariance_loss(p) for p in  parallel_probls.problems],
+			constraints =[p.ψ[] * constraints_loss(p) for p in  parallel_probls.problems],
+			regularization = [ p.α[] * regularization_loss(p) for p in parallel_probls.problems]
+
+        )
     end
     const ALL_REGULARIZATION_TYPES = subtypes(AbstractRegularization)
     const ALL_COVARIANCE_TYPES = subtypes(AbstractCovariance)
@@ -765,4 +767,5 @@ has the same objects for  λ, λ' and cₚ, hence the problem can be simplified
     @recipe function f(m::OptimizableVariable)
         return (m.p)
     end
+    include("problem_ensemble_functions.jl")
 end
