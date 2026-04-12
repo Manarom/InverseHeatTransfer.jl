@@ -44,6 +44,5 @@ jobs:
           using Pkg
           Pkg.add(url="https://github.com/Manarom/ScaledPolynomials.jl.git")
           Pkg.instantiate()
-
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
