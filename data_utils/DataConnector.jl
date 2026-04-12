@@ -72,6 +72,12 @@ Further several [`DataSelector`](@ref) objects can be combined into [`DataSelect
 	selected_names(d::DataSelector) = collect(d.selected_names)
 	tmin(d::DataSelector) = first(d.tmin_tmax)
 	tmax(d::DataSelector) = last(d.tmin_tmax)
+	
+	Base.show(io::IO , p::DataSelector) = begin 
+        str = join(string.(collect(p.selected_names)) , " , ")
+		locs = join(string.(sensors_locations(p)) , " , ")
+        println(io , "  DataSelector over `$(p.project) , selected sensors : $(str) located at $(locs)" )  
+    end
 	"""
     set_location!(d::DataSelector , name::String , value::Float64)
 
@@ -148,6 +154,8 @@ function combine_selected_data(d::DataSelector)
 			n = WinPos.name(last(first(p)))
 			new(OrderedDict{String , DataSelector}( pj[1]=>DataSelector(project = pj[2]) for  pj in p ) , n)
 		end
+		DataSelectorsGroup(d::OrderedDict{String  , DataSelector}; name = "no name") = new(d , name)
+
 	end
 	
 	select!(d::DataSelectorsGroup , name::String , selected_names) = haskey(d.d , name) && select!(d.d[name] , selected_names)
@@ -202,8 +210,7 @@ function WinPos.export_to_hdf5(projects::DataSelectorsGroup,
 		end
 	end
 	function WinPos.load_from_hdf5(file_name::Union{String , HDF5.File , HDF5.Group}  ,::Type{D}) where D <: DataSelectorsGroup
-		WinPos.assert_data_type(file_name , D)
-		load_data_selectors_group_from_hdf5(file_name)
+		return load_data_selectors_group_from_hdf5(file_name)
 	end
 	function load_data_selectors_group_from_hdf5(file :: String)
 		@assert isfile(file) "Not a file $(file)"
@@ -214,20 +221,33 @@ function WinPos.export_to_hdf5(projects::DataSelectorsGroup,
 			end
 	end
 	function load_data_selectors_group_from_hdf5(branch :: Union{HDF5.File , HDF5.Group})
-		root_type = WinPos.read_data_type(branch)
+		root_type = WinPos.read_data_type_from_hdf5(branch)
 		(isnothing(root_type) || (root_type != "DataSelectorsGroup")) && error("Incorrect branch type")
-		root_node = branch[first(keys(branch))]
+		root_node_key = first(keys(branch))
+		root_node = branch[root_node_key]
+		data_selectors_dict = OrderedDict{String , DataSelector}()
 		for k in keys(root_node)
+			# @show k
 			cur_node = root_node[k]
+			# @show WinPos.read_data_type_from_hdf5(cur_node)
 			WinPos.check_data_type(cur_node , DataSelector) || continue
-			@show k
+			proj_name = ""
 			for q in keys(cur_node)
-				@show q
 				sub_node = cur_node[q]
 				WinPos.check_data_type(sub_node , WinPos.WinPosProject) || continue
-				return WinPos.load_winpos_project_from_hdf5(sub_node)
+				 # winpos project in current data selected_sensors
+				proj_name = q
+				break  
 			end
+			_wprj = WinPos.load_winpos_project_from_hdf5(cur_node , proj_name)
+			_smpl_props = read_sample_properties_from_hdf5(cur_node)
+			_selected_names = read(cur_node , "selected_sensors")
+			_tmin_tmax = (read(cur_node["tmin"]) , read(cur_node["tmax"]))
+			_data_selector = DataSelector(project = _wprj  , selected_names = _selected_names ,
+			 	tmin_tmax = _tmin_tmax , sample_properties = _smpl_props)
+			data_selectors_dict[k] = _data_selector
 		end
+		DataSelectorsGroup(data_selectors_dict , name = root_node_key) 
 	end
 	"""
     add_sample_properties_to_hdf5!(proj_branch , data_selector::DataSelector)
@@ -235,9 +255,7 @@ function WinPos.export_to_hdf5(projects::DataSelectorsGroup,
 Adds sample properties to `proj_branch` from `DataSelector` object
 """
 function add_sample_properties_to_hdf5!(proj_branch , data_selector::DataSelector)
-		
 		sample_branch = WinPos._delete_if_overwrite_or_create_group!(proj_branch , "sample_properties" , true)
-		
 		for fi in fieldnames(SampleProperties)
 			fi_str = String(fi)
 			val = getfield(data_selector.sample_properties , fi)
@@ -246,12 +264,39 @@ function add_sample_properties_to_hdf5!(proj_branch , data_selector::DataSelecto
 			elseif isa(val , Number)
 				sample_branch[fi_str] = val
 			end
+			
 			sens = WinPos._delete_if_overwrite_or_create_group!(sample_branch , "sensors_locations" , true)
 			for (k , v) in data_selector.sample_properties.sensors_locations
 				sens[k] = v
 			end
 		end
 	end
+	function read_sample_properties_from_hdf5(root_branch )
+		sample_properties = SampleProperties()
+		smpl_props_branch = haskey(root_branch , "sample_properties") ?  root_branch["sample_properties"] : error("Branch has $(keys(root_branch)) but no `sample_properties`")
+		sens_locs_branch = haskey(smpl_props_branch , "sensors_locations") ?  smpl_props_branch["sensors_locations"] : error("Branch has $(keys(root_branch)) but no `sensors_locations`")
+		sensors_locations = OrderedDict{String , Float64}()
+		for k in keys(sens_locs_branch)
+			sensors_locations[k] = read(sens_locs_branch[k])
+		end
+		sample_properties.sensors_locations = sensors_locations
+		for k in keys(smpl_props_branch)
+			val  = read(smpl_props_branch[k])
+		end
+		for f_i in fieldnames(SampleProperties)
+			f_i_str = String(f_i)
+			haskey(smpl_props_branch , f_i_str)  || continue 
+			val = read(smpl_props_branch[f_i_str])
+			isa(val , Number) || continue
+			setfield!(sample_properties , f_i , val)
+		end
+		for k in keys(attributes(smpl_props_branch))
+			hasfield(SampleProperties , Symbol(k))
+			val = read(attributes(smpl_props_branch)[k])
+			setfield!(sample_properties , Symbol(k) , val)
+		end
+		return sample_properties
+	end 
 	function add_combined_data_to_hdf5!(proj_branch , data_selector::DataSelector)
 		combined_data_branch = WinPos._delete_if_overwrite_or_create_group!(proj_branch , "combined_data" , true)
 		data_combined = combine_selected_data(data_selector)	

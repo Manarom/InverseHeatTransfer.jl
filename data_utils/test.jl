@@ -1,6 +1,6 @@
 
 #using .DataConnector
-using Plots
+# using Plots
 
 include(joinpath(@__DIR__() , "WinPos.jl"))
 
@@ -30,8 +30,8 @@ wp2 = WinPos.load_winpos_project_from_hdf5(proj_group_file , "04.12.2025_RBSN_9d
 
 wp3 = WinPos.load_winpos_project_from_hdf5(proj_file , "04.12.2025_RBSN_9d3_full_T1400_10Ks")
 
-plot(wp2)
-plot!(wp3)
+#plot(wp2)
+#plot!(wp3)
 
 sum(wp3["T1"].y .- wp2["T1"].y)
 
@@ -68,6 +68,7 @@ for (k , d) in dd_2.d
 end
 ##
 include("DataConnector.jl")
-DataConnector.WinPos.read_data_type(joinpath(@__DIR__ , "data_selector.hdf5"))
+DataConnector.WinPos.read_data_type_from_hdf5(joinpath(@__DIR__ , "data_selector.hdf5"))
 
 dd = DataConnector.WinPos.load_from_hdf5(joinpath(@__DIR__ , "data_selector.hdf5"), DataConnector.DataSelectorsGroup)
+dd
