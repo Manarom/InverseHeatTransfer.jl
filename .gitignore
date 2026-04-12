@@ -2,7 +2,7 @@ Manifest*.toml
 .vscode
 debug_*
 test/test_data/*
-*debug*
+debug*
 data_utils/binary_files/*
 *backup*
 *.hdf5
