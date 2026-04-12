@@ -39,7 +39,7 @@ jobs:
       - uses: julia-actions/cache@v2
 
       - name: Install Unregistered Dependencies
-        shell: julia --color=yes --project{0}
+        shell: julia --color=yes --project=. {0}
         run: |
           using Pkg;
           Pkg.add(url="https://github.com/Manarom/ScaledPolynomials.jl.git");
