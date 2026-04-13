@@ -5,10 +5,12 @@ module WinPos
     using HDF5
 
     export WinPosProject , DataPair , WinPosProjectsGroup 
-    export parse_folder_as_winpos_projects , 
-            find_winpos_projects , to_matrix , to_table , 
+
+    export  load_from_ascii_folder , 
+            load_from_winpos_folder , 
+            to_matrix , to_table , 
             DataPair , read_winposfile , write_winposfile , export_to_hdf5 , 
-            load_winpos_project_from_hdf5 , load_from_hdf5
+            load_from_hdf5 , write_to_winpos_folder
     
             
     struct DataPair
@@ -71,7 +73,7 @@ Reads data from winpos format file to a vector of `Float64`,
         end
         return nothing 
     end
-    read_winposfile(filename) = read_winposfile!(Float64[],filename)
+    read_winposfile(flnm) = read_winposfile!(Float64[],flnm)
     """
     fill_data!(d::DataPair)
 
@@ -127,11 +129,13 @@ function fill_data!(d::DataPair)
         (k ∈ names) && fill_data!(d)
     end
    """
-    write_winpos_project(p::WinPosProject , root_folder; new_name::Union{String , Nothing} = nothing)
+    write_to_winpos_folder(p::WinPosProject , root_folder; new_name::Union{String , Nothing} = nothing)
 
-Writes project creating folder with its name and files `*.x `and `*.dat` corresponding `DataPair`'s
+
+Writes project creating folder with its name and files `*.x `and `*.dat` corresponding
+`DataPair`'s
 """
-function write_winpos_project(p::WinPosProject , root_folder; new_name::Union{String , Nothing} = nothing)
+function write_to_winpos_folder(p::WinPosProject , root_folder; new_name::Union{String , Nothing} = nothing)
 
         !isdir(root_folder) && error("provide folder")
         _name = isnothing(new_name) ? p.name : new_name
@@ -144,12 +148,35 @@ function write_winpos_project(p::WinPosProject , root_folder; new_name::Union{St
             write_winposfile(d.y , d_file_name)
             write_winposfile(d.x , x_file_name)
         end
+        return proj_folder
     end
+"""
+    write_to_winpos_folder(p::WinPosProject , root_folder; new_name::Union{String , Nothing} = nothing)
+
+Writes the group of WinPos projects creating the structure of folders for WinPos data
+"""
+function write_to_winpos_folder(pg::WinPosProjectsGroup , root_folder; new_name::Union{String , Nothing} = nothing)
+    !isdir(root_folder) && error("provide folder")
+    _name = isnothing(new_name) ? pg.name : new_name
+    group_folder = joinpath(root_folder , _name)
+    isdir(group_folder) || mkdir(group_folder)    
+    for (_,p) in pg 
+        fill_data!(p)
+        write_to_winpos_folder(p , group_folder)
+    end
+    return group_folder
+end
+
+
 no_branch_key_error(branch , k) = error("""There is no key `$(k)`, in branch `$(branch)` , available keys: `$(keys(branch))`""")
 
 function load_from_hdf5(h5_file::Union{String , HDF5.File , HDF5.Group}  , ::Type{D}) where D <: AbstractWinPosProject
     assert_data_type(h5_file , D)
     return load_winpos_project_from_hdf5(h5_file)
+end
+function load_from_hdf5(h5_file::String) 
+    data_type = (read_data_type_from_hdf5(h5_file) |> Symbol |> eval)
+    load_from_hdf5(h5_file , data_type)
 end
 assert_data_type(h5_file::Union{String , HDF5.File , HDF5.Group} , ::Type{D}) where D  = @assert check_data_type(h5_file , D) "Unknown data type $(nameof(D))" 
 function check_data_type(h5_file :: Union{String , HDF5.File , HDF5.Group ,  HDF5.Dataset} , ::Type{D}) where D
@@ -487,12 +514,13 @@ function to_matrix(proj::WinPosProject; kwargs...)
         return Tables.table(data, header = names)
     end
 """
-    find_winpos_projects(root_folder::String; include_subfolders::Bool=false)
+    load_from_winpos_folder(root_folder::String; include_subfolders::Bool=false)
     
 Searches input folder (and if include_subfolders = true  all subfolders) for winpos files
-which has `data_name.x` and `data_name.dat` files pair   
+which has `data_name.x` and `data_name.dat` files pair , retruns [`WinPosProjectsGroup`](@ref)
+object.
 """
-    function find_winpos_projects(root_folder::String; include_subfolders::Bool=false)
+    function load_from_winpos_folder(root_folder::String; include_subfolders::Bool=false)
         @assert isdir(root_folder) "Incorrect folder name $(root_folder)"
         projects = OrderedDict{String, Tuple{OrderedDict{String, DataPair} , String}}()
         for (folder, subdirs, files) in  walkdir(root_folder)
@@ -533,29 +561,28 @@ which has `data_name.x` and `data_name.dat` files pair
         return WinPosProjectsGroup(basename(root_folder) , p_dict , root_folder)
     end
     """
-    parse_folder_as_winpos_projects(dir ; name_matcher::String , variable_name::String = "T" , kwargs...)
+    load_from_ascii_folder(dir ; name_matcher::String , variable_name::String = "T" , kwargs...)
 
 
     Searches the folder dir for subfolders containing files with `name_matcher`
-    and interprets the data in these files as `DataPair` taking each column 
-    starting from 2 as dependent variables `Y₁...Yₙ` and first column as the 
-    independent.
+and interprets the data in these files as `DataPair` taking each column 
+starting from 2 as dependent variables `Y₁...Yₙ` and first column as the 
+independent.
 
-    The structure of `dir` ,ust be the following:
-    ```julia
-    # for the following structure `\\dir\\proj1\\T_measured.csv`, `\\dir\\proj2\\T_measured.csv`, 
-    # `\\dir\\proj3\\T_measured1.csv` each folder contains a single file matching the `name_matcher`
-    d = raw"dir"
+The structure of `dir` ,ust be the following:
+```julia
+# for the following structure `\\dir\\proj1\\T_measured.csv`, `\\dir\\proj2\\T_measured.csv`, 
+# `\\dir\\proj3\\T_measured1.csv` each folder contains a single file matching the `name_matcher`
+d = raw"dir"
 
-    WD = parse_folder_as_winpos_projects(d , name_matcher = "T_measured" , variable_name = "T")
+WD = parse_folder_as_winpos_projects(d , name_matcher = "T_measured" , variable_name = "T")
 
-    # now WD is an OrderedDict with keys "proj1", "proj2" and "proj3"
-    # each element of WD is a `WinPosProject` with `data` - `OrderedDict`
-    # with keys "T1".."TN", where each element is the `DataPair` objetc
+# now WD is an OrderedDict with keys "proj1", "proj2" and "proj3"
+# each element of WD is a `WinPosProject` with `data` - `OrderedDict`
+# with keys "T1".."TN", where each element is the `DataPair` objetc
 ```
-
 """
-function parse_folder_as_winpos_projects(dir ; name_matcher::String , variable_name::String = "T" , kwargs...)
+function load_from_ascii_folder(dir ; name_matcher::String , variable_name::String = "T" , kwargs...)
 		projs = OrderedDict{String , WinPosProject}()
 		for f in readdir(dir)
 			full_f = joinpath(dir , f)
@@ -579,6 +606,7 @@ function parse_folder_as_winpos_projects(dir ; name_matcher::String , variable_n
                 data = readdlm(full_f; kwargs...)
                 break
             end
+            @assert length(data) > 1 "There is no data in $(fold) matrching $(name_matcher)"
             t = data[: , 1]
             Tnumb = size(data , 2) - 1
             N = size(data , 1)

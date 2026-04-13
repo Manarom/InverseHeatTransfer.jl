@@ -8,7 +8,7 @@ flag = (true, true, false)
 
 o = InverseHeatTransfer.OptimizableVariable(p, lb = lb, ub = ub)
 I = InverseHeatTransfer
-@test I.parnumber(o) == 3
+@test I.optimizable_parnumber(o) == 3
 @test I.isoptimizable(o)
 I.change_flag(o, new_flag = [false, true, false])
 @test all(o.flag .|  .![false, true, false])

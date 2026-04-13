@@ -2,7 +2,7 @@
 using BenchmarkTools,Plots,Polynomials
  #plotly()
 gr()
-using AllocCheck#, Revise
+#using AllocCheck#, Revise
 include("OneDHeatTransfer.jl")
 
 lam_pars = [0.44, 0.21e-2, 0.35e-4]

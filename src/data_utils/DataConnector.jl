@@ -3,8 +3,9 @@ module DataConnector
 	include("WinPos.jl")
 	using StaticArrays , OrderedCollections , RecipesBase , Reexport
 	using HDF5
-	using .WinPos
-	export SampleProperties , DataSelector , DataSelectorsGroup , combine_selected_data
+	@reexport using .WinPos
+	export SampleProperties , DataSelector , DataSelectorsGroup ,
+	 combine_selected_data 
 """
 Structure to store the information on temperature experiment
 
@@ -72,7 +73,14 @@ Further several [`DataSelector`](@ref) objects can be combined into [`DataSelect
 	selected_names(d::DataSelector) = collect(d.selected_names)
 	tmin(d::DataSelector) = first(d.tmin_tmax)
 	tmax(d::DataSelector) = last(d.tmin_tmax)
-	
+	thickness(d::DataSelector) = d.sample_properties.thickness
+	set_time_region(d::DataSelector; tmin = nothing , tmax = nothing) = begin
+		isnothing(tmin) || setindex!(d.tmin_tmax ,tmin , 1 )
+		isnothing(tmax) || setindex!(d.tmin_tmax ,tmax , 2 )
+		return nothing
+	end
+	each_selected(d::DataSelector) = Iterators.Filter(sens->( last(sens).name ∈ d.selected_names) , d.project)
+
 	Base.show(io::IO , p::DataSelector) = begin 
         str = join(string.(collect(p.selected_names)) , " , ")
 		locs = join(string.(sensors_locations(p)) , " , ")
@@ -83,10 +91,14 @@ Further several [`DataSelector`](@ref) objects can be combined into [`DataSelect
 
 Function to set the sensor location ( it doesn't sets  name sensor as `selected`)
 """
-set_location!(d::DataSelector , name::String , value::Float64) = hasname(d , name) && push!(d.sample_properties.sensors_locations , name => value)
-	set_location!(d :: DataSelector , name_value_pairs) = foreach(name_value_pairs) do (n , v)
-		set_location!(d , n , v)
-	end
+function set_location!(d::DataSelector , name::String , value::Float64) 
+	!hasname(d , name) && error("Inappropriate sensor name ")
+	(value < 0.0 || value > thickness(d))  &&  error("Sensor location  must be within the  the sample 0.0 < $(value) <$(thickness(d)) ")
+	push!(d.sample_properties.sensors_locations , name => value)
+end
+set_location!(d :: DataSelector , name_value_pairs) = foreach(name_value_pairs) do (n , v)
+	set_location!(d , n , v)
+end
 	"""
     sensors_locations(ds :: DataSelector)
 
@@ -165,7 +177,7 @@ function combine_selected_data(d::DataSelector)
 	combine_selected_data(d :: DataSelectorsGroup ) = Iterators.map(combine_selected_data , values(d.d))
 	Base.getindex(d::DataSelectorsGroup , key::String) = d.d[key] 
 	Base.getindex(d::DataSelectorsGroup , i::Int) = (i <= length(d.d)) ? d.d[iterate(keys(d.d) , i)[1]] : error("out of range")
-
+	Base.keys(d::DataSelectorsGroup) = keys(d.d)
 
 	"""
     WinPos.export_to_hdf5(projects::DataSelectorsGroup,

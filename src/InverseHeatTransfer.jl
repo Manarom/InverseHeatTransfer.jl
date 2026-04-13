@@ -8,14 +8,16 @@ module InverseHeatTransfer
     export OptimizableVariable, SingleInverseProblem
 
     include(joinpath(@__DIR__, "solvers", "OneDHeatTransfer.jl"))
+    include(joinpath(@__DIR__, "data_utils", "DataConnector.jl"))
 
+    @reexport using .DataConnector
     @reexport using .OneDHeatTransfer
 
     abstract type AbstractInverseProblem end
     abstract type AbstractRegularization end
 
     struct NoRegularization <: AbstractRegularization end
-    struct  FiniteDifferenceRegularization <: AbstractRegularization end
+    struct FiniteDifferenceRegularization <: AbstractRegularization end
     struct FixedDiagonalRegularization <: AbstractRegularization end
 
     abstract type AbstractCovariance  end
@@ -299,7 +301,7 @@ end
 
     # const POSSIBLE_TAGS = (:lam, :C, )
 """
-    Type to to store the single inverse problem (simplest case of the problem )
+    Type to store the single inverse problem (simplest case of the problem )
     parameters of the type:
 
         DT  - type of temperature data 
@@ -343,7 +345,8 @@ end
         α::Base.RefValue{DT} # regularization multiplier
         ψ::Base.RefValue{DT}  # constraints violation multiplier if contraint violation is added to the loss function 
         include_constraints_violation_to_loss::Base.RefValue{Bool} # if this flag is true, conatraints violation are added to the loss function
-        """
+        
+@doc """
     SingleInverseProblem(
                                         time_data ::Vector{DT},
                                         temperatures ::Matrix{DT}, 
@@ -364,7 +367,27 @@ end
 
                                     ) where {DT , G <: AbstractGrid, CV <: AbstractCovariance, RG <: AbstractRegularization}
 
-TBW
+        Input arguments:
+
+        time_data ::Vector{DT}, - vector of times in seconds
+        temperatures ::Matrix{DT},  - measured temperatures in oC
+        initial_distribution::Union{OptimizableVariable, Number}, - starting temperature distribution in oC
+        thermocouples_locations::AbstractVector{DT}, - thermocouple locations in m
+        C, - volumetric heat capacity 
+        λ, - thermal conductivity (callable object ) λ(T) - returns thermal conductivity in W/m*K
+        dλdT, - thermal conductivity derivative 
+        thickness::Number, - total thickness of the sample in m 
+        xpoints_number::Int, - number of coordinate points 
+        time_points_number::Union{Int,Nothing} = nothing;  - number of time points 
+        covariance::CV = NoCovariance(),  - covariance type, see [`ALL_COVARIANCE_TYPES`](@ref)
+        regularization::RG = NoRegularization(), - regularization type, see [`ALL_REGULARIZATION_TYPES`](@ref) 
+        upper_flux::Union{OptimizableVariable , Nothing} = nothing,
+        lower_flux::Union{OptimizableVariable , Nothing} = nothing,
+        grid_type::Type{G} = UniformGrid ,
+        thermocouple_location_relative_tolerance::Float64 = -1.0 ,
+        alpha::Number = 1e-3,
+        psi::Number = 1e-3 ,
+        include_constraints_violation_to_loss::Bool =false
 """
 function SingleInverseProblem(
                                         time_data ::Vector{DT},
@@ -768,4 +791,6 @@ has the same objects for  λ, λ' and cₚ, hence the problem can be simplified
         return (m.p)
     end
     include("problem_ensemble_functions.jl")
+
+
 end
