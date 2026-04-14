@@ -40,7 +40,7 @@ default_data_fodler = joinpath(@__DIR__, "..","test","test_data","property_inver
 source_path = joinpath(@__DIR__,"..","src")
 
 # ╔═╡ 6d2a48d4-e458-4edd-b22a-7b7dae9f492c
-includet(joinpath(source_path, "WinPos.jl"))
+#includet(joinpath(source_path, "WinPos.jl"))
 
 # ╔═╡ a6d591eb-20f2-476f-af19-9b0084ddf929
 IHT = InverseHeatTransfer
@@ -50,7 +50,8 @@ begin
 	
 	PW = IHT.ScaledPolynomials
 	OHT = IHT.OneDHeatTransfer
-	WP = Main.WinPos
+	WP = IHT.WinPos
+	DC = IHT.DataConnector
 end
 
 # ╔═╡ 438a3909-9367-4660-a3ca-bd1786ab6016
@@ -60,7 +61,7 @@ plot_common_args = (grid = true, gridlinewidth=3, gridstyle = :dot,minorgrid=tru
 md""" ## Loading experimental data from winpos project"""
 
 # ╔═╡ 450fb200-eec6-4e96-9ebd-81453c015830
-md" Load data from : $(@bind input_data_type Select([:winpos,:files] , default = :files))"
+md" Load data from : $(@bind input_data_type Select([:winpos, :ascii , :hdf5] , default = :files))"
 
 # ╔═╡ a407a99b-b40c-436c-a2a0-af2e19b347b8
 is_winpos = input_data_type == :winpos;
@@ -72,9 +73,9 @@ end
 
 # ╔═╡ 81c2f93b-05b1-4eb0-9919-4ef76ecad233
 begin 
-	projs_wp = WP.find_project_pairs(working_folder)
-	projs_txt  = WP.parse_folder_as_winpos_projects(working_folder ; name_matcher="Tmeasured", variable_name = "T")
-	projects = merge(projs_wp , projs_txt)
+	projects = WP.load_from_winpos_folder(working_folder)
+	#projs_txt  = WP.load_from_ascii_folder(working_folder ; name_matcher="Tmeasured", variable_name = "T")
+	#projects = merge(projs_wp , projs_txt)
 end;
 
 # ╔═╡ 17fbc55f-12a8-431e-ac00-b28304f2eb6c
@@ -87,7 +88,7 @@ $(@bind cur_proj confirm(MultiSelect(collect(keys(projects)) , default = ["10ks"
 """
 
 # ╔═╡ 0a4ce046-5b43-425d-a3f2-da8d9867b181
-mutable struct DataConnector
+#=mutable struct DataConnector
 	all_names::Vector{String}
 	selected_names::Vector{String}
 	data :: Matrix{Float64}
@@ -96,7 +97,7 @@ mutable struct DataConnector
 	total_thickness :: Float64
 	project:: WP.WinPosProject
 	
-end
+end=#
 
 # ╔═╡ dcf0034b-e405-4f27-b853-acb7a58b9cc6
 t_cutted_min(d::DataConnector) = minimum(d.data_cutted[:,1])
@@ -113,15 +114,6 @@ end
 
 # ╔═╡ 054d932d-12be-4538-ab34-b5d3f465bf0f
 projects
-
-# ╔═╡ 304091a8-4206-49c2-9c98-cffb18a0e906
-begin
-	all_data =Dict{String , DataConnector}()
-	for n in  cur_proj
-		selected_proj = projects[n]
-		all_data[selected_proj.name] = DataConnector(collect(keys(selected_proj.data)) , String[] , Matrix{Float64}(undef,0,0) , Matrix{Float64}(undef,0,0) , Float64[] , 0.0, selected_proj)
-	end
-end;
 
 # ╔═╡ 2e676f8c-909a-4fb7-b35e-57d08f802df7
 data_changed = true
@@ -403,22 +395,6 @@ function multi_values(names, default_values=nothing)
 	end
 end
 
-# ╔═╡ 6d0d7cb4-45fc-405f-8a5d-cf10ad5e380b
-function multi_values(all_data::AbstractDict, field_name::Symbol =  :selected_names , default_values=nothing)
-	PlutoUI.combine() do Child
-		@htl("""
-		<h6>field_name, mm</h6>
-		<ul>
-		$([
-			@htl("<li>$(join( [n , f] , ":")): $(Child( join( [n , f] , ":"), NumberField(0:1e-3:20 , default = 0.0)))</li>")
-			
-			for (n, f) in paired_selected_names(all_data)
-		])
-		</ul>
-		""")
-	end
-end
-
 # ╔═╡ 646aebc7-b3db-443f-888f-800d444b4fa3
 function fill_data_connector_data!(d::DataConnector)
 	isempty(d.selected_names) && return false
@@ -436,6 +412,22 @@ function paired_selected_names(all_data , field_name :: Symbol = :selected_names
 
 	end
 	return out
+end
+
+# ╔═╡ 6d0d7cb4-45fc-405f-8a5d-cf10ad5e380b
+function multi_values(all_data::AbstractDict, field_name::Symbol =  :selected_names , default_values=nothing)
+	PlutoUI.combine() do Child
+		@htl("""
+		<h6>field_name, mm</h6>
+		<ul>
+		$([
+			@htl("<li>$(join( [n , f] , ":")): $(Child( join( [n , f] , ":"), NumberField(0:1e-3:20 , default = 0.0)))</li>")
+			
+			for (n, f) in paired_selected_names(all_data)
+		])
+		</ul>
+		""")
+	end
 end
 
 # ╔═╡ 96b4c7c4-30a8-407c-9bd4-245f0ee0d9b2
@@ -961,6 +953,21 @@ end
 # ╔═╡ 58eb27e1-38c5-4a90-9e80-61f6213aa721
 #= dd = JSON2.read(read(joinpath(raw"D:\JULIA\JULIA_DEPOT\dev\InverseHeatTransfer.jl\test\test_data\binary_files","dasfsdf.json"), String)) =#
 
+# ╔═╡ 304091a8-4206-49c2-9c98-cffb18a0e906
+# ╠═╡ disabled = true
+#=╠═╡
+begin
+	all_data =Dict{String , DataConnector}()
+	for n in  cur_proj
+		selected_proj = projects[n]
+		all_data[selected_proj.name] = DataConnector(collect(keys(selected_proj.data)) , String[] , Matrix{Float64}(undef,0,0) , Matrix{Float64}(undef,0,0) , Float64[] , 0.0, selected_proj)
+	end
+end;
+  ╠═╡ =#
+
+# ╔═╡ 4c41953d-1625-4383-9e57-545ab7f4c0e5
+all_data = DC.DataSelectorsGroup(projects)
+
 # ╔═╡ Cell order:
 # ╠═a17fe1fe-5542-454b-b45e-942ac52b6f1a
 # ╠═2bb45200-d7ba-47a3-b82d-9c147b5d7601
@@ -975,6 +982,7 @@ end
 # ╟─6e062bd9-d20c-4e1d-b772-328bec8859ea
 # ╠═81c2f93b-05b1-4eb0-9919-4ef76ecad233
 # ╟─17fbc55f-12a8-431e-ac00-b28304f2eb6c
+# ╠═4c41953d-1625-4383-9e57-545ab7f4c0e5
 # ╠═0a4ce046-5b43-425d-a3f2-da8d9867b181
 # ╠═dcf0034b-e405-4f27-b853-acb7a58b9cc6
 # ╟─4d27d75e-5e95-43c9-9e77-b9ae3d6c4bb9
@@ -1067,7 +1075,7 @@ end
 # ╟─fba5bc8b-25cb-406b-aa13-f06c591e08c9
 # ╟─5135015e-0fcf-484a-86ad-3cb7e40849bd
 # ╟─fd51a6c8-6569-4bfd-86ac-883c648fe6d9
-# ╟─6cd4f554-7242-4e97-b4cb-8549e3b70139
+# ╠═6cd4f554-7242-4e97-b4cb-8549e3b70139
 # ╟─6d0d7cb4-45fc-405f-8a5d-cf10ad5e380b
 # ╟─646aebc7-b3db-443f-888f-800d444b4fa3
 # ╟─60458134-1de0-475e-ba64-24b6f33a2980

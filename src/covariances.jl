@@ -26,33 +26,27 @@
         τ::DT
         σ²::DT
     end
-   """
-    covariance_loss(p::SingleInverseProblem{DT, TN, N,
-                        PT , CV  } ) where {DT , 
-                                            PT , CV <: AR1Covariance{DT}} where { TN, N}
+    """
+            covariance_loss(p::SingleInverseProblem{DT, TN, N,
+                            PT , CV  } ) where {DT , 
+                                                PT , CV <: AR1Covariance{DT}} where { TN, N}
 
-    Evaluates covariance for the first order autoregression , [Ornstein - Uhlenbeck process](https://en.wikipedia.org/wiki/Ornstein%E2%80%93Uhlenbeck_process)
+            Evaluates covariance for the first order autoregression , [Ornstein - Uhlenbeck process](https://en.wikipedia.org/wiki/Ornstein%E2%80%93Uhlenbeck_process)
 
-Measured temperature is assumed coorrelated with the following covariance:
-
-Σᵢⱼ = exp( - (i - j)*Δt/τ) 
-
-where `Δt` is the time step of the uniform grid (thus is works only on uniform grid solvers)
-`τ` - is the relaxation time 
-
-In this case there is an analytical inversion formula:
-
-`rᵗΣ⁻¹r = [r₁² + rₙ² + (1 + ρ²)Σ|i=2:n-1|(rᵢ²) - 2ρΣ|i=1:n-1|(rᵢrᵢ₊₁)]/(1 - ρ²)`
-ρ = exp(- Δt/τ)
-
-
-"""
-function covariance_loss(p::SingleInverseProblem{DT, TN, N,
+        Measured temperature is assumed coorrelated with the following covariance:
+        Σᵢⱼ = exp( - (i - j)*Δt/τ) 
+        where `Δt` is the time step of the uniform grid (thus is works only on uniform grid solvers)
+        `τ` - is the relaxation time 
+        In this case there is an analytical inversion formula:
+        `rᵗΣ⁻¹r = [r₁² + rₙ² + (1 + ρ²)Σ|i=2:n-1|(rᵢ²) - 2ρΣ|i=1:n-1|(rᵢrᵢ₊₁)]/(1 - ρ²)`
+        `ρ = exp(- Δt/τ)`
+    """
+    function covariance_loss(p::SingleInverseProblem{DT, TN, N,
                         PT , CV  } ) where {DT , 
                                             PT <: HeatTransferProblem , 
                                             CV <: AR1Covariance{DT}} where {TN, N}
-        !isa(p.direct_problem.grid , UniformGrid) && error("Grid must be uniform")
 
+        !isa(p.direct_problem.grid , UniformGrid) && error("Grid must be uniform")
         dt = timestep(p.direct_problem)
         # as far as this type of covariance takes into account the timestep value need to recalculate 
         ρ = exp(- dt / p.covariance.τ)
@@ -71,6 +65,7 @@ function covariance_loss(p::SingleInverseProblem{DT, TN, N,
                 s_squares += r_curr * r_curr # rᵢ²
                 s_cross += r_curr * p.residual[i + 1 , j] # rᵢrᵢ₊₁
             end
+
             s_squares *= ρ2_plus_1 #  (1 + ρ²)Σ|i=2:n-1|(rᵢ²)
             # need to add cross product for i = 1 than mult by two_ρ
             @inbounds begin
@@ -101,7 +96,7 @@ function covariance_loss(::SingleInverseProblem{DT, TN, N,
     """
     fill_covariance_cache!(::SingleInverseProblem)
 
-By default covariance fill cachedo nothing
+By default covariance fill cache do nothing
 """
 function fill_covariance_cache!(::SingleInverseProblem) end
 function fill_covariance_cache!(p::SingleInverseProblem{DT, TN, N,

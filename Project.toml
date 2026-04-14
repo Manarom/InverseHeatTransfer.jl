@@ -4,7 +4,7 @@ version = "1.0.0"
 authors = ["Roman Mironov"]
 
 [workspace]
-projects = ["test", "notebook"]
+projects = ["test", "notebook" , "data_utils"]
 
 [deps]
 Accessors = "7d9f7c33-5ae7-4f3b-8dc6-eff91059b697"
