@@ -81,5 +81,18 @@ wp_ascii = DC.WinPos.load_from_ascii_folder(ascii_folder , name_matcher = "Tmeas
     println("ok")
 end
 
+dc_group_file = raw"E:\JULIA\JULIA_DEPOT\dev\InverseHeatTransfer.jl\src\data_utils\data_selector_test.hdf5"
+dc_group_loaded = DC.load_from_hdf5(dc_group_file , DC.DataSelectorsGroup)
 
-(x , y , names) = DataConnector.combine_selected_data(d1)
+DC.selected_names(dc_group_loaded)
+DC.unselect!(dc_group_loaded)
+DC.WinPos.all_names(dc_group_loaded)
+DC.selected_names(dc_group_loaded)
+DC.select!(dc_group_loaded[1] , ("T2" , "T2" , "T3"))
+DC.selected_names(dc_group_loaded)
+DC.default_tmin_tmax(dc_group_loaded[1])
+
+for (_ , data_pair_i) in DC.each_selected(dc_group_loaded[1])
+    @show extrema(data_pair_i.x)
+
+end

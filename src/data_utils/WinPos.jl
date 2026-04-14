@@ -102,6 +102,7 @@ function fill_data!(d::DataPair)
 
     filter_data_names(proj::AbstractWinPosProject, ::Nothing) = keys(proj.data)
     filter_data_names(proj::AbstractWinPosProject, names) = filter(Base.Fix1(haskey,proj.data), names)
+    
     Base.getindex(p::AbstractWinPosProject, k::String)  = p.data[k]
     Base.getindex(p::AbstractWinPosProject , i::Int) = (i <= length(p.data)) ? p.data[iterate(keys(p.data) , i)[1]] : error("out of range")
     name(p::AbstractWinPosProject) = p.name
@@ -114,6 +115,8 @@ function fill_data!(d::DataPair)
     Base.keys(p::AbstractWinPosProject) = keys(p.data)
     Base.haskey(p::AbstractWinPosProject , name) = haskey(p.data , name)
     
+    all_names(p::AbstractWinPosProject) = collect(keys(p))
+
     Base.show(io::IO , p::WinPosProject) = begin 
         str = join(string.(keys(p.data)) , " , ")
         println(io , " WinPosProject named `$(p.name)` contains : $(str) sensors data" )  

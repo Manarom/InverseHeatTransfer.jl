@@ -69,8 +69,39 @@ Further several [`DataSelector`](@ref) objects can be combined into [`DataSelect
 	hasname(d::DataSelector , name) = haskey(d.project , name)
 	isselected(d::DataSelector , name) = name ∈ d.selected_names
 	select!(d::DataSelector , name::String) = hasname(d , name) && push!(d.selected_names , name) 
+	select!(d::DataSelector) = foreach(all_names(d)) do name
+		push!(d.selected_names , name)
+	end
 	unselect!(d::DataSelector , name:: String) = isselected(d , name) && delete!(d.selected_names , name)
+	unselect!(d::DataSelector) = foreach(WinPos.all_names(d)) do name
+		delete!(d.selected_names , name)
+	end
+	"""
+    default_tmin_tmax(d::DataSelector)
+
+Returns the tuple of default values for tmin_tmax range according to the selected data 
+"""
+function default_tmin_tmax(d::DataSelector) 
+		is_any_selected(d) || return (tmin = -Inf , tmax = Inf)
+		tmin = -Inf 
+		tmax = Inf
+		for (_ , data_pair_i) in each_selected(d)
+			WinPos.fill_data!(data_pair_i)
+			(_tmin , _tmax)  = extrema(data_pair_i.x)
+			(_tmin > tmin) && (tmin = _tmin) 
+			(_tmax < tmax) && (tmax = _tmax) 
+		end
+		return (tmin = tmin , tmax = tmax)
+	end
+
+	WinPos.all_names(d::DataSelector) = WinPos.all_names(d.project)
+	function fill_data_for_selected!(d::DataSelector)
+		for (_ , data_pair_i) in each_selected(d)
+			WinPos.fill_data!(data_pair_i)
+		end
+	end
 	selected_names(d::DataSelector) = collect(d.selected_names)
+	is_any_selected(d::DataSelector) = !isempty(d.selected_names)
 	tmin(d::DataSelector) = first(d.tmin_tmax)
 	tmax(d::DataSelector) = last(d.tmin_tmax)
 	thickness(d::DataSelector) = d.sample_properties.thickness
@@ -172,12 +203,24 @@ function combine_selected_data(d::DataSelector)
 	
 	select!(d::DataSelectorsGroup , name::String , selected_names) = haskey(d.d , name) && select!(d.d[name] , selected_names)
 	unselect!(d::DataSelectorsGroup , name::String , selected_names) = haskey(d.d , name) && unselect!(d.d[name] , selected_names)
+	unselect!(d::DataSelectorsGroup) = foreach(d.d) do (_,di)
+		unselect!(di)
+	end
+	
 	selected_data(d :: DataSelectorsGroup) = Iterators.map(selected_data , values(d.d))
 	selected_data_cutted(d :: DataSelectorsGroup ) = Iterators.map(selected_data_cutted , values(d.d))
 	combine_selected_data(d :: DataSelectorsGroup ) = Iterators.map(combine_selected_data , values(d.d))
+
+	fill_data_for_selected!(d::DataSelectorsGroup) = foreach(d.d) do (_,di)
+		fill_data_for_selected!(di)
+	end
+
 	Base.getindex(d::DataSelectorsGroup , key::String) = d.d[key] 
 	Base.getindex(d::DataSelectorsGroup , i::Int) = (i <= length(d.d)) ? d.d[iterate(keys(d.d) , i)[1]] : error("out of range")
 	Base.keys(d::DataSelectorsGroup) = keys(d.d)
+
+	WinPos.all_names(d::DataSelectorsGroup) = [k => WinPos.all_names(di) for (k , di) in d.d]
+	selected_names(d::DataSelectorsGroup) = [k => selected_names(di) for (k , di) in d.d]
 
 	"""
     WinPos.export_to_hdf5(projects::DataSelectorsGroup,
@@ -211,7 +254,6 @@ function WinPos.export_to_hdf5(projects::DataSelectorsGroup,
 				WinPos.add_winpos_proj_to_hdf5!(proj_branch , data_selector.project.name , 
 							data_selector.project , 
 							overwrite_groups , add_path_info)
-							
 				# adding combined_data to the project group
 				add_combined_data_to_hdf5!(proj_branch , data_selector)
 				add_sample_properties_to_hdf5!(proj_branch , data_selector)
@@ -228,9 +270,9 @@ function WinPos.export_to_hdf5(projects::DataSelectorsGroup,
 		@assert isfile(file) "Not a file $(file)"
 		return h5open(file) do h5 
 			#	root_node_name = first(keys(h5))
-    			#root_node = h5[root_node_name]
-				load_data_selectors_group_from_hdf5(h5)
-			end
+    		#	root_node = h5[root_node_name]
+			load_data_selectors_group_from_hdf5(h5)
+		end
 	end
 	function load_data_selectors_group_from_hdf5(branch :: Union{HDF5.File , HDF5.Group})
 		root_type = WinPos.read_data_type_from_hdf5(branch)

@@ -34,24 +34,22 @@ begin
 end
 
 # ╔═╡ 2bb45200-d7ba-47a3-b82d-9c147b5d7601
-default_data_fodler = joinpath(@__DIR__, "..","test","test_data","property_inversion_ansys_new")
+default_data_fodler = joinpath(@__DIR__, "..","src","data_utils","binary_files")
 
 # ╔═╡ 80479ac3-897a-4aa7-8ce9-977fa4912bc6
 source_path = joinpath(@__DIR__,"..","src")
 
 # ╔═╡ 6d2a48d4-e458-4edd-b22a-7b7dae9f492c
-#includet(joinpath(source_path, "WinPos.jl"))
-
-# ╔═╡ a6d591eb-20f2-476f-af19-9b0084ddf929
-IHT = InverseHeatTransfer
+#includet(joinpath(@__DIR__, "CustomPlutoFunctions.jl"))
 
 # ╔═╡ 35958e8a-eb7a-4eff-89a0-f9c04aff2a37
 begin 
-	
+	IHT = InverseHeatTransfer
 	PW = IHT.ScaledPolynomials
 	OHT = IHT.OneDHeatTransfer
 	WP = IHT.WinPos
 	DC = IHT.DataConnector
+	
 end
 
 # ╔═╡ 438a3909-9367-4660-a3ca-bd1786ab6016
@@ -80,43 +78,25 @@ end;
 
 # ╔═╡ 17fbc55f-12a8-431e-ac00-b28304f2eb6c
 md""" #### select projects to be taken into account: 
-
-
-$(@bind cur_proj confirm(MultiSelect(collect(keys(projects)) , default = ["10ks" , "2ks"]))) 
-
-
+$(@bind selected_projects confirm(MultiSelect(collect(keys(projects)) , default = ["10ks" , "2ks"]))) 
 """
 
-# ╔═╡ 0a4ce046-5b43-425d-a3f2-da8d9867b181
-#=mutable struct DataConnector
-	all_names::Vector{String}
-	selected_names::Vector{String}
-	data :: Matrix{Float64}
-	data_cutted :: Matrix{Float64}
-	locations :: Vector{Float64}
-	total_thickness :: Float64
-	project:: WP.WinPosProject
-	
-end=#
+# ╔═╡ 4c41953d-1625-4383-9e57-545ab7f4c0e5
+projects
 
-# ╔═╡ dcf0034b-e405-4f27-b853-acb7a58b9cc6
-t_cutted_min(d::DataConnector) = minimum(d.data_cutted[:,1])
-
-# ╔═╡ 4d27d75e-5e95-43c9-9e77-b9ae3d6c4bb9
-t_cutted_max(d::DataConnector) = maximum(d.data_cutted[:,1])
-
-# ╔═╡ 28b91e49-996c-4abc-9db4-30b515444aab
-function cut_data!(d::DataConnector , tmin , tmax)
-	t = @view d.data[: , 1]
-	f =@. (t < tmax) & (t > tmin) 
-	d.data_cutted = d.data[f,:]
+# ╔═╡ 3aa5a908-c4eb-4f6a-899e-c7ba2d29fa01
+if !isempty(selected_projects) 
+	all_data = DC.DataSelectorsGroup([ p for p in projects if first(p) ∈  selected_projects]...)
 end
 
 # ╔═╡ 054d932d-12be-4538-ab34-b5d3f465bf0f
 projects
 
-# ╔═╡ 2e676f8c-909a-4fb7-b35e-57d08f802df7
-data_changed = true
+# ╔═╡ efade481-e96b-43a5-883a-6ffdbb97bdb4
+
+
+# ╔═╡ 359994cc-01e8-453d-b3e3-a878ffe466eb
+
 
 # ╔═╡ 6c4cb363-3bda-4dfa-8499-8201a013895d
 @bind show_data_table Select(collect(keys(all_data)))
@@ -380,14 +360,15 @@ function filter_couple_breakage!(T)
 end
 
 # ╔═╡ 6cd4f554-7242-4e97-b4cb-8549e3b70139
-function multi_values(names, default_values=nothing)
+function multi_values(names, default_values=nothing , title = "Thickness , mm" , rng=0:1e3:20 )
 	isnothing(default_values) && (default_values = zeros(length(names)))
 	PlutoUI.combine() do Child
 		@htl("""
-		<h6>Thicknesses, mm</h6>
+		<h6>$title</h6>
 		<ul>
 		$([
-			@htl("<li>$(name): $(Child(name, NumberField(0:1e3:20, default=deflt)))</li>")
+			@htl("<li>
+				 $(name): $(Child(name, NumberField(rng, default=deflt)))		</li>")
 			for (name,deflt) in zip( names, default_values)
 		])
 		</ul>
@@ -395,55 +376,72 @@ function multi_values(names, default_values=nothing)
 	end
 end
 
+# ╔═╡ 5ef97b4a-4e44-47ee-b9a2-2ce9f73063f5
+multi_values(data::DC.DataSelectorsGroup; kwargs...) = multi_values(data.d; kwargs...)
+
 # ╔═╡ 646aebc7-b3db-443f-888f-800d444b4fa3
-function fill_data_connector_data!(d::DataConnector)
+#=function fill_data_connector_data!(d::DC.DataSelectorsGroup)
 	isempty(d.selected_names) && return false
 	(ttt, TTT, winpos_data_names) = Main.WinPos.joindata(d.project, names = d.selected_names)
 	d.selected_names = winpos_data_names
 	d.data =  hcat(ttt,TTT)
 	d.data_cutted = copy(d.data)
-end
+end=#
 
 # ╔═╡ 60458134-1de0-475e-ba64-24b6f33a2980
-function paired_selected_names(all_data , field_name :: Symbol = :selected_names)
+# makes pairs from name - value pairs iterator by taking the field `field_name` of `value` 
+function paired_selected_names(all_data ; unary_operator = Base.Fix2(getfield , :selected_variables))
 	out = Vector{Pair{String , String}}()
-	for (n,v) in all_data
-		append!(out , [ Pair(n , k)  for k in  getfield(v , field_name) ] )
-
+	for (n , v) in all_data
+		append!(out , [ Pair(n , k)  for k in  unary_operator(v) ] )
 	end
 	return out
 end
 
 # ╔═╡ 6d0d7cb4-45fc-405f-8a5d-cf10ad5e380b
-function multi_values(all_data::AbstractDict, field_name::Symbol =  :selected_names , default_values=nothing)
+function multi_values(all_data::AbstractDict; unary_operator=DC.selected_names , default_values=nothing)
 	PlutoUI.combine() do Child
 		@htl("""
 		<h6>field_name, mm</h6>
 		<ul>
 		$([
-			@htl("<li>$(join( [n , f] , ":")): $(Child( join( [n , f] , ":"), NumberField(0:1e-3:20 , default = 0.0)))</li>")
+			@htl("<li>
+				 
+				 $(join( [n , f] , ":")): $(
+					 Child( 
+						 join( [n , f] , ":") , NumberField(0:1e-3:20 , default = 0.0)
+						  )
+				 )
+			</li>")
 			
-			for (n, f) in paired_selected_names(all_data)
+			for (n, f) in paired_selected_names(all_data , unary_operator =unary_operator)
 		])
 		</ul>
 		""")
 	end
 end
 
+# ╔═╡ ae2c7800-31d1-45bc-b7cf-c39c0140b27d
+paired_selected_names(all_data.d , unary_operator=WP.all_names)
+
 # ╔═╡ 96b4c7c4-30a8-407c-9bd4-245f0ee0d9b2
-function project_selector(all_data , field_name::Symbol)
+function sensors_selector(all_data::DC.DataSelectorsGroup ;unary_operator = WP.all_names)
 
 		PlutoUI.combine() do Child
 		@htl("""
 		<ul>
 		$([
-			@htl("<li>$(name): \n $(Child(
+			@htl("<li>$(name): \n $(
+				Child(
 				name , 
-				MultiSelect(collect(getfield(v , field_name) ))
+				MultiSelect(unary_operator(data_selector) 
+						   )
+				)
 			)
-								   )</li>")
-			for (name, v) in all_data
-				 ])
+			)</li>")
+			
+			for (name, data_selector) in all_data.d
+		])
 		</ul>
 		""")
 	end
@@ -451,7 +449,7 @@ function project_selector(all_data , field_name::Symbol)
 end
 
 # ╔═╡ c30f95e5-93eb-4ab7-bc84-4bfe7092cf47
-@bind selected_variables_multi  confirm(project_selector(all_data , :all_names))
+@bind selected_variables_multi  confirm(sensors_selector(all_data))
 
 # ╔═╡ 0177413c-0f89-4935-9963-5aeebd333b9a
 is_selected = !any(isempty , selected_variables_multi)
@@ -469,13 +467,11 @@ end
 
 # ╔═╡ 56a5f3c9-6a41-4326-83ab-2c19d65b3ed0
 if is_selected
-		for  ki in keys(selected_variables_multi)
-			name = string(ki)
-			d = all_data[name]
-			d.selected_names = getfield(selected_variables_multi , ki)
-			fill_data_connector_data!(d)
-		end
-		
+	DC.unselect!(all_data)
+	foreach(pairs(selected_variables_multi)) do (ki , ni)
+		DC.select!(all_data , String(ki) , ni)
+	end
+	DC.fill_data_for_selected!(all_data)
 end;
 
 # ╔═╡ b3c96eae-64a5-4245-85b6-b7b994e03ff7
@@ -896,15 +892,37 @@ begin
 	p_hist
 end
 
+# ╔═╡ 6b4d07af-a40b-4ed1-a610-2a433311c94e
+time_range_selector(all_data::DC.DataSelectorsGroup; kwargs...) = time_range_selector(all_data.d; kwargs...)
+
+# ╔═╡ 231e4df4-e1c6-47c2-a1eb-2d9c6dde8cab
+DC.default_tmin_tmax(all_data[2])
+
+# ╔═╡ 50befa75-73e5-4223-86e0-1c1d02134345
+function _default_tmin_tmax(d::DC.DataSelector) 
+		DC.is_any_selected(d) || return (tmin = -Inf , tmax = Inf)
+		tmin = -Inf 
+		tmax = Inf
+		for (_ , data_pair_i) in DC.each_selected(d)
+			(_tmin , _tmax)  = extrema(data_pair_i.x)
+			(_tmin > tmin) && (tmin = _tmin) 
+			(_tmax < tmax) && (tmax = _tmax) 
+		end
+		return (tmin = tmin , tmax = tmax)
+	end
+
+# ╔═╡ ee70abb1-98ff-4674-916b-f0439c94b8af
+_default_tmin_tmax(all_data[1])
+
 # ╔═╡ a1c795e4-1be0-46e0-b6a2-4eda990fd65e
-function time_range_selector(all_data::AbstractDict)
+function time_range_selector(all_data::AbstractDict; unary_opertor = DC.default_tmin_tmax)
 	N = length(all_data)
 	PlutoUI.combine() do Child
 		@htl("""
 		<h6>Time range, tmin - tmax , s</h6>
 		<ul>
 		$([
-			@htl("<li>$(k): $(Child( k, RangeSlider( minimum(d.data[:,1]) : maximum(d.data[:,1]) )))</li>")
+			@htl("<li>$(k): $(Child( k, RangeSlider( range(unary_opertor(d)...) )))</li>")
 			
 			for (k , d) in all_data
 		])
@@ -947,56 +965,40 @@ begin
 	end
 end
 
+# ╔═╡ f62c48f1-139a-4e0b-be55-84ecc3323f64
+time_range_selector(all_data)
+
 # ╔═╡ 87ae11cd-8c4f-4835-9a9f-852447a45c97
 #=write(joinpath(raw"D:\JULIA\JULIA_DEPOT\dev\InverseHeatTransfer.jl\test\test_data\binary_files","dasfsdf.json"), JSON2.write(Dict(:T1=>2.0, :T2=>3.0))) =#
 
 # ╔═╡ 58eb27e1-38c5-4a90-9e80-61f6213aa721
 #= dd = JSON2.read(read(joinpath(raw"D:\JULIA\JULIA_DEPOT\dev\InverseHeatTransfer.jl\test\test_data\binary_files","dasfsdf.json"), String)) =#
 
-# ╔═╡ 304091a8-4206-49c2-9c98-cffb18a0e906
-# ╠═╡ disabled = true
-#=╠═╡
-begin
-	all_data =Dict{String , DataConnector}()
-	for n in  cur_proj
-		selected_proj = projects[n]
-		all_data[selected_proj.name] = DataConnector(collect(keys(selected_proj.data)) , String[] , Matrix{Float64}(undef,0,0) , Matrix{Float64}(undef,0,0) , Float64[] , 0.0, selected_proj)
-	end
-end;
-  ╠═╡ =#
-
-# ╔═╡ 4c41953d-1625-4383-9e57-545ab7f4c0e5
-all_data = DC.DataSelectorsGroup(projects)
-
 # ╔═╡ Cell order:
 # ╠═a17fe1fe-5542-454b-b45e-942ac52b6f1a
-# ╠═2bb45200-d7ba-47a3-b82d-9c147b5d7601
-# ╠═80479ac3-897a-4aa7-8ce9-977fa4912bc6
+# ╟─2bb45200-d7ba-47a3-b82d-9c147b5d7601
+# ╟─80479ac3-897a-4aa7-8ce9-977fa4912bc6
 # ╠═6d2a48d4-e458-4edd-b22a-7b7dae9f492c
-# ╠═a6d591eb-20f2-476f-af19-9b0084ddf929
-# ╠═35958e8a-eb7a-4eff-89a0-f9c04aff2a37
+# ╟─35958e8a-eb7a-4eff-89a0-f9c04aff2a37
 # ╠═438a3909-9367-4660-a3ca-bd1786ab6016
 # ╟─db671921-13dc-497b-81e5-dcb4da0695f9
-# ╠═450fb200-eec6-4e96-9ebd-81453c015830
+# ╟─450fb200-eec6-4e96-9ebd-81453c015830
 # ╠═a407a99b-b40c-436c-a2a0-af2e19b347b8
-# ╟─6e062bd9-d20c-4e1d-b772-328bec8859ea
+# ╠═6e062bd9-d20c-4e1d-b772-328bec8859ea
 # ╠═81c2f93b-05b1-4eb0-9919-4ef76ecad233
-# ╟─17fbc55f-12a8-431e-ac00-b28304f2eb6c
+# ╠═17fbc55f-12a8-431e-ac00-b28304f2eb6c
 # ╠═4c41953d-1625-4383-9e57-545ab7f4c0e5
-# ╠═0a4ce046-5b43-425d-a3f2-da8d9867b181
-# ╠═dcf0034b-e405-4f27-b853-acb7a58b9cc6
-# ╟─4d27d75e-5e95-43c9-9e77-b9ae3d6c4bb9
-# ╟─28b91e49-996c-4abc-9db4-30b515444aab
+# ╠═3aa5a908-c4eb-4f6a-899e-c7ba2d29fa01
 # ╠═054d932d-12be-4538-ab34-b5d3f465bf0f
-# ╠═304091a8-4206-49c2-9c98-cffb18a0e906
-# ╠═2e676f8c-909a-4fb7-b35e-57d08f802df7
 # ╠═0177413c-0f89-4935-9963-5aeebd333b9a
 # ╠═c30f95e5-93eb-4ab7-bc84-4bfe7092cf47
-# ╟─56a5f3c9-6a41-4326-83ab-2c19d65b3ed0
+# ╠═56a5f3c9-6a41-4326-83ab-2c19d65b3ed0
+# ╠═efade481-e96b-43a5-883a-6ffdbb97bdb4
+# ╠═b3c96eae-64a5-4245-85b6-b7b994e03ff7
 # ╟─bc6ecff4-2ade-4436-9630-be573eb1ea04
-# ╟─df99b7b7-5a0d-4b71-bf5c-415b5cfa3b2d
-# ╟─5be15388-cea2-4884-b8de-bff5be64e506
-# ╟─b3c96eae-64a5-4245-85b6-b7b994e03ff7
+# ╠═df99b7b7-5a0d-4b71-bf5c-415b5cfa3b2d
+# ╠═359994cc-01e8-453d-b3e3-a878ffe466eb
+# ╠═5be15388-cea2-4884-b8de-bff5be64e506
 # ╟─6c4cb363-3bda-4dfa-8499-8201a013895d
 # ╠═dbd1d788-120b-4678-bf3b-7541b9ea7341
 # ╟─735d3901-2dee-40d9-9e74-bb0d71ddfda4
@@ -1075,11 +1077,18 @@ all_data = DC.DataSelectorsGroup(projects)
 # ╟─fba5bc8b-25cb-406b-aa13-f06c591e08c9
 # ╟─5135015e-0fcf-484a-86ad-3cb7e40849bd
 # ╟─fd51a6c8-6569-4bfd-86ac-883c648fe6d9
-# ╠═6cd4f554-7242-4e97-b4cb-8549e3b70139
+# ╟─6cd4f554-7242-4e97-b4cb-8549e3b70139
+# ╟─5ef97b4a-4e44-47ee-b9a2-2ce9f73063f5
 # ╟─6d0d7cb4-45fc-405f-8a5d-cf10ad5e380b
-# ╟─646aebc7-b3db-443f-888f-800d444b4fa3
-# ╟─60458134-1de0-475e-ba64-24b6f33a2980
+# ╠═646aebc7-b3db-443f-888f-800d444b4fa3
+# ╠═60458134-1de0-475e-ba64-24b6f33a2980
+# ╠═ae2c7800-31d1-45bc-b7cf-c39c0140b27d
 # ╟─96b4c7c4-30a8-407c-9bd4-245f0ee0d9b2
-# ╟─a1c795e4-1be0-46e0-b6a2-4eda990fd65e
+# ╠═6b4d07af-a40b-4ed1-a610-2a433311c94e
+# ╠═231e4df4-e1c6-47c2-a1eb-2d9c6dde8cab
+# ╠═50befa75-73e5-4223-86e0-1c1d02134345
+# ╠═ee70abb1-98ff-4674-916b-f0439c94b8af
+# ╠═a1c795e4-1be0-46e0-b6a2-4eda990fd65e
+# ╠═f62c48f1-139a-4e0b-be55-84ecc3323f64
 # ╠═87ae11cd-8c4f-4835-9a9f-852447a45c97
 # ╠═58eb27e1-38c5-4a90-9e80-61f6213aa721
