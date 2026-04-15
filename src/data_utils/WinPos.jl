@@ -102,7 +102,7 @@ function fill_data!(d::DataPair)
 
     filter_data_names(proj::AbstractWinPosProject, ::Nothing) = keys(proj.data)
     filter_data_names(proj::AbstractWinPosProject, names) = filter(Base.Fix1(haskey,proj.data), names)
-    
+
     Base.getindex(p::AbstractWinPosProject, k::String)  = p.data[k]
     Base.getindex(p::AbstractWinPosProject , i::Int) = (i <= length(p.data)) ? p.data[iterate(keys(p.data) , i)[1]] : error("out of range")
     name(p::AbstractWinPosProject) = p.name
@@ -523,7 +523,7 @@ Searches input folder (and if include_subfolders = true  all subfolders) for win
 which has `data_name.x` and `data_name.dat` files pair , retruns [`WinPosProjectsGroup`](@ref)
 object.
 """
-    function load_from_winpos_folder(root_folder::String; include_subfolders::Bool=false)
+function load_from_winpos_folder(root_folder::String; include_subfolders::Bool=false)
         @assert isdir(root_folder) "Incorrect folder name $(root_folder)"
         projects = OrderedDict{String, Tuple{OrderedDict{String, DataPair} , String}}()
         for (folder, subdirs, files) in  walkdir(root_folder)

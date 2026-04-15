@@ -31,16 +31,16 @@ begin
 	using DataFrames
 	using CSV
 	using RecipesBase
+	using Dates
 end
 
-# ╔═╡ 2bb45200-d7ba-47a3-b82d-9c147b5d7601
-default_data_fodler = joinpath(@__DIR__, "..","src","data_utils","binary_files")
-
-# ╔═╡ 80479ac3-897a-4aa7-8ce9-977fa4912bc6
-source_path = joinpath(@__DIR__,"..","src")
-
-# ╔═╡ 6d2a48d4-e458-4edd-b22a-7b7dae9f492c
-#includet(joinpath(@__DIR__, "CustomPlutoFunctions.jl"))
+# ╔═╡ 5807712b-5d26-49c8-ab65-dac167ebad7b
+begin 
+	projects_save_path_ref =  Ref("")
+	projects_save_name_ref =  Ref("")
+	default_data_fodler = joinpath(@__DIR__, "..","src","data_utils","binary_files")
+	source_path = joinpath(@__DIR__,"..","src")
+end;
 
 # ╔═╡ 35958e8a-eb7a-4eff-89a0-f9c04aff2a37
 begin 
@@ -59,10 +59,7 @@ plot_common_args = (grid = true, gridlinewidth=3, gridstyle = :dot,minorgrid=tru
 md""" ## Loading experimental data from winpos project"""
 
 # ╔═╡ 450fb200-eec6-4e96-9ebd-81453c015830
-md" Load data from : $(@bind input_data_type Select([:winpos, :ascii , :hdf5] , default = :files))"
-
-# ╔═╡ a407a99b-b40c-436c-a2a0-af2e19b347b8
-is_winpos = input_data_type == :winpos;
+md" Load data from : $(@bind input_data_type Select([:winpos, :ascii , :hdf5_winpos , :hdf5_data_selector] , default = :winpos))"
 
 # ╔═╡ 6e062bd9-d20c-4e1d-b772-328bec8859ea
 begin 
@@ -71,9 +68,19 @@ end
 
 # ╔═╡ 81c2f93b-05b1-4eb0-9919-4ef76ecad233
 begin 
-	projects = WP.load_from_winpos_folder(working_folder)
-	#projs_txt  = WP.load_from_ascii_folder(working_folder ; name_matcher="Tmeasured", variable_name = "T")
-	#projects = merge(projs_wp , projs_txt)
+	projects =
+		if input_data_type == :winpos
+			WP.load_from_winpos_folder(working_folder)
+		elseif input_data_type == :ascii
+			WP.load_from_ascii_folder(working_folder , name_matcher = "T")
+		elseif input_data_type == :hdf5_winpos
+			WP.load_from_hdf5(working_folder , WP.WinPosProjectsGroup)
+		elseif input_data_type == :hdf5_data_selector
+			_ds = WP.load_from_hdf5(working_folder , DC.DataSelectorsGroup)
+			convert(WP.WinPosProjectsGroup, _ds)
+		else
+			error 
+		end
 end;
 
 # ╔═╡ 17fbc55f-12a8-431e-ac00-b28304f2eb6c
@@ -84,19 +91,45 @@ $(@bind selected_projects confirm(MultiSelect(collect(keys(projects)) , default 
 # ╔═╡ 4c41953d-1625-4383-9e57-545ab7f4c0e5
 projects
 
+# ╔═╡ 46dc9aed-cbbe-4b8c-a6e3-9a5207bee10c
+md"""
+	#### **Save selected projects to file:** $(@bind save_selected_projects_trigger PlutoUI.Button("Save projects"))
+
+	"""
+
+# ╔═╡ ad3152ec-d481-4b65-856b-f7c1987d379e
+@bind project_saving_type Select(["hdf5" , "winpos folder"] , default = "hdf5")
+
+# ╔═╡ 6e7839ca-da24-4a3e-927f-b035729a4cb7
+begin 
+	#@isdefined(save_selected_projects_trigger)  && save_selected_projects_trigger 
+	save_selected_projects_trigger
+	if !isempty(selected_projects)
+		
+		isdir(projects_save_path_ref[]) || mkdir(projects_save_path_ref[])
+		is_hdf5 = project_saving_type == "hdf5"
+	
+		selected_projects_group = WP.WinPosProjectsGroup(projects.name, OrderedDict([p for p in projects if first(p) ∈  selected_projects]...) , working_folder)
+			
+		if is_hdf5
+			_ffile = joinpath(projects_save_path_ref[], projects_save_name_ref[]*".hdf5")
+			WP.export_to_hdf5(selected_projects_group , _ffile)
+		else
+			WP.write_to_winpos_folder(selected_projects_group , projects_save_name_ref[])
+		end
+		"✅ Saved to $(project_saving_type)-file at $(Dates.format(now(), "HH:MM:SS"))"
+	else
+		"😖 Not saved at $(Dates.format(now(), "HH:MM:SS"))"
+	end
+end
+
 # ╔═╡ 3aa5a908-c4eb-4f6a-899e-c7ba2d29fa01
 if !isempty(selected_projects) 
 	all_data = DC.DataSelectorsGroup([ p for p in projects if first(p) ∈  selected_projects]...)
-end
+end;
 
 # ╔═╡ 054d932d-12be-4538-ab34-b5d3f465bf0f
 projects
-
-# ╔═╡ efade481-e96b-43a5-883a-6ffdbb97bdb4
-
-
-# ╔═╡ 359994cc-01e8-453d-b3e3-a878ffe466eb
-
 
 # ╔═╡ 6c4cb363-3bda-4dfa-8499-8201a013895d
 @bind show_data_table Select(collect(keys(all_data)))
@@ -198,6 +231,9 @@ md"""
 
 # ╔═╡ d02ec3fd-1b0d-4bc3-92e9-adedc8bf2c8c
 md" ##### Global optimizer iterations number $(@bind pso_iters Select(10:10:10000 , default = 200))"
+
+# ╔═╡ 61a2463b-0e27-4a08-b85e-0b5c4916e667
+DC.default_temperature_range(all_data[1])
 
 # ╔═╡ 9cd8c4c8-7d11-4fb0-92d5-439702aa9496
 md" ### OPTIMIZATION "
@@ -360,7 +396,7 @@ function filter_couple_breakage!(T)
 end
 
 # ╔═╡ 6cd4f554-7242-4e97-b4cb-8549e3b70139
-function multi_values(names, default_values=nothing , title = "Thickness , mm" , rng=0:1e3:20 )
+function multi_values(names; default_values=nothing , title = "Thickness , mm" , rng=0:1e3:20  , field_type = NumberField )
 	isnothing(default_values) && (default_values = zeros(length(names)))
 	PlutoUI.combine() do Child
 		@htl("""
@@ -368,7 +404,7 @@ function multi_values(names, default_values=nothing , title = "Thickness , mm" ,
 		<ul>
 		$([
 			@htl("<li>
-				 $(name): $(Child(name, NumberField(rng, default=deflt)))		</li>")
+				 $(name): $(Child(name, field_type(default=deflt)))		</li>")
 			for (name,deflt) in zip( names, default_values)
 		])
 		</ul>
@@ -376,17 +412,37 @@ function multi_values(names, default_values=nothing , title = "Thickness , mm" ,
 	end
 end
 
+# ╔═╡ 85b69faa-03e0-4008-a702-7245aa99202d
+function multi_values_text(names; default_values=nothing , title = "Thickness , mm" )
+
+	
+	isnothing(default_values) && (default_values = fill("" , length(names)))
+	PlutoUI.combine() do Child
+		@htl("""
+		<h6>$title</h6>
+		<ul>
+		$([
+			@htl("<li>
+				 $(name): $(Child(name, TextField(60 , deflt)))		
+			</li>")
+			for (name , deflt) in zip( names, default_values)
+		])
+		</ul>
+		""")
+	end
+end
+
+# ╔═╡ f9bf69a8-9854-4c46-8c1c-e4af8ed176d8
+@bind projects_save_name_path multi_values_text(("path" , "name") , title = "Path/Name" , default_values=(working_folder , "projects"))
+
+# ╔═╡ c9fa68be-e2c4-4c4c-a6cc-f9f064a0a4c8
+begin 
+	projects_save_path_ref[] = projects_save_name_path.path 
+	projects_save_name_ref[] = projects_save_name_path.name
+end;
+
 # ╔═╡ 5ef97b4a-4e44-47ee-b9a2-2ce9f73063f5
 multi_values(data::DC.DataSelectorsGroup; kwargs...) = multi_values(data.d; kwargs...)
-
-# ╔═╡ 646aebc7-b3db-443f-888f-800d444b4fa3
-#=function fill_data_connector_data!(d::DC.DataSelectorsGroup)
-	isempty(d.selected_names) && return false
-	(ttt, TTT, winpos_data_names) = Main.WinPos.joindata(d.project, names = d.selected_names)
-	d.selected_names = winpos_data_names
-	d.data =  hcat(ttt,TTT)
-	d.data_cutted = copy(d.data)
-end=#
 
 # ╔═╡ 60458134-1de0-475e-ba64-24b6f33a2980
 # makes pairs from name - value pairs iterator by taking the field `field_name` of `value` 
@@ -399,10 +455,10 @@ function paired_selected_names(all_data ; unary_operator = Base.Fix2(getfield , 
 end
 
 # ╔═╡ 6d0d7cb4-45fc-405f-8a5d-cf10ad5e380b
-function multi_values(all_data::AbstractDict; unary_operator=DC.selected_names , default_values=nothing)
+function multi_values(all_data::AbstractDict; unary_operator=DC.selected_names , default_values=nothing , title = "Thermocouples locations , mm" )
 	PlutoUI.combine() do Child
 		@htl("""
-		<h6>field_name, mm</h6>
+		<h6>$title</h6>
 		<ul>
 		$([
 			@htl("<li>
@@ -460,9 +516,13 @@ begin
 	@bind thicknesses_mm confirm(multi_values(collect(keys(all_data))))
 end
 
-# ╔═╡ ca69ae4b-8428-4643-93a4-c4c1687b3d7e
-for n in keys(thicknesses_mm)
-	all_data[String(n)].total_thickness = 1e-3 * getfield(thicknesses_mm,n)
+# ╔═╡ 999cefa4-3513-4c4f-86f1-49d4d55c66f8
+if is_selected
+	thicknesses_mm
+	foreach(pairs(thicknesses_mm)) do (k,v)
+		d_i = all_data[String(k)]
+		DC.set_thickness!(d_i , 1e-3*v)
+	end
 end
 
 # ╔═╡ 56a5f3c9-6a41-4326-83ab-2c19d65b3ed0
@@ -477,62 +537,150 @@ end;
 # ╔═╡ b3c96eae-64a5-4245-85b6-b7b994e03ff7
 if is_selected
 	selected_variables_multi
-	@bind locations_data  confirm(multi_values(all_data))
+	@bind locations_data  confirm(multi_values(all_data , title="thermocouple location, mm"))
 end
 
-# ╔═╡ 735d3901-2dee-40d9-9e74-bb0d71ddfda4
-begin # filling thickness data 
-	for (_,d) in all_data
-		n = length(d.selected_names)
-		d.locations = fill(0.0 , n)
+# ╔═╡ ea647fc8-37c7-4726-980d-42f97ffc02e3
+if is_selected
+	locations_data
+	foreach(pairs(locations_data)) do (k,v)
+		(name , couple ) = String.(split(String(k) , ":"))
+		d_i = all_data[name]
+		DC.set_location!(d_i , couple , 1e-3*v)
 	end
-	for k in keys(locations_data)
-		(projn , sn) =Tuple(split(String(k) , ":"))
-		val = getfield(locations_data,k)
-		d_i = all_data[projn]
-		fl = d_i.selected_names .== sn
-		_v = @view d_i.locations[fl] 
-		fill!(_v , 1e-3 * val)
+end
+
+# ╔═╡ 6b4d07af-a40b-4ed1-a610-2a433311c94e
+time_range_selector(all_data::DC.DataSelectorsGroup; kwargs...) = time_range_selector(all_data.d; kwargs...)
+
+# ╔═╡ 231e4df4-e1c6-47c2-a1eb-2d9c6dde8cab
+DC.default_tmin_tmax(all_data[2])
+
+# ╔═╡ 50befa75-73e5-4223-86e0-1c1d02134345
+function _default_tmin_tmax(d::DC.DataSelector) 
+		DC.is_any_selected(d) || return (tmin = -Inf , tmax = Inf)
+		tmin = -Inf 
+		tmax = Inf
+		for (_ , data_pair_i) in DC.each_selected(d)
+			(_tmin , _tmax)  = extrema(data_pair_i.x)
+			(_tmin > tmin) && (tmin = _tmin) 
+			(_tmax < tmax) && (tmax = _tmax) 
+		end
+		return (tmin = tmin , tmax = tmax)
 	end
+
+# ╔═╡ ee70abb1-98ff-4674-916b-f0439c94b8af
+_default_tmin_tmax(all_data[1])
+
+# ╔═╡ a1c795e4-1be0-46e0-b6a2-4eda990fd65e
+function time_range_selector(all_data::AbstractDict; unary_opertor = DC.default_tmin_tmax)
+	N = length(all_data)
+	range_constructor(d) = begin 
+		(tmin , tmax) = unary_opertor(d)
+		range(tmin , tmax , step=1.0)
+	end
+	PlutoUI.combine() do Child
+		@htl("""
+		<h6>Time range, tmin - tmax , s</h6>
+		<ul>
+		$([
+			@htl("<li>$(k): $(Child( k, RangeSlider(range_constructor(d) )))</li>")
+			
+			for (k , d) in all_data
+		])
+		</ul>
+		""")
+
+	end
+end
+
+# ╔═╡ df99b7b7-5a0d-4b71-bf5c-415b5cfa3b2d
+if is_selected
+	selected_variables_multi
+	@bind time_region  confirm(time_range_selector(all_data))
+end
+
+# ╔═╡ 359994cc-01e8-453d-b3e3-a878ffe466eb
+if is_selected
+	time_region
+	for (k , trange) in pairs(time_region)
+		d_i = all_data[String(k)]
+		(_tmin , _tmax) = extrema(trange)
+		DC.set_time_region!(d_i , tmin = _tmin , tmax = _tmax)
+	end
+end
+
+# ╔═╡ 35b5c27e-921f-4fe7-90bc-3b327d9150fe
+begin 
+	
+	locations_data
+	time_region
+	thicknesses_mm
+	
+	table_data = Matrix{Any}(undef , (length(all_data.d) , 5))
+	for (i , (k , d)) in enumerate(all_data.d)
+		table_data[i, 1]  = k
+		table_data[i, 2] = 1e3*DC.thickness(d)
+		table_data[i, 3] = [ Pair(v,k) for (k,v) in zip(1e3*DC.sensors_locations(d) , DC.selected_names(d))]
+		table_data[i, 4] = DC.tmin(d)
+		table_data[i, 5] = DC.tmax(d)
+	end
+
+	pretty_table(HTML , table_data , column_labels = ["name"," h" , "Locs","tmin", "tmax"] , top_left_string ="Sample properties")
+
+end
+
+# ╔═╡ 5be15388-cea2-4884-b8de-bff5be64e506
+if is_selected 
+	locations_data
+	time_region
+	thicknesses_mm
+
+	
+	raw_data_plot = Plots.plot(;plot_common_args...)
+	for (k , d_i)  in DC.selected_data_cutted_with_keys(all_data)
+		isempty(d_i.data) && continue
+		_t = d_i.data[:,1]
+		_names = d_i.names
+		CN = size(d_i.data, 2)
+		for (i, c) in enumerate(eachcol(d_i.data)[2:CN])
+			Plots.plot!(raw_data_plot , _t , c , label ="$(k) : $(_names[i + 1])" , linestyle = :auto;plot_common_args...)
+		end
+	end
+	raw_data_plot
 end
 
 # ╔═╡ b1f00c55-5ce9-4a0f-a548-a8a9041d02fc
 begin 
-	is_data_ready = true
+	
 	locations_data
 	thicknesses_mm
+	time_range_selector
 	selected_variables_multi
-	cur_proj
 	refit
-	
-	for (_ , d) in all_data
-		
-		for fi in fieldnames(DataConnector)
-			global is_data_ready = is_data_ready && !isempty(getfield(d , fi)) 
-			if !is_data_ready 
-				display(String(fi) * " is not ready" )
-				break
-			end
-		end	
-		global is_data_ready = is_data_ready && all(Base.Fix2(>=,0.0) , d.locations)
-		is_data_ready = is_data_ready && d.total_thickness > 0.0
-		is_data_ready || break
+	is_data_ready = true
+	try 
+		for (k , d_i) in all_data.d
+		 	DC.combine_selected_data(d_i)
+		end
+		is_data_ready = true
+	catch 
+		is_data_ready = false
 	end
 	is_data_ready
-
 end
 
 # ╔═╡ fc79d398-03d0-4f75-a777-41e2e27fee5e
 if is_data_ready 
-	(lmin , lmax) = (1e6 , 0.0)
+	#=(lmin , lmax) = (1e6 , 0.0)
 	for (_,d) in all_data
 		global lmin , lmax
 		t_data= @view d.data_cutted[:,2:end]
 		(lmin_cur , lmax_cur) = extrema(t_data)
 		(lmin_cur < lmin) && (lmin = lmin_cur) 
 		(lmax_cur > lmax) && (lmax = lmax_cur) 
-	end
-	lam_T_range = (lmin , lmax)
+	end=#
+	lam_T_range = (10.0 , 2000.0)
 end
 
 # ╔═╡ 16337bb4-438e-4b86-bdc5-b88ef210a960
@@ -587,14 +735,19 @@ begin
 	#thickness = 1e-3 * thickness_mm
 	if is_data_ready
 		probls = []
-		for (_,d) in all_data
+		for (_ , d_i) in all_data.d
+			#= 
+			
 			therm_locations = d.locations
 			thickness = d.total_thickness
 			inds = sortperm(therm_locations)
-			cov = covariance_type(cargs...)
+			
 			t = d.data_cutted[: , 1]
 			T = d.data_cutted[: , 2:end]
-			inv_probl = IHT.SingleInverseProblem(t, T[:,inds], initial_distribution, therm_locations[inds], C,λ, dλdT, thickness, xpoints_number, tpoints_number , covariance=cov , regularization = reg_type())
+			
+			=#
+			cov = covariance_type(cargs...)
+			inv_probl = IHT.SingleInverseProblem(d_i, C,λ, dλdT,  xpoints_number, tpoints_number , covariance=cov , regularization = reg_type())
 			push!(probls , inv_probl)
 		end
 		parallel_probls =IHT.ParallelInverseProblems(Tuple(probls)...)
@@ -655,7 +808,7 @@ if use_l_curve
 										 p_i,
 										 lb = _lb, ub = _ub)
 			sols[i] = solve(optp_i, optimizer()  , maxiters=pso_iters )
-		 end
+		end
 	end
 
 	
@@ -892,117 +1045,36 @@ begin
 	p_hist
 end
 
-# ╔═╡ 6b4d07af-a40b-4ed1-a610-2a433311c94e
-time_range_selector(all_data::DC.DataSelectorsGroup; kwargs...) = time_range_selector(all_data.d; kwargs...)
-
-# ╔═╡ 231e4df4-e1c6-47c2-a1eb-2d9c6dde8cab
-DC.default_tmin_tmax(all_data[2])
-
-# ╔═╡ 50befa75-73e5-4223-86e0-1c1d02134345
-function _default_tmin_tmax(d::DC.DataSelector) 
-		DC.is_any_selected(d) || return (tmin = -Inf , tmax = Inf)
-		tmin = -Inf 
-		tmax = Inf
-		for (_ , data_pair_i) in DC.each_selected(d)
-			(_tmin , _tmax)  = extrema(data_pair_i.x)
-			(_tmin > tmin) && (tmin = _tmin) 
-			(_tmax < tmax) && (tmax = _tmax) 
-		end
-		return (tmin = tmin , tmax = tmax)
-	end
-
-# ╔═╡ ee70abb1-98ff-4674-916b-f0439c94b8af
-_default_tmin_tmax(all_data[1])
-
-# ╔═╡ a1c795e4-1be0-46e0-b6a2-4eda990fd65e
-function time_range_selector(all_data::AbstractDict; unary_opertor = DC.default_tmin_tmax)
-	N = length(all_data)
-	PlutoUI.combine() do Child
-		@htl("""
-		<h6>Time range, tmin - tmax , s</h6>
-		<ul>
-		$([
-			@htl("<li>$(k): $(Child( k, RangeSlider( range(unary_opertor(d)...) )))</li>")
-			
-			for (k , d) in all_data
-		])
-		</ul>
-		""")
-
-	end
-end
-
-# ╔═╡ df99b7b7-5a0d-4b71-bf5c-415b5cfa3b2d
-if is_selected
-	selected_variables_multi
-	@bind time_region  confirm(time_range_selector(all_data))
-end
-
-# ╔═╡ 5be15388-cea2-4884-b8de-bff5be64e506
-if is_selected 
-	raw_data_plot = Plots.plot(;plot_common_args...)
-		
-	for (k,d) in all_data
-		rng = getfield(time_region , Symbol(k))
-		(tmin , tmax) = extrema(rng)
-		cut_data!(d , tmin , tmax)
-		!isempty(d.data_cutted) || continue
-		leg_str = first(eachsplit(k , "_"))
-		for (i , c) in enumerate(eachcol(d.data_cutted)[2:end])
-			Plots.plot!(raw_data_plot , d.data_cutted[:,1] , c , label = leg_str * ":" * d.selected_names[i]  , legend_position = :best   , linestyle = :auto;plot_common_args...)
-		end
-	end
-	raw_data_plot
-end
-
-# ╔═╡ dbd1d788-120b-4678-bf3b-7541b9ea7341
-begin
-	time_region
-	let d = all_data[show_data_table]
-		tmin_c = t_cutted_min(d)
-		tmax_c = t_cutted_max(d)
-		tbl = WP.to_table(d.project ; names = d.selected_names , tmin = tmin_c , tmax = tmax_c)
-	end
-end
-
-# ╔═╡ f62c48f1-139a-4e0b-be55-84ecc3323f64
-time_range_selector(all_data)
-
-# ╔═╡ 87ae11cd-8c4f-4835-9a9f-852447a45c97
-#=write(joinpath(raw"D:\JULIA\JULIA_DEPOT\dev\InverseHeatTransfer.jl\test\test_data\binary_files","dasfsdf.json"), JSON2.write(Dict(:T1=>2.0, :T2=>3.0))) =#
-
-# ╔═╡ 58eb27e1-38c5-4a90-9e80-61f6213aa721
-#= dd = JSON2.read(read(joinpath(raw"D:\JULIA\JULIA_DEPOT\dev\InverseHeatTransfer.jl\test\test_data\binary_files","dasfsdf.json"), String)) =#
-
 # ╔═╡ Cell order:
 # ╠═a17fe1fe-5542-454b-b45e-942ac52b6f1a
-# ╟─2bb45200-d7ba-47a3-b82d-9c147b5d7601
-# ╟─80479ac3-897a-4aa7-8ce9-977fa4912bc6
-# ╠═6d2a48d4-e458-4edd-b22a-7b7dae9f492c
+# ╠═5807712b-5d26-49c8-ab65-dac167ebad7b
 # ╟─35958e8a-eb7a-4eff-89a0-f9c04aff2a37
 # ╠═438a3909-9367-4660-a3ca-bd1786ab6016
 # ╟─db671921-13dc-497b-81e5-dcb4da0695f9
 # ╟─450fb200-eec6-4e96-9ebd-81453c015830
-# ╠═a407a99b-b40c-436c-a2a0-af2e19b347b8
-# ╠═6e062bd9-d20c-4e1d-b772-328bec8859ea
-# ╠═81c2f93b-05b1-4eb0-9919-4ef76ecad233
+# ╟─6e062bd9-d20c-4e1d-b772-328bec8859ea
+# ╟─81c2f93b-05b1-4eb0-9919-4ef76ecad233
 # ╠═17fbc55f-12a8-431e-ac00-b28304f2eb6c
 # ╠═4c41953d-1625-4383-9e57-545ab7f4c0e5
-# ╠═3aa5a908-c4eb-4f6a-899e-c7ba2d29fa01
+# ╟─46dc9aed-cbbe-4b8c-a6e3-9a5207bee10c
+# ╟─ad3152ec-d481-4b65-856b-f7c1987d379e
+# ╟─f9bf69a8-9854-4c46-8c1c-e4af8ed176d8
+# ╠═c9fa68be-e2c4-4c4c-a6cc-f9f064a0a4c8
+# ╟─6e7839ca-da24-4a3e-927f-b035729a4cb7
+# ╟─3aa5a908-c4eb-4f6a-899e-c7ba2d29fa01
 # ╠═054d932d-12be-4538-ab34-b5d3f465bf0f
 # ╠═0177413c-0f89-4935-9963-5aeebd333b9a
 # ╠═c30f95e5-93eb-4ab7-bc84-4bfe7092cf47
-# ╠═56a5f3c9-6a41-4326-83ab-2c19d65b3ed0
-# ╠═efade481-e96b-43a5-883a-6ffdbb97bdb4
-# ╠═b3c96eae-64a5-4245-85b6-b7b994e03ff7
+# ╟─56a5f3c9-6a41-4326-83ab-2c19d65b3ed0
 # ╟─bc6ecff4-2ade-4436-9630-be573eb1ea04
-# ╠═df99b7b7-5a0d-4b71-bf5c-415b5cfa3b2d
-# ╠═359994cc-01e8-453d-b3e3-a878ffe466eb
-# ╠═5be15388-cea2-4884-b8de-bff5be64e506
+# ╟─999cefa4-3513-4c4f-86f1-49d4d55c66f8
+# ╟─b3c96eae-64a5-4245-85b6-b7b994e03ff7
+# ╟─ea647fc8-37c7-4726-980d-42f97ffc02e3
+# ╟─df99b7b7-5a0d-4b71-bf5c-415b5cfa3b2d
+# ╟─359994cc-01e8-453d-b3e3-a878ffe466eb
+# ╟─35b5c27e-921f-4fe7-90bc-3b327d9150fe
+# ╟─5be15388-cea2-4884-b8de-bff5be64e506
 # ╟─6c4cb363-3bda-4dfa-8499-8201a013895d
-# ╠═dbd1d788-120b-4678-bf3b-7541b9ea7341
-# ╟─735d3901-2dee-40d9-9e74-bb0d71ddfda4
-# ╟─ca69ae4b-8428-4643-93a4-c4c1687b3d7e
 # ╠═fd47bc58-8a0c-4dd7-875c-bcc80a21e64e
 # ╠═b1f00c55-5ce9-4a0f-a548-a8a9041d02fc
 # ╟─62069546-44fb-4a77-986d-f03624719e29
@@ -1031,9 +1103,9 @@ time_range_selector(all_data)
 # ╟─10f7c083-a697-4b7e-87ea-de2791ed1a30
 # ╟─3f8c5c6a-f902-4b1e-abc1-7b572c8d2505
 # ╟─e5569bf4-b14f-4806-bbce-38096e2f837b
-# ╟─985eb56b-c964-4be8-973a-cec2c99df494
+# ╠═985eb56b-c964-4be8-973a-cec2c99df494
 # ╟─0a0324df-430f-4ac0-857b-4da6a7dca138
-# ╟─fe228354-5f3f-433d-9f8b-7d888e9c5ecb
+# ╠═fe228354-5f3f-433d-9f8b-7d888e9c5ecb
 # ╟─f3e24d8a-e35d-41de-92e6-0df290d3503c
 # ╟─4c9a5a5f-5839-4211-b561-7539dfa74a7a
 # ╟─95dbc55f-ab5a-4828-a1e2-9a0c9a9ec19b
@@ -1043,6 +1115,7 @@ time_range_selector(all_data)
 # ╟─2a1ca349-3732-443e-bc48-5be611a5d91f
 # ╟─d02ec3fd-1b0d-4bc3-92e9-adedc8bf2c8c
 # ╟─fc79d398-03d0-4f75-a777-41e2e27fee5e
+# ╠═61a2463b-0e27-4a08-b85e-0b5c4916e667
 # ╟─c8861fa2-9cb3-4349-9ece-eba285c24eab
 # ╟─e06ac758-c5ae-4cf6-84b1-11d51a56f200
 # ╟─1318f293-f606-4a9f-8896-853b87c0665d
@@ -1070,17 +1143,17 @@ time_range_selector(all_data)
 # ╟─efa9120f-5a45-41a0-9132-dc26f967fec3
 # ╟─023dc25f-6cf8-4802-83b4-77d1827cd2a7
 # ╟─23902c7d-5973-4868-8488-e0c7634573c4
-# ╟─6800ae42-c5b1-4d1e-84fb-a03015bf138f
+# ╠═6800ae42-c5b1-4d1e-84fb-a03015bf138f
 # ╟─ea412a80-0bf7-4ac6-9b90-8530a4c26008
 # ╟─4cf77d64-a720-41da-a9c2-5d875ea00135
 # ╠═2bf91a7e-0da8-48e8-a779-962be2e7c03b
 # ╟─fba5bc8b-25cb-406b-aa13-f06c591e08c9
 # ╟─5135015e-0fcf-484a-86ad-3cb7e40849bd
 # ╟─fd51a6c8-6569-4bfd-86ac-883c648fe6d9
-# ╟─6cd4f554-7242-4e97-b4cb-8549e3b70139
-# ╟─5ef97b4a-4e44-47ee-b9a2-2ce9f73063f5
-# ╟─6d0d7cb4-45fc-405f-8a5d-cf10ad5e380b
-# ╠═646aebc7-b3db-443f-888f-800d444b4fa3
+# ╠═6cd4f554-7242-4e97-b4cb-8549e3b70139
+# ╠═85b69faa-03e0-4008-a702-7245aa99202d
+# ╠═5ef97b4a-4e44-47ee-b9a2-2ce9f73063f5
+# ╠═6d0d7cb4-45fc-405f-8a5d-cf10ad5e380b
 # ╠═60458134-1de0-475e-ba64-24b6f33a2980
 # ╠═ae2c7800-31d1-45bc-b7cf-c39c0140b27d
 # ╟─96b4c7c4-30a8-407c-9bd4-245f0ee0d9b2
@@ -1089,6 +1162,3 @@ time_range_selector(all_data)
 # ╠═50befa75-73e5-4223-86e0-1c1d02134345
 # ╠═ee70abb1-98ff-4674-916b-f0439c94b8af
 # ╠═a1c795e4-1be0-46e0-b6a2-4eda990fd65e
-# ╠═f62c48f1-139a-4e0b-be55-84ecc3323f64
-# ╠═87ae11cd-8c4f-4835-9a9f-852447a45c97
-# ╠═58eb27e1-38c5-4a90-9e80-61f6213aa721

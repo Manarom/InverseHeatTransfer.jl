@@ -557,6 +557,36 @@ function modify!(ov::OV{N , DT}, x , r) where {N , DT}
                 return obj
             end
         end
+
+function SingleInverseProblem(
+                                #time_data ::Vector{DT},
+                                #temperatures ::Matrix{DT}, 
+                                #initial_distribution::Union{OptimizableVariable, Number , VecOrMat{DT}},
+                                #thermocouples_locations::AbstractVector{DT},
+                                data_selector :: DataConnector.DataSelector,
+                                C,
+                                λ, 
+                                dλdT,
+                                #thickness::Number, 
+                                xpoints_number::Int = 200, 
+                                time_points_number::Union{Int,Nothing} = 2000;kwargs...)
+                (   
+                    time_data,
+				    temperatures, 
+				    initial_distribution,
+				    thermocouples_locations,
+				    thickness
+                ) = DataConnector.combine_selected_data(data_selector)       
+                
+                inds = sortperm(thermocouples_locations)
+                
+        return SingleInverseProblem(time_data , temperatures[:,inds] , 
+                                        initial_distribution, thermocouples_locations[inds] ,
+                                        C,
+                                        λ, 
+                                        dλdT, 
+                                        thickness; kwargs...)
+        end
         """
         fill_residual!(p::SingleInverseProblem)
 

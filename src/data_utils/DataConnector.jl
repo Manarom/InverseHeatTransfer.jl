@@ -81,18 +81,7 @@ Further several [`DataSelector`](@ref) objects can be combined into [`DataSelect
 
 Returns the tuple of default values for tmin_tmax range according to the selected data 
 """
-function default_tmin_tmax(d::DataSelector) 
-		is_any_selected(d) || return (tmin = -Inf , tmax = Inf)
-		tmin = -Inf 
-		tmax = Inf
-		for (_ , data_pair_i) in each_selected(d)
-			WinPos.fill_data!(data_pair_i)
-			(_tmin , _tmax)  = extrema(data_pair_i.x)
-			(_tmin > tmin) && (tmin = _tmin) 
-			(_tmax < tmax) && (tmax = _tmax) 
-		end
-		return (tmin = tmin , tmax = tmax)
-	end
+	default_tmin_tmax(d::DataSelector) =_default_range(d , Inf , -Inf , :x)
 
 	WinPos.all_names(d::DataSelector) = WinPos.all_names(d.project)
 	function fill_data_for_selected!(d::DataSelector)
@@ -100,12 +89,36 @@ function default_tmin_tmax(d::DataSelector)
 			WinPos.fill_data!(data_pair_i)
 		end
 	end
+
+	default_temperature_range(d::DataSelector) = _default_range(d , Inf , -Inf , :y)
+
+	function _default_range(d::DataSelector , tmin , tmax , field_name::Symbol) 
+		is_any_selected(d) || return (tmin = tmin , tmax = tmax)
+		for (_ , data_pair_i) in each_selected(d)
+			WinPos.fill_data!(data_pair_i)
+			(_tmin , _tmax)  = extrema(getfield(data_pair_i , field_name))
+			(_tmin < tmin) && (tmin = _tmin) 
+			(_tmax > tmax) && (tmax = _tmax) 
+		end
+		return (tmin = tmin , tmax = tmax)
+	end
 	selected_names(d::DataSelector) = collect(d.selected_names)
 	is_any_selected(d::DataSelector) = !isempty(d.selected_names)
 	tmin(d::DataSelector) = first(d.tmin_tmax)
 	tmax(d::DataSelector) = last(d.tmin_tmax)
 	thickness(d::DataSelector) = d.sample_properties.thickness
-	set_time_region(d::DataSelector; tmin = nothing , tmax = nothing) = begin
+	set_thickness!(d::DataSelector , val::Float64)  = begin 
+		@assert val > 0 "Thickness must be greater than zero"
+		d.sample_properties.thickness = val
+		for (k ,l)  in d.sample_properties.sensors_locations
+			if l < 0.0
+				d.sample_properties.sensors_locationsp[k] = 0.0
+			elseif l > val
+				d.sample_properties.sensors_locationsp[k] = val
+			end
+		end
+	end
+	set_time_region!(d::DataSelector; tmin = nothing , tmax = nothing) = begin
 		isnothing(tmin) || setindex!(d.tmin_tmax ,tmin , 1 )
 		isnothing(tmax) || setindex!(d.tmin_tmax ,tmax , 2 )
 		return nothing
@@ -124,7 +137,7 @@ Function to set the sensor location ( it doesn't sets  name sensor as `selected`
 """
 function set_location!(d::DataSelector , name::String , value::Float64) 
 	!hasname(d , name) && error("Inappropriate sensor name ")
-	(value < 0.0 || value > thickness(d))  &&  error("Sensor location  must be within the  the sample 0.0 < $(value) <$(thickness(d)) ")
+	(value < 0.0 || value > thickness(d))  &&  error("Sensor location  must be within the  the sample thickness range 0.0 < $(value) <$(thickness(d)) ")
 	push!(d.sample_properties.sensors_locations , name => value)
 end
 set_location!(d :: DataSelector , name_value_pairs) = foreach(name_value_pairs) do (n , v)
@@ -139,9 +152,20 @@ function sensors_locations(ds :: DataSelector)
 		isempty(ds.sample_properties.sensors_locations) && return Float64[] 
 		return [d for (k , d) in ds.sample_properties.sensors_locations if k ∈ ds.selected_names]
 	end
-	selected_data(d::DataSelector)  = WinPos.to_matrix(d.project , names = d.selected_names) |> first
-	selected_data_cutted(d::DataSelector) = WinPos.to_matrix(d.project , names = d.selected_names ,
-															tmin = d.tmin_tmax[1] , tmax = d.tmin_tmax[2]) |> first
+		"""
+		selected_data_cutted_with_keys(d::DataSelector)
+
+	Returns named tuple with `(data , names)` 
+	"""
+	selected_data_cutted_with_keys(d::DataSelector) = WinPos.to_matrix(d.project , names = d.selected_names ,
+																tmin = d.tmin_tmax[1] , tmax = d.tmin_tmax[2])
+
+	selected_data_with_keys(d::DataSelector)  = WinPos.to_matrix(d.project , names = d.selected_names) 
+
+
+	selected_data(d::DataSelector)  = d |> selected_data_with_keys |> first
+	selected_data_cutted(d::DataSelector) = d|>  selected_data_cutted_with_keys |> first
+
 	is_all_locations_assigned(d::DataSelector) = all(Base.Fix1(haskey , d.sample_properties.sensors_locations) , d.selected_names )
 	
 	"""
@@ -211,6 +235,17 @@ function combine_selected_data(d::DataSelector)
 	selected_data_cutted(d :: DataSelectorsGroup ) = Iterators.map(selected_data_cutted , values(d.d))
 	combine_selected_data(d :: DataSelectorsGroup ) = Iterators.map(combine_selected_data , values(d.d))
 
+	function fun_map(a::Pair , f::Function)
+		(k , v)  = (first(a) , last(a))
+		return Pair(k , f(v))
+	end
+	# (k , v) -> Pair(k  , selected_data(v))
+	selected_data_with_keys(d :: DataSelectorsGroup) = Iterators.map( Base.Fix2(fun_map , selected_data_with_keys) , d.d)
+	# (k , v) -> Pair(k , selected_data_cutted_with_keys(v))
+	selected_data_cutted_with_keys(d :: DataSelectorsGroup ) = Iterators.map(  Base.Fix2(fun_map , selected_data_cutted_with_keys)  , d.d)
+	# (k , v) -> Pair(k ,combine_selected_data(v))
+	combine_selected_data_with_keys(d :: DataSelectorsGroup ) = Iterators.map(Base.Fix2(fun_map , combine_selected_data)  , d.d)	
+
 	fill_data_for_selected!(d::DataSelectorsGroup) = foreach(d.d) do (_,di)
 		fill_data_for_selected!(di)
 	end
@@ -221,6 +256,37 @@ function combine_selected_data(d::DataSelector)
 
 	WinPos.all_names(d::DataSelectorsGroup) = [k => WinPos.all_names(di) for (k , di) in d.d]
 	selected_names(d::DataSelectorsGroup) = [k => selected_names(di) for (k , di) in d.d]
+
+	function Base.convert(::Type{WinPos.WinPosProjectsGroup} , d::DataSelectorsGroup)
+		d_d = OrderedCollections.OrderedDict{String , WinPos.WinPosProject}()
+		paths = Vector{String}()
+		for ( _ , d_i ) in d.d
+			d_d[d_i.project.name] = d_i.project 
+			push!( paths , d_i.project.path )
+		end
+		compath = common_path(paths)
+		return WinPos.WinPosProjectsGroup(basename(compath) , d_d , compath)
+	end
+
+	"""
+    common_path(paths)
+
+Takes a vector of paths and returns the common part
+"""
+function common_path(paths)
+			split_paths = splitpath.(paths)
+			min_len = minimum(length.(split_paths))
+			common = String[]
+			for i in 1:min_len
+				segment = split_paths[1][i]
+				if all(p -> p[i] == segment, split_paths)
+					push!(common, segment)
+				else
+					break
+				end
+			end
+			return joinpath(common...)
+	end
 
 	"""
     WinPos.export_to_hdf5(projects::DataSelectorsGroup,
@@ -368,4 +434,27 @@ function add_sample_properties_to_hdf5!(proj_branch , data_selector::DataSelecto
 
 	"""
 	DataConnector
+
+	#=function sample_properties_summary(d::DataSelectorsGroup)
+
+    function to_table(proj::WinPosProject; kwargs...) 
+        (data, names) = to_matrix(proj ; kwargs...)
+        return Tables.table(data, header = names)
+    end
+	end
+	@recipe function f(dsg::DataSelectorsGroup; selected_keys = nothing , xmin = nothing, xmax = nothing)
+        has_keys = isnothing(selected_keys)
+        for (k , d_i) in dsg.d
+			data_coll = selected_data_cutted(d_i)
+			_names = selected_names(d_i)
+			t_i = data_coll
+			for ()
+				@series begin
+					label := "$(k):"
+					(t_i , y)
+				end
+			end
+        end    
+    end
+	=#
 end
