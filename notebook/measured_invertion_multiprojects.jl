@@ -93,7 +93,7 @@ projects
 
 # ╔═╡ 46dc9aed-cbbe-4b8c-a6e3-9a5207bee10c
 md"""
-	#### **Save selected projects to file:** $(@bind save_selected_projects_trigger PlutoUI.Button("Save projects"))
+	#### **Save selected projects to file ? :** $(@bind save_selected_projects_trigger PlutoUI.CheckBox(false))
 
 	"""
 
@@ -103,8 +103,8 @@ md"""
 # ╔═╡ 6e7839ca-da24-4a3e-927f-b035729a4cb7
 begin 
 	#@isdefined(save_selected_projects_trigger)  && save_selected_projects_trigger 
-	save_selected_projects_trigger
-	if !isempty(selected_projects)
+	
+	if save_selected_projects_trigger && !isempty(selected_projects)
 		
 		isdir(projects_save_path_ref[]) || mkdir(projects_save_path_ref[])
 		is_hdf5 = project_saving_type == "hdf5"
@@ -1053,13 +1053,13 @@ end
 # ╟─db671921-13dc-497b-81e5-dcb4da0695f9
 # ╟─450fb200-eec6-4e96-9ebd-81453c015830
 # ╟─6e062bd9-d20c-4e1d-b772-328bec8859ea
-# ╟─81c2f93b-05b1-4eb0-9919-4ef76ecad233
-# ╠═17fbc55f-12a8-431e-ac00-b28304f2eb6c
-# ╠═4c41953d-1625-4383-9e57-545ab7f4c0e5
+# ╠═81c2f93b-05b1-4eb0-9919-4ef76ecad233
+# ╟─17fbc55f-12a8-431e-ac00-b28304f2eb6c
+# ╟─4c41953d-1625-4383-9e57-545ab7f4c0e5
 # ╟─46dc9aed-cbbe-4b8c-a6e3-9a5207bee10c
 # ╟─ad3152ec-d481-4b65-856b-f7c1987d379e
 # ╟─f9bf69a8-9854-4c46-8c1c-e4af8ed176d8
-# ╠═c9fa68be-e2c4-4c4c-a6cc-f9f064a0a4c8
+# ╟─c9fa68be-e2c4-4c4c-a6cc-f9f064a0a4c8
 # ╟─6e7839ca-da24-4a3e-927f-b035729a4cb7
 # ╟─3aa5a908-c4eb-4f6a-899e-c7ba2d29fa01
 # ╠═054d932d-12be-4538-ab34-b5d3f465bf0f

@@ -56,13 +56,13 @@ module InverseHeatTransfer
                                  iu::Ref{Bool}, il::Ref{Bool}, 
                                  f1::F1, f2::F2) where {P, B <: MVector{N,Bool}, V, F1, F2} where {N,DT}
 
-        Wrapper interface for some callable object of type `P `which can be mutated by index `flag`. This
-        structure can be bounded from the `top` and from the `bottom` using some objects `ub` and `lb` , 
-        both of the same type `V`. Variables `iu` and `il` are just flags which can be used to turn `on` 
-        and `off` this boundaries, boundaries are compared to the current state of the varible `p` using
-        `f1` and `f2` functions, which must take two argument of `P` and `V` types and return a single value.
+Wrapper interface for some callable object of type `P `which can be mutated by index `flag`. This
+structure can be bounded from the `top` and from the `bottom` using some objects `ub` and `lb` , 
+both of the same type `V`. Variables `iu` and `il` are just flags which can be used to turn `on` 
+and `off` this boundaries, boundaries are compared to the current state of the varible `p` using
+`f1` and `f2` functions, which must take two argument of `P` and `V` types and return a single value.
 
-        """
+"""
         function OptimizableVariable(::Type{DT}, p::P, flag::B, 
                                  lb::V, ub::V, 
                                  iu::Ref{Bool}, il::Ref{Bool}, 
