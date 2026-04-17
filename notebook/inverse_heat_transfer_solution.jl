@@ -585,17 +585,6 @@ end;
 # ╔═╡ b832d7ff-e2b8-4822-8400-7729c8ccff6f
 is_fit_on || discrepancy(lam_changing_pars[1:basis_degree], inv_probl)
 
-# ╔═╡ e805618f-14c8-46a3-b0f0-cc5f949fed3b
-#=function discrepancy(x,inv_probl::IHT.SingleInverseProblem)
-	λ = inv_probl.direct_problem.L_f.fun
-	IHT.refill!(λ, x)
-	dλdT = inv_probl.direct_problem.Ld_f.fun
-	IHT.derivative!(dλdT, λ)
-	IHT.fill_residual!(inv_probl)
-	#return sum(Base.Fix2(^,2.0), inv_probl.residual)
-	return norm(inv_probl.residual) + sum(dλdT.p.poly.coeffs)
-end=#
-
 # ╔═╡ ba05924f-0aee-4e6c-8677-b6f10c50d5e2
 if is_fit_on 
 	
@@ -824,8 +813,8 @@ end
 # ╟─6f7cd9aa-0a48-4870-9223-4b7366d06867
 # ╟─542bebdb-0cdc-4c07-9210-9c773b406bbd
 # ╟─99f51ecf-36e4-4a0b-aa14-0757c88c69a3
-# ╠═81314d03-95c2-4eb5-9f15-09f660b2c875
-# ╠═488e4960-4420-4875-a5c4-cecba610dd1a
+# ╟─81314d03-95c2-4eb5-9f15-09f660b2c875
+# ╟─488e4960-4420-4875-a5c4-cecba610dd1a
 # ╟─1843f411-4706-441f-a07f-5cd77a5650b1
 # ╟─c1bd739f-39b0-4849-a468-cb177dab7d6a
 # ╟─8189333a-7ee8-44a0-9d76-a8efccd22666
@@ -843,7 +832,6 @@ end
 # ╠═5ab2bb2f-fd46-42ff-bdb2-3ba08231d9b4
 # ╠═b832d7ff-e2b8-4822-8400-7729c8ccff6f
 # ╠═a302366d-27f9-4600-930d-fc0acc9456cd
-# ╠═e805618f-14c8-46a3-b0f0-cc5f949fed3b
 # ╠═ba05924f-0aee-4e6c-8677-b6f10c50d5e2
 # ╠═821e442e-85e1-446d-b468-5cb64edddae3
 # ╠═5c4be264-6b6e-466d-a1f6-eae02dea39d1

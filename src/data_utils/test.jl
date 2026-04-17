@@ -46,7 +46,7 @@ wp_ascii = DC.WinPos.load_from_ascii_folder(ascii_folder , name_matcher = "Tmeas
     end
     data_selector_folder = joinpath(temp_folder , "data_selector_group")
 
-    print("Tetsing DataSelectorsGroup ...")
+    print("Testing DataSelectorsGroup ...")
 
     sample_properties = DataConnector.SampleProperties(thickness = 9.3e-3)
     d1 = DC.DataSelector(project = wp_ascii[1] , sample_properties = sample_properties)
@@ -96,3 +96,38 @@ for (_ , data_pair_i) in DC.each_selected(dc_group_loaded[1])
     @show extrema(data_pair_i.x)
 
 end
+
+
+
+    sample_properties = DataConnector.SampleProperties(thickness = 9.3e-3)
+    d1 = DC.DataSelector(project = wp_ascii[1] , sample_properties = sample_properties)
+    d2 = DC.DataSelector(project = wp_ascii[2], sample_properties = sample_properties)
+    d3 = DC.DataSelector(project = wp_ascii[3], sample_properties = sample_properties)
+
+
+
+    locs = ntuple(10) do i 
+        name = "T$(i)"
+        val = 1e-3*(i - 0.7 - 1e-6)
+        Pair(name , val)
+    end
+
+    for d in (d1,d2,d3)
+        DC.select!(d , ("T1" , "T3" , "T5" , "T6" , "T8" , "T10"  ))
+        DC.set_location!(d , locs)
+    end
+
+    DC.sensors_locations(d1)
+    DC.selected_names(d1)
+    DC.unselect!(d1 , ("T1" , "T3" , "T5" , "T6" , "T8" , "T10"  ))
+    DC.sensors_locations(d1)
+    DC.unselect!(d1 , ("T10" , "T5" , "T7"  ))
+    DC.set_location!(d1 , "T10" , 0.0001)
+    DC.thickness(d1)
+    DC.sensors_locations(d1)
+    DC.select!(d1 , "T10")
+
+
+
+    
+    dc_group = DC.DataSelectorsGroup("t1" => d1 , "t2" => d2, "t3" => d3)

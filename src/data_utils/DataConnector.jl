@@ -9,13 +9,13 @@ module DataConnector
 """
 Structure to store the information on temperature experiment
 
-- `sensors_locations` - locations of thermocouples in `m`
+- `sensors_locations` - locations of thermocouples in `m` 
 - `material` - material name
 - `comments` - comments on sample
 - `thickness` - sample total thickness in `m`
 """
 	mutable struct SampleProperties
-		sensors_locations :: OrderedDict{String , Float64}
+		sensors_locations :: OrderedDict{String , Float64} 
 		material::String
 		comments::String
 		thickness::Float64
@@ -194,13 +194,15 @@ function combine_selected_data(d::DataSelector)
 
 		is_all_locations_assigned(d) || error("Before combining assign locations to sensors : $(join(not_assigned_locations_names(d), ',')) ")
 		_sensors_locations = sensors_locations(d)
+		_sensors_names = selected_names(d)
 		initial_distribution =  sum(temperatures[1 , :])/size(temperatures , 2)
 		return (; 
 				time_data = time_data,
 				temperatures = temperatures, 
 				initial_distribution = initial_distribution,
 				sensors_locations = _sensors_locations,
-				sample_thickness = d.sample_properties.thickness
+				sample_thickness = d.sample_properties.thickness,
+				selected_names = _sensors_names
 			)
 	end
 	struct DataSelectorsGroup
@@ -239,12 +241,13 @@ function combine_selected_data(d::DataSelector)
 		(k , v)  = (first(a) , last(a))
 		return Pair(k , f(v))
 	end
+	fun_map_wrap(f::Function) = Base.Fix2(fun_map , f)
 	# (k , v) -> Pair(k  , selected_data(v))
-	selected_data_with_keys(d :: DataSelectorsGroup) = Iterators.map( Base.Fix2(fun_map , selected_data_with_keys) , d.d)
+	selected_data_with_keys(d :: DataSelectorsGroup) = Iterators.map( fun_map_wrap(selected_data_with_keys) , d.d)
 	# (k , v) -> Pair(k , selected_data_cutted_with_keys(v))
-	selected_data_cutted_with_keys(d :: DataSelectorsGroup ) = Iterators.map(  Base.Fix2(fun_map , selected_data_cutted_with_keys)  , d.d)
+	selected_data_cutted_with_keys(d :: DataSelectorsGroup ) = Iterators.map( fun_map_wrap(selected_data_cutted_with_keys)  , d.d)
 	# (k , v) -> Pair(k ,combine_selected_data(v))
-	combine_selected_data_with_keys(d :: DataSelectorsGroup ) = Iterators.map(Base.Fix2(fun_map , combine_selected_data)  , d.d)	
+	combine_selected_data_with_keys(d :: DataSelectorsGroup ) = Iterators.map( fun_map_wrap(combine_selected_data)  , d.d)	
 
 	fill_data_for_selected!(d::DataSelectorsGroup) = foreach(d.d) do (_,di)
 		fill_data_for_selected!(di)
@@ -256,6 +259,17 @@ function combine_selected_data(d::DataSelector)
 
 	WinPos.all_names(d::DataSelectorsGroup) = [k => WinPos.all_names(di) for (k , di) in d.d]
 	selected_names(d::DataSelectorsGroup) = [k => selected_names(di) for (k , di) in d.d]
+
+	function default_temperature_range(dsg::DataSelectorsGroup)
+		(Tmin  , Tmax) = (Inf , -Inf)
+		for (k , d_i) in dsg.d
+			(_Tmin , _Tmax) = default_temperature_range(d_i)
+			(_Tmin < Tmin) && (Tmin = _Tmin)
+			(_Tmax > Tmax) && (Tmax = _Tmax)
+
+		end
+		return (tmin = Tmin , tmax = Tmax)
+	end
 
 	function Base.convert(::Type{WinPos.WinPosProjectsGroup} , d::DataSelectorsGroup)
 		d_d = OrderedCollections.OrderedDict{String , WinPos.WinPosProject}()

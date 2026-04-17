@@ -36,8 +36,12 @@ end
 
 # ╔═╡ 5807712b-5d26-49c8-ab65-dac167ebad7b
 begin 
-	projects_save_path_ref =  Ref("")
-	projects_save_name_ref =  Ref("")
+	projects_save_path_ref =  Ref("") # projects saving path
+	projects_save_name_ref =  Ref("") # projects saving name
+
+	data_selection_save_path_ref = Ref("") # data selection saving path
+	data_selection_save_name_ref = Ref("") # data selection saving name
+	
 	default_data_fodler = joinpath(@__DIR__, "..","src","data_utils","binary_files")
 	source_path = joinpath(@__DIR__,"..","src")
 end;
@@ -100,9 +104,11 @@ md"""
 # ╔═╡ ad3152ec-d481-4b65-856b-f7c1987d379e
 @bind project_saving_type Select(["hdf5" , "winpos folder"] , default = "hdf5")
 
+# ╔═╡ ef7ac7cd-3e7b-4048-8674-2b4539f53eb1
+isdir(projects_save_path_ref[])
+
 # ╔═╡ 6e7839ca-da24-4a3e-927f-b035729a4cb7
-begin 
-	#@isdefined(save_selected_projects_trigger)  && save_selected_projects_trigger 
+begin  
 	
 	if save_selected_projects_trigger && !isempty(selected_projects)
 		
@@ -110,14 +116,15 @@ begin
 		is_hdf5 = project_saving_type == "hdf5"
 	
 		selected_projects_group = WP.WinPosProjectsGroup(projects.name, OrderedDict([p for p in projects if first(p) ∈  selected_projects]...) , working_folder)
-			
-		if is_hdf5
-			_ffile = joinpath(projects_save_path_ref[], projects_save_name_ref[]*".hdf5")
+		_ffile	= joinpath(projects_save_path_ref[], projects_save_name_ref[])
+		 is_hdf5 &&  (_ffile *= ".hdf5") 
+		if is_hdf5 
 			WP.export_to_hdf5(selected_projects_group , _ffile)
 		else
-			WP.write_to_winpos_folder(selected_projects_group , projects_save_name_ref[])
+			isdir(_ffile) || mkdir(_ffile)
+			WP.write_to_winpos_folder(selected_projects_group , _ffile)
 		end
-		"✅ Saved to $(project_saving_type)-file at $(Dates.format(now(), "HH:MM:SS"))"
+		"✅ Saved to $(project_saving_type)-file $(_ffile) at $(Dates.format(now(), "HH:MM:SS"))"
 	else
 		"😖 Not saved at $(Dates.format(now(), "HH:MM:SS"))"
 	end
@@ -131,11 +138,17 @@ end;
 # ╔═╡ 054d932d-12be-4538-ab34-b5d3f465bf0f
 projects
 
+# ╔═╡ f8bd87c8-bff6-4c78-a930-65d54467d8b7
+all_data[3]
+
 # ╔═╡ 6c4cb363-3bda-4dfa-8499-8201a013895d
 @bind show_data_table Select(collect(keys(all_data)))
 
-# ╔═╡ fd47bc58-8a0c-4dd7-875c-bcc80a21e64e
-all_data
+# ╔═╡ 12699165-eb53-4bca-b177-8326a0a72aed
+md"""
+
+**Save data selection ?** $(@bind data_selection_save_trigger PlutoUI.CheckBox(false))
+"""
 
 # ╔═╡ 62069546-44fb-4a77-986d-f03624719e29
 md" ## Physical properties setup"
@@ -152,6 +165,9 @@ md""" ### Compare to passport $(@bind show_passport CheckBox(default = true))"""
 # ╔═╡ 4f3e1899-541d-4809-810c-f2e6b7ca1ad1
 md"#### Optimize C : $(@bind is_optimize_c CheckBox(default = false))"
 
+# ╔═╡ 4fdbfb71-ec8d-4d30-b7e7-f289f773fadd
+md" C(T) parameters number $(@bind c_basis_degree Select(1:100, default = 4))"
+
 # ╔═╡ 2bb61e43-384c-48ce-8a55-843726bf3f05
 md" Upper Cp limit = $(@bind upper_cp_limit confirm(Slider(100.0 : 1e-1 : 10000.0, default = 1500.0, show_value = true)))"
 
@@ -160,6 +176,9 @@ md" Lower Cp limit = $(@bind lower_cp_limit confirm(Slider(100.0 : 1e-1 : 10000.
 
 # ╔═╡ 4ca95124-8a7a-4e4f-9e65-ff7b2adf35a5
 md" #### Optimize λ ? $( @bind is_optimize_lambda CheckBox(default = true))"
+
+# ╔═╡ fa72774e-040a-4bc3-a759-5eb68c243fb4
+md" Λ(T) parameters number $(@bind lam_basis_degree Select(1:100, default = 4))"
 
 # ╔═╡ c8dc4f9d-a549-4dc2-82bd-38ffe949ea55
 md" Lower λ limit = $(@bind lower_lam_limit confirm(Slider(0.0 : 1e-3 : 10.0, default = 0.1, show_value = true)))"
@@ -170,6 +189,8 @@ md" Upper λ limit = $(@bind upper_lam_limit confirm(Slider(0.1 : 1e-3 : 30.0, d
 # ╔═╡ 68ed85b2-7308-4ea7-b696-0f1951219592
 @bind lam_y_scale_region PlutoUI.combine() do Child 
 md"""
+	**Figure y-range**
+	
 	``\lambda_{min} ``= $(
 		Child(NumberField(0:1e-2:50,default=0.0))
 	) \
@@ -215,9 +236,6 @@ begin
 	end
 end;
 
-# ╔═╡ fa72774e-040a-4bc3-a759-5eb68c243fb4
-md" Λ(T) parameters number $(@bind basis_degree Select(1:100, default = 4))"
-
 # ╔═╡ 3281dd3c-0453-4098-a6ed-4d771717033b
 md" Direct problem number of coordinate steps $(@bind dp_xpoints Select(10:2000, default = 140))"
 
@@ -231,9 +249,6 @@ md"""
 
 # ╔═╡ d02ec3fd-1b0d-4bc3-92e9-adedc8bf2c8c
 md" ##### Global optimizer iterations number $(@bind pso_iters Select(10:10:10000 , default = 200))"
-
-# ╔═╡ 61a2463b-0e27-4a08-b85e-0b5c4916e667
-DC.default_temperature_range(all_data[1])
 
 # ╔═╡ 9cd8c4c8-7d11-4fb0-92d5-439702aa9496
 md" ### OPTIMIZATION "
@@ -439,6 +454,16 @@ end
 begin 
 	projects_save_path_ref[] = projects_save_name_path.path 
 	projects_save_name_ref[] = projects_save_name_path.name
+end;
+
+# ╔═╡ c9717703-5218-451d-9a80-a4ddb79b929d
+
+@bind data_selection_save_pathname multi_values_text(("path" , "name") , title = "Data selection path/name" , default_values=(working_folder , "data_selection"))
+
+# ╔═╡ 85c827cd-c4c8-4c0a-b790-86b2ea070e1d
+begin 
+	data_selection_save_path_ref[] = data_selection_save_pathname.path
+	data_selection_save_name_ref[] = data_selection_save_pathname.name
 end;
 
 # ╔═╡ 5ef97b4a-4e44-47ee-b9a2-2ce9f73063f5
@@ -650,42 +675,65 @@ if is_selected
 	raw_data_plot
 end
 
+# ╔═╡ b31a7c52-7c4b-480f-84d8-fcb1c71dca1b
+if is_selected 
+		locations_data
+	time_region
+	thicknesses_mm
+	
+	selected_plot = Plots.plot(;plot_common_args...)
+	_data_combined = DC.combine_selected_data(all_data[show_data_table])
+	_t = _data_combined.time_data
+	for (i,c) in enumerate(eachcol(_data_combined.temperatures))
+		Plots.plot!(selected_plot , _t , c ; label=_data_combined.selected_names[i]  , plot_common_args...)
+	end
+	title!(selected_plot , show_data_table)
+	selected_plot
+end
+
+# ╔═╡ c69d07a3-ba0a-48a2-b296-1944b8cd322c
+@htl("""
+<div style="max-height: 300px; overflow-y: auto; border: 1px solid #ccc;">
+    $(pretty_table(HTML , hcat(_data_combined.time_data, _data_combined.temperatures) , column_labels = ["t" , _data_combined.selected_names...] , top_left_string ="Temeratures for $(show_data_table)"))
+</div>
+""")
+
 # ╔═╡ b1f00c55-5ce9-4a0f-a548-a8a9041d02fc
 begin 
-	
-	locations_data
-	thicknesses_mm
-	time_range_selector
-	selected_variables_multi
-	refit
 	is_data_ready = true
 	try 
+		locations_data
+		thicknesses_mm
+		time_range_selector
+		selected_variables_multi
+		refit
 		for (k , d_i) in all_data.d
 		 	DC.combine_selected_data(d_i)
 		end
-		is_data_ready = true
+		global is_data_ready = true
 	catch 
-		is_data_ready = false
+		global is_data_ready = false
 	end
 	is_data_ready
 end
 
-# ╔═╡ fc79d398-03d0-4f75-a777-41e2e27fee5e
-if is_data_ready 
-	#=(lmin , lmax) = (1e6 , 0.0)
-	for (_,d) in all_data
-		global lmin , lmax
-		t_data= @view d.data_cutted[:,2:end]
-		(lmin_cur , lmax_cur) = extrema(t_data)
-		(lmin_cur < lmin) && (lmin = lmin_cur) 
-		(lmax_cur > lmax) && (lmax = lmax_cur) 
-	end=#
-	lam_T_range = (10.0 , 2000.0)
+# ╔═╡ 7a0abf93-e203-40b2-bcae-3e50c9de5eba
+if is_data_ready &&  data_selection_save_trigger
+		
+		isdir(data_selection_save_path_ref[]) || mkdir(data_selection_save_path_ref[])
+	
+		_f_f_file	= joinpath(data_selection_save_path_ref[], data_selection_save_name_ref[]*".hdf5")
+		WP.export_to_hdf5(all_data , _f_f_file , group_name =data_selection_save_name_ref[] )
+	
+		"✅ Data selection saved to hdf5-file $(_f_f_file) at $(Dates.format(now(), "HH:MM:SS"))"
 end
+
+# ╔═╡ fc79d398-03d0-4f75-a777-41e2e27fee5e
+is_data_ready && (lam_T_range = DC.default_temperature_range(all_data))
 
 # ╔═╡ 16337bb4-438e-4b86-bdc5-b88ef210a960
 begin 
-	C_poly = IHT.ScaledPolynomial(IHT.BernsteinSymPoly(ntuple(_->density*1000.0 , basis_degree)), xmin = lam_T_range[1], xmax =lam_T_range[2])
+	C_poly = IHT.ScaledPolynomial(IHT.BernsteinSymPoly(ntuple(_->density*1000.0 , c_basis_degree)), xmin = lam_T_range[1], xmax =lam_T_range[2])
 	c_x = Cp_Dict[material_name].x 
 	c_y = density.*Cp_Dict[material_name].y
 	flc = @. (c_x <= lam_T_range[2]) & (c_x >= lam_T_range[1])
@@ -702,7 +750,7 @@ end;
 
 # ╔═╡ c8861fa2-9cb3-4349-9ece-eba285c24eab
 begin 
-	λ_poly = IHT.ScaledPolynomial(IHT.BernsteinSymPoly(ntuple(_->1.0 , basis_degree)), xmin = lam_T_range[1], xmax =lam_T_range[2])
+	λ_poly = IHT.ScaledPolynomial(IHT.BernsteinSymPoly(ntuple(_->1.0 , lam_basis_degree)), xmin = lam_T_range[1], xmax =lam_T_range[2])
 	
 	if is_optimize_lambda
 		
@@ -1012,7 +1060,7 @@ begin
 	x_fit = x_fit[www]
 	y_fit = L_Dict[name_poly].y[www]
 	(k,_,rrr) =  PW.scale_x_to_ξ(x_fit)
-	pp = PW.polyfit(PW.BernsteinSymPoly{basis_degree, Float64} , k , y_fit)
+	pp = PW.polyfit(PW.BernsteinSymPoly{lam_basis_degree, Float64} , k , y_fit)
 	ppp = Plots.plot(x_fit,pp.(k), label = nothing)
 	Plots.plot!(ppp,x_fit,y_fit, marker=:circle, label = nothing; plot_common_args...)
 	Plots.scatter!([Ttest] ,[lam_test] )
@@ -1059,24 +1107,31 @@ end
 # ╟─46dc9aed-cbbe-4b8c-a6e3-9a5207bee10c
 # ╟─ad3152ec-d481-4b65-856b-f7c1987d379e
 # ╟─f9bf69a8-9854-4c46-8c1c-e4af8ed176d8
-# ╟─c9fa68be-e2c4-4c4c-a6cc-f9f064a0a4c8
-# ╟─6e7839ca-da24-4a3e-927f-b035729a4cb7
+# ╠═c9fa68be-e2c4-4c4c-a6cc-f9f064a0a4c8
+# ╠═ef7ac7cd-3e7b-4048-8674-2b4539f53eb1
+# ╠═6e7839ca-da24-4a3e-927f-b035729a4cb7
 # ╟─3aa5a908-c4eb-4f6a-899e-c7ba2d29fa01
 # ╠═054d932d-12be-4538-ab34-b5d3f465bf0f
 # ╠═0177413c-0f89-4935-9963-5aeebd333b9a
 # ╠═c30f95e5-93eb-4ab7-bc84-4bfe7092cf47
-# ╟─56a5f3c9-6a41-4326-83ab-2c19d65b3ed0
+# ╠═56a5f3c9-6a41-4326-83ab-2c19d65b3ed0
+# ╠═f8bd87c8-bff6-4c78-a930-65d54467d8b7
 # ╟─bc6ecff4-2ade-4436-9630-be573eb1ea04
 # ╟─999cefa4-3513-4c4f-86f1-49d4d55c66f8
 # ╟─b3c96eae-64a5-4245-85b6-b7b994e03ff7
-# ╟─ea647fc8-37c7-4726-980d-42f97ffc02e3
+# ╠═ea647fc8-37c7-4726-980d-42f97ffc02e3
 # ╟─df99b7b7-5a0d-4b71-bf5c-415b5cfa3b2d
 # ╟─359994cc-01e8-453d-b3e3-a878ffe466eb
 # ╟─35b5c27e-921f-4fe7-90bc-3b327d9150fe
 # ╟─5be15388-cea2-4884-b8de-bff5be64e506
 # ╟─6c4cb363-3bda-4dfa-8499-8201a013895d
-# ╠═fd47bc58-8a0c-4dd7-875c-bcc80a21e64e
-# ╠═b1f00c55-5ce9-4a0f-a548-a8a9041d02fc
+# ╟─b31a7c52-7c4b-480f-84d8-fcb1c71dca1b
+# ╟─c69d07a3-ba0a-48a2-b296-1944b8cd322c
+# ╟─b1f00c55-5ce9-4a0f-a548-a8a9041d02fc
+# ╟─c9717703-5218-451d-9a80-a4ddb79b929d
+# ╟─85c827cd-c4c8-4c0a-b790-86b2ea070e1d
+# ╟─12699165-eb53-4bca-b177-8326a0a72aed
+# ╟─7a0abf93-e203-40b2-bcae-3e50c9de5eba
 # ╟─62069546-44fb-4a77-986d-f03624719e29
 # ╟─fc5c1209-26ec-41d7-9238-e57d18330de1
 # ╟─2b3a1a65-8d3c-424e-a6cf-0e96646795f4
@@ -1085,14 +1140,16 @@ end
 # ╟─5843fcfb-4e0e-480d-b263-e3f3ad6a7ac3
 # ╟─7d37019a-34bf-43ca-aa81-8b6c29191473
 # ╟─4f3e1899-541d-4809-810c-f2e6b7ca1ad1
+# ╟─4fdbfb71-ec8d-4d30-b7e7-f289f773fadd
 # ╟─2bb61e43-384c-48ce-8a55-843726bf3f05
 # ╟─baffb68a-fb52-4bac-b484-4a215108aaed
 # ╟─16337bb4-438e-4b86-bdc5-b88ef210a960
 # ╟─4ca95124-8a7a-4e4f-9e65-ff7b2adf35a5
+# ╟─fa72774e-040a-4bc3-a759-5eb68c243fb4
 # ╟─c8dc4f9d-a549-4dc2-82bd-38ffe949ea55
 # ╟─bfa23359-8bac-4db0-bac1-0885ebe8ec4b
-# ╠═a660bf26-5b50-4910-b0ab-8e453623dc1a
-# ╠═538487b4-b2fc-42c2-ba69-663b2ca5b768
+# ╟─a660bf26-5b50-4910-b0ab-8e453623dc1a
+# ╟─538487b4-b2fc-42c2-ba69-663b2ca5b768
 # ╟─67763d8f-e1ac-4b1f-978f-4734af1e03ba
 # ╟─68ed85b2-7308-4ea7-b696-0f1951219592
 # ╟─9b35c13b-24ba-4c43-a621-a3f8ba45fe4a
@@ -1103,19 +1160,17 @@ end
 # ╟─10f7c083-a697-4b7e-87ea-de2791ed1a30
 # ╟─3f8c5c6a-f902-4b1e-abc1-7b572c8d2505
 # ╟─e5569bf4-b14f-4806-bbce-38096e2f837b
-# ╠═985eb56b-c964-4be8-973a-cec2c99df494
+# ╟─985eb56b-c964-4be8-973a-cec2c99df494
 # ╟─0a0324df-430f-4ac0-857b-4da6a7dca138
-# ╠═fe228354-5f3f-433d-9f8b-7d888e9c5ecb
+# ╟─fe228354-5f3f-433d-9f8b-7d888e9c5ecb
 # ╟─f3e24d8a-e35d-41de-92e6-0df290d3503c
 # ╟─4c9a5a5f-5839-4211-b561-7539dfa74a7a
 # ╟─95dbc55f-ab5a-4828-a1e2-9a0c9a9ec19b
-# ╟─fa72774e-040a-4bc3-a759-5eb68c243fb4
 # ╟─3281dd3c-0453-4098-a6ed-4d771717033b
 # ╟─bbc2d0df-28bf-4754-bbdf-bece0bbfe76b
 # ╟─2a1ca349-3732-443e-bc48-5be611a5d91f
 # ╟─d02ec3fd-1b0d-4bc3-92e9-adedc8bf2c8c
-# ╟─fc79d398-03d0-4f75-a777-41e2e27fee5e
-# ╠═61a2463b-0e27-4a08-b85e-0b5c4916e667
+# ╠═fc79d398-03d0-4f75-a777-41e2e27fee5e
 # ╟─c8861fa2-9cb3-4349-9ece-eba285c24eab
 # ╟─e06ac758-c5ae-4cf6-84b1-11d51a56f200
 # ╟─1318f293-f606-4a9f-8896-853b87c0665d
