@@ -1,4 +1,4 @@
-Manifest*.toml
+#Manifest*.toml
 .vscode
 debug_*
 test/test_data/*
@@ -6,3 +6,4 @@ debug*
 data_utils/binary_files/*
 *backup*
 *.hdf5
+jl_*

@@ -27,7 +27,7 @@ $$
 \frac{C}{\lambda} \frac{\partial T}{\partial t} = \frac{\partial^2 T}{\partial x^2} + \frac{\lambda'}{\lambda} \left( \frac{\partial T}{\partial x} \right)^2
 $$
 
-With initial conditions:
+With the initial conditions:
 
 $$
 T(x, 0) = T_i(x)
@@ -40,6 +40,13 @@ $$
 - $\rho$ — Density $[kg/m^3]$
 
 ## Inverse Problem & Regularization
+The main interface for a single inverse problem (see `SingleInverseProblem` type) supports the optimization of the following parameters of the heat transfer equation:
+
+*   **Initial temperature distribution**
+*   **Boundary conditions (Dirichlet and Neuman)** 
+*   **Physical properties of the material (both $\lambda$ and $C$)**
+
+To make the parameter optimizable it should be wrapped into `OptimizableVariable` type. For example, Bernstein polynomials can be used to approximate the temperature dependence of $\lambda$ and $C$. 
 
 For ill-posed inverse problems, the package implements advanced estimation and regularization techniques:
 
@@ -49,20 +56,25 @@ For ill-posed inverse problems, the package implements advanced estimation and r
     *   **Proportional Weighting:** Weights scaled according to the magnitude of the measured values.
     *   **AR(1) Weighting Function:** Accounts for first-order autoregressive correlations in measurement errors.
 
-## Sequential Inverse Solver
+### Parallel Inverse Solver
 
-The library includes a specialized type for the **sequential solving** of inverse problems. This allows for:
-*   Simultaneous estimation of $\lambda$ and $C_p$ across multiple experimental datasets.
-*   A **joint discrepancy function** that aggregates residuals from several measurements with different heating regimes.
-*   Improved parameter identifiability by leveraging diverse thermal loading scenarios within a single optimization framework.
+The library includes a specialized type (see `ParallelInverseProblems`) for the **parallel solving** of inverse problems. 
+
+This allows for:
+
+    *   Simultaneous estimation of $\lambda$ and $C$ across multiple experimental datasets.
+    *   A **joint discrepancy function** that aggregates residuals from several measurements with different heating regimes.
+    *   Improved parameter identifiability by leveraging diverse thermal loading scenarios within a single optimization framework.
 
 ## Numerical Solvers (Direct Problem)
 
-The direct problem is solved using the following Finite Difference Schemes:
+The direct problem can be solved using the following Finite Difference Schemes:
 1. **Fully Explicit**
 2. **Fully Implicit**
-3. **Crank-Nicolson**
+3. **Crank-Nicolson** (default)
+4. **BDF-Implicit**
 
 ## Roadmap (TODO)
+- [ ] Add HDF5 format support for experimental datasets and optimization results
 - [ ] Integration of **Spectral Methods** via `OrdinaryDiffEq.jl`.
 - [ ] Advanced **Sensitivity Analysis** for inverse problems.
