@@ -59,9 +59,6 @@ begin
 	plot_common_args = (grid = true, gridlinewidth=3, gridstyle = :dot,minorgrid=true, box = :on, linewidth = 3);
 end;
 
-# ╔═╡ 91570b46-cdcd-40be-9a67-b87ea5de4f0c
-WP.WinPosProjectsGroup
-
 # ╔═╡ db671921-13dc-497b-81e5-dcb4da0695f9
 md""" ## Loading experimental data from winpos project"""
 
@@ -189,7 +186,7 @@ if is_sensors_selected
 end
 
 # ╔═╡ 6c4cb363-3bda-4dfa-8499-8201a013895d
-@bind show_data_table Select(collect(keys(all_data)))
+is_projects_selected && @bind show_data_table Select(collect(keys(all_data)))
 
 # ╔═╡ c9717703-5218-451d-9a80-a4ddb79b929d
 
@@ -271,9 +268,9 @@ if is_sensors_selected && is_thickness_set
 end
 
 # ╔═╡ 6b4d07af-a40b-4ed1-a610-2a433311c94e
-function time_range_selector(all_data::DC.DataSelectorsGroup; kwargs...)
-	range_constructor(d) = (DC.default_tmin_tmax(d)...,1e-2)
-	PF.multi_values(PlutoUI.RangeSlider , all_data.d , range_constructor;title = "Select time range", kwargs...)
+function time_range_selector(all_data::DC.DataSelectorsGroup)
+	range_constructor(d) = (DC.default_tmin_tmax(d)... , 1e-2)
+	PF.multi_values(PlutoUI.RangeSlider , all_data.d , range_constructor ; title = "Select time range" , show_value = true)
 end
 
 # ╔═╡ df99b7b7-5a0d-4b71-bf5c-415b5cfa3b2d
@@ -372,7 +369,7 @@ begin
 		md" **Data is ready**"
 	catch er
 		global is_data_ready = false
-		md" Data is not ready due to **$(er.msg)**"
+		md" Data is not ready due to **$(er)**"
 	end
 end
 
@@ -387,14 +384,10 @@ if is_data_ready &&  data_selection_save_trigger
 		"✅ Data selection saved to hdf5-file $(_f_f_file) at $(Dates.format(now(), "HH:MM:SS"))"
 end
 
-# ╔═╡ 8115c423-4dec-419b-af04-9ab87b2e4d3b
-time_range_selector(all_data)
-
 # ╔═╡ Cell order:
-# ╠═a17fe1fe-5542-454b-b45e-942ac52b6f1a
+# ╟─a17fe1fe-5542-454b-b45e-942ac52b6f1a
 # ╠═5807712b-5d26-49c8-ab65-dac167ebad7b
 # ╠═35958e8a-eb7a-4eff-89a0-f9c04aff2a37
-# ╠═91570b46-cdcd-40be-9a67-b87ea5de4f0c
 # ╟─db671921-13dc-497b-81e5-dcb4da0695f9
 # ╟─450fb200-eec6-4e96-9ebd-81453c015830
 # ╟─6e062bd9-d20c-4e1d-b772-328bec8859ea
@@ -412,7 +405,7 @@ time_range_selector(all_data)
 # ╟─56a5f3c9-6a41-4326-83ab-2c19d65b3ed0
 # ╟─bc6ecff4-2ade-4436-9630-be573eb1ea04
 # ╟─999cefa4-3513-4c4f-86f1-49d4d55c66f8
-# ╟─b3c96eae-64a5-4245-85b6-b7b994e03ff7
+# ╠═b3c96eae-64a5-4245-85b6-b7b994e03ff7
 # ╟─ea647fc8-37c7-4726-980d-42f97ffc02e3
 # ╟─df99b7b7-5a0d-4b71-bf5c-415b5cfa3b2d
 # ╟─359994cc-01e8-453d-b3e3-a878ffe466eb
@@ -431,4 +424,3 @@ time_range_selector(all_data)
 # ╟─fd51a6c8-6569-4bfd-86ac-883c648fe6d9
 # ╟─c40ec284-b81a-4039-bb33-238de0ca09e4
 # ╟─6b4d07af-a40b-4ed1-a610-2a433311c94e
-# ╠═8115c423-4dec-419b-af04-9ab87b2e4d3b

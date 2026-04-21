@@ -42,15 +42,18 @@ begin
 	
 	default_data_fodler = joinpath(@__DIR__, "..","src","data_utils","binary_files")
 	source_path = joinpath(@__DIR__,"..","src")
-
+	includet(joinpath(@__DIR__ , "CustomPlutoFunctions.jl"))
+	
 	IHT = InverseHeatTransfer
 	PW = IHT.ScaledPolynomials
 	OHT = IHT.OneDHeatTransfer
-	#WP = IHT.WinPos
 	DC = IHT.DataConnector
 	
 	plot_common_args = (grid = true, gridlinewidth=3, gridstyle = :dot,minorgrid=true, box = :on, linewidth = 3)
 end;
+
+# ╔═╡ 2bfb4e52-6248-4832-aca1-98ba58959bff
+PF = Main.CustomPlutoFunctions;
 
 # ╔═╡ db671921-13dc-497b-81e5-dcb4da0695f9
 md""" ## Loading experimental data from winpos project"""
@@ -202,13 +205,16 @@ md""" ### Compare to passport $(@bind show_passport CheckBox(default = true))"""
 md"#### Optimize C : $(@bind is_optimize_c CheckBox(default = false))"
 
 # ╔═╡ 4fdbfb71-ec8d-4d30-b7e7-f289f773fadd
-md" C(T) parameters number $(@bind c_basis_degree Select(1:100, default = 4))"
+md" **C(T) parameters number** $(@bind c_basis_degree Select(1:100, default = 4))"
 
-# ╔═╡ 2bb61e43-384c-48ce-8a55-843726bf3f05
-md" Upper Cp limit = $(@bind upper_cp_limit confirm(Slider(100.0 : 1e-1 : 10000.0, default = 1500.0, show_value = true)))"
+# ╔═╡ eb755603-1eda-4182-a026-e9b163e78ae3
+md" **Use table for constraints** $(@bind use_cp_table_for_constraints CheckBox(false))"
+
+# ╔═╡ 97618f0c-52ae-4772-b5b7-5512ea44af09
+!use_cp_table_for_constraints  && md" **Upper Cp limit** = $(@bind upper_cp_limit confirm(Slider(100.0 : 1e-1 : 10000.0, default = 1500.0, show_value = true)))"
 
 # ╔═╡ baffb68a-fb52-4bac-b484-4a215108aaed
-md" Lower Cp limit = $(@bind lower_cp_limit confirm(Slider(100.0 : 1e-1 : 10000.0, default = 600.0, show_value = true)))"
+!use_cp_table_for_constraints && md" **Lower Cp limit** = $(@bind lower_cp_limit confirm(Slider(100.0 : 1e-1 : 10000.0, default = 600.0, show_value = true)))"
 
 # ╔═╡ 4ca95124-8a7a-4e4f-9e65-ff7b2adf35a5
 md" #### Optimize λ ? $( @bind is_optimize_lambda CheckBox(default = true))"
@@ -288,6 +294,12 @@ md" ##### Global optimizer iterations number $(@bind pso_iters Select(10:10:1000
 
 # ╔═╡ fc79d398-03d0-4f75-a777-41e2e27fee5e
 is_data_loaded && (lam_T_range = DC.default_temperature_range(all_data))
+
+# ╔═╡ 2bb61e43-384c-48ce-8a55-843726bf3f05
+if use_cp_table_for_constraints 
+	_bern_max = IHT.ScaledPolynomials.scale_ξ_to_x(  		IHT.ScaledPolynomials.bern_max_locations(IHT.BernsteinSymPoly{c_basis_degree , Float64}()),lam_T_range[1] , lam_T_range[2])
+	
+end;
 
 # ╔═╡ e06ac758-c5ae-4cf6-84b1-11d51a56f200
 initial_distribution = lam_T_range[1]
@@ -373,23 +385,6 @@ if density != Rho_Dict[material_name]
 	md" passport density is $(Rho_Dict[material_name])"
 end
 
-# ╔═╡ 16337bb4-438e-4b86-bdc5-b88ef210a960
-begin 
-	C_poly = IHT.ScaledPolynomial(IHT.BernsteinSymPoly(ntuple(_->density*1000.0 , c_basis_degree)), xmin = lam_T_range[1], xmax =lam_T_range[2])
-	c_x = Cp_Dict[material_name].x 
-	c_y = density.*Cp_Dict[material_name].y
-	flc = @. (c_x <= lam_T_range[2]) & (c_x >= lam_T_range[1])
-	c_x = c_x[flc]
-	c_y = c_y[flc]
-	if is_optimize_c
-		C = IHT.OptimizableVariable(C_poly, flag = is_optimize_c , lb = density*lower_cp_limit , ub = density * upper_cp_limit )
-	else
-
-		#C = PW.polyfit!(C_poly, c_x,c_y)#linear_interpolation(c_x ,c_y , extrapolation_bc=Line())
-		C =linear_interpolation(c_x ,c_y , extrapolation_bc=Line())
-	end
-end;
-
 # ╔═╡ 023dc25f-6cf8-4802-83b4-77d1827cd2a7
 L_Dict =Dict( "RBSN" =>(;
 						x = Float64.([ 25, 100, 300, 500, 700, 900, 1100, 1300, 1500, 1600, 1700, 1800, 2000, 2500]),
@@ -429,6 +424,101 @@ if is_data_ready
 		#Cp = linear_interpolation(cp_x ,density.*cp_y , extrapolation_bc=Line())
 		λ = PW.polyfit!(λ_poly, l_x, l_y)
 		dλdT = PW.derivative(λ)
+	end
+end;
+
+# ╔═╡ 23902c7d-5973-4868-8488-e0c7634573c4
+@bind default_save_file TextField(60,"thermal_conductivity.txt")
+
+# ╔═╡ 6800ae42-c5b1-4d1e-84fb-a03015bf138f
+@bind save_folder TextField(90, default = realpath(default_data_fodler))
+
+# ╔═╡ ea412a80-0bf7-4ac6-9b90-8530a4c26008
+md"### Save data to file ? $(@bind is_write_file Button())"
+
+# ╔═╡ 2bf91a7e-0da8-48e8-a779-962be2e7c03b
+function plot_optimizable(C; xmin,xmax , kwargs...)
+	x = range(xmin , xmax ,100)
+	return (Plots.plot(x, C.(x); kwargs...), x)
+end
+
+# ╔═╡ fd51a6c8-6569-4bfd-86ac-883c648fe6d9
+function filter_couple_breakage!(T)
+	N = size(T,1)
+	for (i,c) in enumerate(eachcol(T))
+		inds = findall(c .<= -196.0)
+		isempty(inds) && continue
+		for j in inds
+			left = findfirst(Base.Fix2(>=, -196.0), view(c,j:-1:1))
+			right = findfirst(Base.Fix2(>=, -196.0), view(c,j:N))
+			if (isnothing(left) || isnothing(right))
+				if isnothing(left) && isnothing(right) 
+					c[j] = 0.0
+				elseif isnothing(left)
+					c[j] = c[j + right - 1]
+				else
+					c[j] = c[j - left + 1]
+				end
+				continue
+			end
+			tleft = c[j - left + 1]
+			tright = c[j + right - 1]
+			c[j] = 0.5*(tleft + tright)
+		end
+	end
+	return T
+end
+
+# ╔═╡ dbd6f9d9-4b44-4238-86ca-7cd361545a56
+function prepare_constraints_gui(el_number , def ; title= "no title")
+	_names = ntuple(c_basis_degree) do i 
+		"T=$(string(round(Int , _bern_max[i])))"
+	end
+		
+	_default_values = ntuple(c_basis_degree) do _ 
+		200.0:1:3000.0
+	end
+	_defaults = ntuple(c_basis_degree) do _ 
+		def
+	end
+
+	PF.multi_values(PlutoUI.NumberField , _names , title = title, default_values = _default_values , defaults = _defaults )
+end
+
+# ╔═╡ c8cda804-9a2a-40c9-aa91-7a48500e85ff
+use_cp_table_for_constraints && @bind upper_cp_limit_table confirm(prepare_constraints_gui(c_basis_degree , 1500.0 , title = "upper bounds"))
+
+# ╔═╡ 315f6a9b-f37a-4213-be5a-3714b18c9d96
+use_cp_table_for_constraints && @bind lower_cp_limit_table confirm(prepare_constraints_gui(c_basis_degree , 500.0 , title = "lower bounds"))
+
+# ╔═╡ d051f5e5-f836-4043-9326-639b40acaf87
+begin 
+	cp_upper_bounds = if use_cp_table_for_constraints 
+		Tuple(density.*[v for v in upper_cp_limit_table])
+	else
+		density * upper_cp_limit
+	end
+	cp_lower_bounds = if use_cp_table_for_constraints 
+		Tuple(density.*[v for v in lower_cp_limit_table])
+	else
+		density*lower_cp_limit 
+	end
+end;
+
+# ╔═╡ 16337bb4-438e-4b86-bdc5-b88ef210a960
+begin 
+	C_poly = IHT.ScaledPolynomial(IHT.BernsteinSymPoly(ntuple(_->density*1000.0 , c_basis_degree)), xmin = lam_T_range[1], xmax =lam_T_range[2])
+	c_x = Cp_Dict[material_name].x 
+	c_y = density.*Cp_Dict[material_name].y
+	flc = @. (c_x <= lam_T_range[2]) & (c_x >= lam_T_range[1])
+	c_x = c_x[flc]
+	c_y = c_y[flc]
+	if is_optimize_c
+		C = IHT.OptimizableVariable(C_poly, flag = is_optimize_c , lb = cp_lower_bounds , ub = cp_upper_bounds )
+	else
+
+		#C = PW.polyfit!(C_poly, c_x,c_y)#linear_interpolation(c_x ,c_y , extrapolation_bc=Line())
+		C =linear_interpolation(c_x ,c_y , extrapolation_bc=Line())
 	end
 end;
 
@@ -527,6 +617,69 @@ end
 
 # ╔═╡ 672119a2-7a47-4813-a2d3-e0c15ee63491
 DataFrames.DataFrame(loss_table)
+
+# ╔═╡ f2943cf8-ffb9-4065-a272-1f344488dd0f
+begin 
+	refresh_graph
+
+	# plotting fitted values 
+	(Tmin,Tmax) = (lam_T_range[1],lam_T_range[2])
+	Tplot = range(Tmin, Tmax, 100)
+	p_fit_lam = Plots.plot(Tplot, λ.(Tplot), label = "inverse", linewidth = 2,linecolor = :green)
+	if haskey(L_Dict, material_name) && show_passport
+		d_cur = L_Dict[material_name]
+		f_range =  (d_cur.x .>= Tmin) .& (d_cur.x .<=Tmax)
+		Plots.plot!(p_fit_lam, d_cur.x[f_range],d_cur.y[f_range], label = "passport",marker = :circle;  plot_common_args...)
+	end
+	xlabel!(p_fit_lam, "Temperature, ᵒC")
+	ylabel!(p_fit_lam, "Thermal conductivity, W/(m*K)")
+	title!(p_fit_lam, "Fitted VS measured")
+
+	# plotting temeprature distribution 
+	p_residual = Plots.plot(;plot_common_args...)
+	p_distr = Plots.plot(;plot_common_args...)
+	for inv_probl in parallel_probls.problems
+		discr = IHT.evaluate_loss(inv_probl)
+		Plots.plot!(p_distr , inv_probl.Tdata_evaluated, label = "fitted")
+		Plots.plot!(p_distr, inv_probl.Tdata_measured, linestyle = :dash, label = "measured"; plot_common_args...)
+		title!(p_distr,"discrepancy = $(discr)")
+		xlabel!(p_distr, "Timestep")
+		ylabel!(p_distr, "Temperature, ᵒC")
+		
+		
+		# ploting residuals
+	
+		Plots.plot!(p_residual , inv_probl.residual, label = nothing ; plot_common_args...)
+		title!(p_residual, "Residuals")
+		xlabel!(p_residual, "Timestep")
+		ylabel!(p_residual, "ΔT, ᵒC")
+	end
+end ;
+
+# ╔═╡ a660bf26-5b50-4910-b0ab-8e453623dc1a
+p_residual
+
+# ╔═╡ 538487b4-b2fc-42c2-ba69-663b2ca5b768
+begin 
+	c_plot = Plots.plot(Tplot,C.(Tplot) ./density, label = "inverse", xlabel = "Temperature",linecolor = :green , ylabel = "Heat capacity, J/K"; plot_common_args...)
+	Plots.plot!(c_plot ,c_x ,c_y ./density , label = "passport",marker = :circle , markersize  = 8; plot_common_args... )
+end
+
+# ╔═╡ 67763d8f-e1ac-4b1f-978f-4734af1e03ba
+ylims!(p_fit_lam, lam_y_scale_region)
+
+# ╔═╡ 042ea29b-63dd-43d0-a20f-68807c5f7cd4
+p_distr
+
+# ╔═╡ 4cf77d64-a720-41da-a9c2-5d875ea00135
+begin 
+	is_write_file
+	#save_folder = select_folder_gtk()
+	Tsave = range(Tmin, Tmax, 100)
+	mat = hcat(Tsave, λ.(Tsave))
+	fullfile_name = joinpath(save_folder,default_save_file)
+	CSV.write(fullfile_name,Tables.table(mat, header = ["T", "lambda"] ), delim = " ")
+end
 
 # ╔═╡ a2a84394-1f18-48e3-a4dc-c03f64a3a1c0
 begin
@@ -660,59 +813,6 @@ end
 # ╔═╡ f5b13ec5-98f9-48bb-ad95-7dbd87e11f7b
 lam_test = OHT.thermal_conductivity(parallel_probls.problems[1].direct_problem, Ttest)
 
-# ╔═╡ f2943cf8-ffb9-4065-a272-1f344488dd0f
-begin 
-	refresh_graph
-
-	# plotting fitted values 
-	(Tmin,Tmax) = (lam_T_range[1],lam_T_range[2])
-	Tplot = range(Tmin, Tmax, 100)
-	p_fit_lam = Plots.plot(Tplot, λ.(Tplot), label = "inverse", linewidth = 2,linecolor = :green)
-	if haskey(L_Dict, material_name) && show_passport
-		d_cur = L_Dict[material_name]
-		f_range =  (d_cur.x .>= Tmin) .& (d_cur.x .<=Tmax)
-		Plots.plot!(p_fit_lam, d_cur.x[f_range],d_cur.y[f_range], label = "passport",marker = :circle;  plot_common_args...)
-	end
-	xlabel!(p_fit_lam, "Temperature, ᵒC")
-	ylabel!(p_fit_lam, "Thermal conductivity, W/(m*K)")
-	title!(p_fit_lam, "Fitted VS measured")
-
-	# plotting temeprature distribution 
-	p_residual = Plots.plot(;plot_common_args...)
-	p_distr = Plots.plot(;plot_common_args...)
-	for inv_probl in parallel_probls.problems
-		discr = IHT.evaluate_loss(inv_probl)
-		Plots.plot!(p_distr , inv_probl.Tdata_evaluated, label = "fitted")
-		Plots.plot!(p_distr, inv_probl.Tdata_measured, linestyle = :dash, label = "measured"; plot_common_args...)
-		title!(p_distr,"discrepancy = $(discr)")
-		xlabel!(p_distr, "Timestep")
-		ylabel!(p_distr, "Temperature, ᵒC")
-		
-		
-		# ploting residuals
-	
-		Plots.plot!(p_residual , inv_probl.residual, label = nothing ; plot_common_args...)
-		title!(p_residual, "Residuals")
-		xlabel!(p_residual, "Timestep")
-		ylabel!(p_residual, "ΔT, ᵒC")
-	end
-end ;
-
-# ╔═╡ a660bf26-5b50-4910-b0ab-8e453623dc1a
-p_residual
-
-# ╔═╡ 538487b4-b2fc-42c2-ba69-663b2ca5b768
-begin 
-	c_plot = Plots.plot(Tplot,C.(Tplot) ./density, label = "inverse", xlabel = "Temperature",linecolor = :green , ylabel = "Heat capacity, J/K"; plot_common_args...)
-	Plots.plot!(c_plot ,c_x ,c_y ./density , label = "passport",marker = :circle , markersize  = 8; plot_common_args... )
-end
-
-# ╔═╡ 67763d8f-e1ac-4b1f-978f-4734af1e03ba
-ylims!(p_fit_lam, lam_y_scale_region)
-
-# ╔═╡ 042ea29b-63dd-43d0-a20f-68807c5f7cd4
-p_distr
-
 # ╔═╡ 27031733-7ade-4bda-b464-5a9ade0b2950
 begin 
 	name_poly =  material_name
@@ -730,247 +830,17 @@ begin
 		   """)
 end
 
-# ╔═╡ 23902c7d-5973-4868-8488-e0c7634573c4
-@bind default_save_file TextField(60,"thermal_conductivity.txt")
-
-# ╔═╡ 6800ae42-c5b1-4d1e-84fb-a03015bf138f
-@bind save_folder TextField(90, default = realpath(default_data_fodler))
-
-# ╔═╡ ea412a80-0bf7-4ac6-9b90-8530a4c26008
-md"### Save data to file ? $(@bind is_write_file Button())"
-
-# ╔═╡ 4cf77d64-a720-41da-a9c2-5d875ea00135
-begin 
-	is_write_file
-	#save_folder = select_folder_gtk()
-	Tsave = range(Tmin, Tmax, 100)
-	mat = hcat(Tsave, λ.(Tsave))
-	fullfile_name = joinpath(save_folder,default_save_file)
-	CSV.write(fullfile_name,Tables.table(mat, header = ["T", "lambda"] ), delim = " ")
-end
-
-# ╔═╡ 2bf91a7e-0da8-48e8-a779-962be2e7c03b
-function plot_optimizable(C; xmin,xmax , kwargs...)
-	x = range(xmin , xmax ,100)
-	return (Plots.plot(x, C.(x); kwargs...), x)
-end
-
-# ╔═╡ fba5bc8b-25cb-406b-aa13-f06c591e08c9
-function discrepancy(x,inv_probl::IHT.SingleInverseProblem)
-	λ = inv_probl.direct_problem.L_f.fun
-	IHT.refill!(λ, x)
-	dλdT = inv_probl.direct_problem.Ld_f.fun
-	IHT.derivative!(dλdT, λ)
-	IHT.solve_direct_problem!(inv_probl)
-	IHT.fill_residual!(inv_probl)
-	#return sum(Base.Fix2(^,2.0), inv_probl.residual)
-	return norm(inv_probl.residual)/length(inv_probl.residual) #+ sum(Base.Fix1(^,2.0),dλdT.p.poly.coeffs)/PW.parnumber(dλdT.p)
-end
-
-# ╔═╡ 5135015e-0fcf-484a-86ad-3cb7e40849bd
-function select_folder_gtk()
-    # open_dialog_native или open_dialog с флагом выбора папки
-    # В Gtk.jl для папок используется специфический метод
-    return open_dialog("Выберите папку", action=GtkFileChooserAction.SELECT_FOLDER)
-end
-
-
-# ╔═╡ fd51a6c8-6569-4bfd-86ac-883c648fe6d9
-function filter_couple_breakage!(T)
-	N = size(T,1)
-	for (i,c) in enumerate(eachcol(T))
-		inds = findall(c .<= -196.0)
-		isempty(inds) && continue
-		for j in inds
-			left = findfirst(Base.Fix2(>=, -196.0), view(c,j:-1:1))
-			right = findfirst(Base.Fix2(>=, -196.0), view(c,j:N))
-			if (isnothing(left) || isnothing(right))
-				if isnothing(left) && isnothing(right) 
-					c[j] = 0.0
-				elseif isnothing(left)
-					c[j] = c[j + right - 1]
-				else
-					c[j] = c[j - left + 1]
-				end
-				continue
-			end
-			tleft = c[j - left + 1]
-			tright = c[j + right - 1]
-			c[j] = 0.5*(tleft + tright)
-		end
-	end
-	return T
-end
-
-# ╔═╡ 6cd4f554-7242-4e97-b4cb-8549e3b70139
-function multi_values(names; default_values=nothing , title = "Thickness , mm" , rng=0:1e3:20  , field_type = NumberField )
-	isnothing(default_values) && (default_values = zeros(length(names)))
-	PlutoUI.combine() do Child
-		@htl("""
-		<h6>$title</h6>
-		<ul>
-		$([
-			@htl("<li>
-				 $(name): $(Child(name, field_type(default=deflt)))		</li>")
-			for (name,deflt) in zip( names, default_values)
-		])
-		</ul>
-		""")
-	end
-end
-
-# ╔═╡ 85b69faa-03e0-4008-a702-7245aa99202d
-function multi_values_text(names; default_values=nothing , title = "Thickness , mm" )
-
-	
-	isnothing(default_values) && (default_values = fill("" , length(names)))
-	PlutoUI.combine() do Child
-		@htl("""
-		<h6>$title</h6>
-		<ul>
-		$([
-			@htl("<li>
-				 $(name): $(Child(name, TextField(60 , deflt)))		
-			</li>")
-			for (name , deflt) in zip( names, default_values)
-		])
-		</ul>
-		""")
-	end
-end
-
-# ╔═╡ f3c98fbf-c17d-4c93-bc1b-8b20ad31fc22
-function multi_checkboxes(names; title = "Save data , mm" )
-
-	PlutoUI.combine() do Child
-		@htl("""
-		<h6>$title</h6>
-		<ul>
-		$([
-			@htl("<li>
-				 $(name): $(Child(name, PlutoUI.CheckBox(false)))		
-			</li>")
-			for name in names
-		])
-		</ul>
-		""")
-	end
-end
-
-# ╔═╡ 5ef97b4a-4e44-47ee-b9a2-2ce9f73063f5
-multi_values(data::DC.DataSelectorsGroup; kwargs...) = multi_values(data.d; kwargs...)
-
-# ╔═╡ 60458134-1de0-475e-ba64-24b6f33a2980
-# makes pairs from name - value pairs iterator by taking the field `field_name` of `value` 
-function paired_selected_names(all_data ; unary_operator = Base.Fix2(getfield , :selected_variables))
-	out = Vector{Pair{String , String}}()
-	for (n , v) in all_data
-		append!(out , [ Pair(n , k)  for k in  unary_operator(v) ] )
-	end
-	return out
-end
-
-# ╔═╡ 6d0d7cb4-45fc-405f-8a5d-cf10ad5e380b
-function multi_values(all_data::AbstractDict; unary_operator=DC.selected_names , default_values=nothing , title = "Thermocouples locations , mm" )
-	PlutoUI.combine() do Child
-		@htl("""
-		<h6>$title</h6>
-		<ul>
-		$([
-			@htl("<li>
-				 
-				 $(join( [n , f] , ":")): $(
-					 Child( 
-						 join( [n , f] , ":") , NumberField(0:1e-3:20 , default = 0.0)
-						  )
-				 )
-			</li>")
-			
-			for (n, f) in paired_selected_names(all_data , unary_operator =unary_operator)
-		])
-		</ul>
-		""")
-	end
-end
-
-# ╔═╡ 96b4c7c4-30a8-407c-9bd4-245f0ee0d9b2
-function sensors_selector(all_data::DC.DataSelectorsGroup ;unary_operator = WP.all_names)
-
-		PlutoUI.combine() do Child
-		@htl("""
-		<ul>
-		$([
-			@htl("<li>$(name): \n $(
-				Child(
-				name , 
-				MultiSelect(unary_operator(data_selector) 
-						   )
-				)
-			)
-			)</li>")
-			
-			for (name, data_selector) in all_data.d
-		])
-		</ul>
-		""")
-	end
-
-end
-
-# ╔═╡ 6b4d07af-a40b-4ed1-a610-2a433311c94e
-time_range_selector(all_data::DC.DataSelectorsGroup; kwargs...) = time_range_selector(all_data.d; kwargs...)
-
-# ╔═╡ 231e4df4-e1c6-47c2-a1eb-2d9c6dde8cab
-DC.default_tmin_tmax(all_data[2])
-
-# ╔═╡ 50befa75-73e5-4223-86e0-1c1d02134345
-function _default_tmin_tmax(d::DC.DataSelector) 
-		DC.is_any_selected(d) || return (tmin = -Inf , tmax = Inf)
-		tmin = -Inf 
-		tmax = Inf
-		for (_ , data_pair_i) in DC.each_selected(d)
-			(_tmin , _tmax)  = extrema(data_pair_i.x)
-			(_tmin > tmin) && (tmin = _tmin) 
-			(_tmax < tmax) && (tmax = _tmax) 
-		end
-		return (tmin = tmin , tmax = tmax)
-	end
-
-# ╔═╡ ee70abb1-98ff-4674-916b-f0439c94b8af
-_default_tmin_tmax(all_data[1])
-
-# ╔═╡ a1c795e4-1be0-46e0-b6a2-4eda990fd65e
-function time_range_selector(all_data::AbstractDict; unary_opertor = DC.default_tmin_tmax)
-	N = length(all_data)
-	range_constructor(d) = begin 
-		(tmin , tmax) = unary_opertor(d)
-		range(tmin , tmax , step=1.0)
-	end
-	PlutoUI.combine() do Child
-		@htl("""
-		<h6>Time range, tmin - tmax , s</h6>
-		<ul>
-		$([
-			@htl("<li>$(k): $(Child( k, RangeSlider(range_constructor(d) )))</li>")
-			
-			for (k , d) in all_data
-		])
-		</ul>
-		""")
-
-	end
-end
-
 # ╔═╡ Cell order:
-# ╟─a17fe1fe-5542-454b-b45e-942ac52b6f1a
-# ╟─5807712b-5d26-49c8-ab65-dac167ebad7b
+# ╠═a17fe1fe-5542-454b-b45e-942ac52b6f1a
+# ╠═5807712b-5d26-49c8-ab65-dac167ebad7b
+# ╟─2bfb4e52-6248-4832-aca1-98ba58959bff
 # ╟─db671921-13dc-497b-81e5-dcb4da0695f9
 # ╟─450fb200-eec6-4e96-9ebd-81453c015830
 # ╟─41bc1a0a-73c8-430d-a1d3-4eb98487c815
 # ╟─6e062bd9-d20c-4e1d-b772-328bec8859ea
 # ╟─a7abe643-2553-450d-ac81-d4a690a1c2ff
-# ╟─444236e5-e010-4b8b-8709-31c0307dc5d8
-# ╟─81c2f93b-05b1-4eb0-9919-4ef76ecad233
+# ╠═444236e5-e010-4b8b-8709-31c0307dc5d8
+# ╠═81c2f93b-05b1-4eb0-9919-4ef76ecad233
 # ╟─074c47c6-a1ae-4ded-8e64-b40393d7ba4a
 # ╟─35b5c27e-921f-4fe7-90bc-3b327d9150fe
 # ╟─5be15388-cea2-4884-b8de-bff5be64e506
@@ -987,8 +857,13 @@ end
 # ╟─7d37019a-34bf-43ca-aa81-8b6c29191473
 # ╟─4f3e1899-541d-4809-810c-f2e6b7ca1ad1
 # ╟─4fdbfb71-ec8d-4d30-b7e7-f289f773fadd
+# ╟─eb755603-1eda-4182-a026-e9b163e78ae3
+# ╟─97618f0c-52ae-4772-b5b7-5512ea44af09
 # ╟─2bb61e43-384c-48ce-8a55-843726bf3f05
+# ╟─c8cda804-9a2a-40c9-aa91-7a48500e85ff
 # ╟─baffb68a-fb52-4bac-b484-4a215108aaed
+# ╟─315f6a9b-f37a-4213-be5a-3714b18c9d96
+# ╟─d051f5e5-f836-4043-9326-639b40acaf87
 # ╟─16337bb4-438e-4b86-bdc5-b88ef210a960
 # ╟─4ca95124-8a7a-4e4f-9e65-ff7b2adf35a5
 # ╟─fa72774e-040a-4bc3-a759-5eb68c243fb4
@@ -1044,19 +919,6 @@ end
 # ╟─6800ae42-c5b1-4d1e-84fb-a03015bf138f
 # ╟─ea412a80-0bf7-4ac6-9b90-8530a4c26008
 # ╟─4cf77d64-a720-41da-a9c2-5d875ea00135
-# ╠═2bf91a7e-0da8-48e8-a779-962be2e7c03b
-# ╟─fba5bc8b-25cb-406b-aa13-f06c591e08c9
-# ╟─5135015e-0fcf-484a-86ad-3cb7e40849bd
+# ╟─2bf91a7e-0da8-48e8-a779-962be2e7c03b
 # ╟─fd51a6c8-6569-4bfd-86ac-883c648fe6d9
-# ╠═6cd4f554-7242-4e97-b4cb-8549e3b70139
-# ╟─85b69faa-03e0-4008-a702-7245aa99202d
-# ╟─f3c98fbf-c17d-4c93-bc1b-8b20ad31fc22
-# ╟─5ef97b4a-4e44-47ee-b9a2-2ce9f73063f5
-# ╟─6d0d7cb4-45fc-405f-8a5d-cf10ad5e380b
-# ╠═60458134-1de0-475e-ba64-24b6f33a2980
-# ╟─96b4c7c4-30a8-407c-9bd4-245f0ee0d9b2
-# ╠═6b4d07af-a40b-4ed1-a610-2a433311c94e
-# ╠═231e4df4-e1c6-47c2-a1eb-2d9c6dde8cab
-# ╠═50befa75-73e5-4223-86e0-1c1d02134345
-# ╠═ee70abb1-98ff-4674-916b-f0439c94b8af
-# ╠═a1c795e4-1be0-46e0-b6a2-4eda990fd65e
+# ╟─dbd6f9d9-4b44-4238-86ca-7cd361545a56

@@ -25,7 +25,7 @@ function multi_values(pluto_ui_slider::Type{T} ,
                     title = "no title", 
                     common_gui_kwargs...) where T <: Union{RangeSlider , Slider}
 
-    _opertor = isnothing(range_constructor) ? d -> d : range_constructor
+    _opertor = isnothing(range_constructor) ? (_) -> (0.0 , 10.0 , 1e-2) : range_constructor
 	_range_constructor(d) = begin 
 		(tmin , tmax , step) = _opertor(d)
 		range(tmin , tmax , step=step)
@@ -35,7 +35,7 @@ function multi_values(pluto_ui_slider::Type{T} ,
 		<h6>$title</h6>
 		<ul>
 		$([
-			@htl("<li>$(k): $(Child( k, pluto_ui_slider(_range_constructor(d) ; common_gui_kwargs...)))</li>")
+			@htl("<li>$(k): $(Child( k, pluto_ui_slider(_range_constructor(d); default =_range_constructor(d), common_gui_kwargs...)))</li>")
 			for (k , d) in data
 		])
 		</ul>
@@ -45,16 +45,18 @@ end
 PlutoUI.CheckBox(args...; default , kwargs...) = PlutoUI.CheckBox(args...;kwargs...)
 """
     multi_values(pluto_ui_element::Type{T} , names::Union{Tuple , AbstractVector}  ; 
-            title = "no title", default_values=nothing , default = nothing, common_gui_kwargs... ) where T <: Union{NumberField , TextField , CheckBox}
+            title = "no title", default_values=nothing , defaults = nothing, common_gui_kwargs... ) where T <: Union{NumberField , TextField , CheckBox}
 
 
 `default_values` - are values set as input arguments to the ui element
 `defaults` - values transfered as default keyword argument
 """
-function multi_values(pluto_ui_element::Type{T} , names::Union{Tuple , AbstractVector}  ; 
-                        title = "no title", default_values=nothing , 
+function multi_values(  pluto_ui_element::Type{T} , names::Union{Tuple , AbstractVector}  ; 
+                        title = "no title",
+                        default_values=nothing , 
                         defaults = nothing, 
-                        common_gui_kwargs... ) where T <: Union{NumberField , TextField , CheckBox}
+                        common_gui_kwargs... 
+                    ) where T <: Union{NumberField , TextField , CheckBox}
 	    
         if isnothing(default_values) 
             fillv =  pluto_ui_element <: PlutoUI.NumberField ? range(0.0, 10, step=1e-2) : pluto_ui_element <: PlutoUI.CheckBox ? false : 60         
