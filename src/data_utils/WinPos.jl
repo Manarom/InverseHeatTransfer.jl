@@ -115,7 +115,12 @@ function fill_data!(d::DataPair)
     Base.keys(p::AbstractWinPosProject) = keys(p.data)
     Base.haskey(p::AbstractWinPosProject , name) = haskey(p.data , name)
     
-    all_names(p::AbstractWinPosProject) = collect(keys(p))
+    """
+    all_names(p::AbstractWinPosProject)
+
+Returns all names of collection
+"""
+all_names(p::AbstractWinPosProject) = collect(keys(p))
 
     Base.show(io::IO , p::WinPosProject) = begin 
         str = join(string.(keys(p.data)) , " , ")

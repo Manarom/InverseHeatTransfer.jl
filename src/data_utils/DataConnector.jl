@@ -102,7 +102,10 @@ Returns the tuple of default values for tmin_tmax range according to the selecte
 		end
 		return (tmin = tmin , tmax = tmax)
 	end
-	selected_names(d::DataSelector) = collect(d.selected_names)
+	function selected_names(ds::DataSelector)
+		isempty(ds.sample_properties.sensors_locations) && return String[] 
+		return [k for (k , _) in ds.sample_properties.sensors_locations if k ∈ ds.selected_names]
+	end
 	is_any_selected(d::DataSelector) = !isempty(d.selected_names)
 	tmin(d::DataSelector) = first(d.tmin_tmax)
 	tmax(d::DataSelector) = last(d.tmin_tmax)
@@ -126,7 +129,7 @@ Returns the tuple of default values for tmin_tmax range according to the selecte
 	each_selected(d::DataSelector) = Iterators.Filter(sens->( last(sens).name ∈ d.selected_names) , d.project)
 
 	Base.show(io::IO , p::DataSelector) = begin 
-        str = join(string.(collect(p.selected_names)) , " , ")
+        str = join(string.(selected_names(p)) , " , ")
 		locs = join(string.(sensors_locations(p)) , " , ")
         println(io , "  DataSelector over `$(p.project) , selected sensors : $(str) located at $(locs)" )  
     end
@@ -157,16 +160,16 @@ function sensors_locations(ds :: DataSelector)
 
 	Returns named tuple with `(data , names)` 
 	"""
-	selected_data_cutted_with_keys(d::DataSelector) = WinPos.to_matrix(d.project , names = d.selected_names ,
+	selected_data_cutted_with_keys(d::DataSelector) = WinPos.to_matrix(d.project , names = selected_names(d) ,
 																tmin = d.tmin_tmax[1] , tmax = d.tmin_tmax[2])
 
-	selected_data_with_keys(d::DataSelector)  = WinPos.to_matrix(d.project , names = d.selected_names) 
+	selected_data_with_keys(d::DataSelector)  = WinPos.to_matrix(d.project , names = selected_names(d)) 
 
 
 	selected_data(d::DataSelector)  = d |> selected_data_with_keys |> first
 	selected_data_cutted(d::DataSelector) = d|>  selected_data_cutted_with_keys |> first
 
-	is_all_locations_assigned(d::DataSelector) = all(Base.Fix1(haskey , d.sample_properties.sensors_locations) , d.selected_names )
+	is_all_locations_assigned(d::DataSelector) = all(Base.Fix1(haskey , d.sample_properties.sensors_locations) , selected_names(d) )
 	
 	"""
     not_assigned_locations_names(d::DataSelector)
@@ -175,7 +178,7 @@ returns the vector of sensors names  which has no assigned locations
 """
 function not_assigned_locations_names(d::DataSelector)
 		( isempty(d.selected_names) || is_all_locations_assigned(d) ) && return  String[]
-		isempty(d.sample_properties.sensors_locations) && return collect(d.selected_names)
+		isempty(d.sample_properties.sensors_locations) && return selected_names(d)
 		return filter(k -> !haskey(d.sample_properties.sensors_locations , k) , collect( d.selected_names ) )
 	end
 	"""
@@ -188,13 +191,13 @@ returns named tuple with the following data:
  - `sensors_locations` - locations values associated with sensors
 """
 function combine_selected_data(d::DataSelector) 
-
-		(time_data , temperatures)  = WinPos.joindata(d.project , names = d.selected_names ,
+		_sensors_names = selected_names(d)
+		(time_data , temperatures)  = WinPos.joindata(d.project , names = _sensors_names ,
 										tmin = first(d.tmin_tmax) , tmax = last(d.tmin_tmax) )
 
 		is_all_locations_assigned(d) || error("Before combining assign locations to sensors : $(join(not_assigned_locations_names(d), ',')) ")
 		_sensors_locations = sensors_locations(d)
-		_sensors_names = selected_names(d)
+
 		initial_distribution =  sum(temperatures[1 , :])/size(temperatures , 2)
 		return (; 
 				time_data = time_data,
@@ -253,6 +256,15 @@ function combine_selected_data(d::DataSelector)
 		fill_data_for_selected!(di)
 	end
 
+	function joined_selected_names(d::DataSelectorsGroup; delim::String = ":")
+		j_names = String[]
+		for (k_i , d_i) in d.d
+			for s_i in selected_names(d_i)
+				push!(j_names , join((k_i , s_i) , delim ))
+			end
+		end
+		return j_names
+	end
 	Base.getindex(d::DataSelectorsGroup , key::String) = d.d[key] 
 	Base.getindex(d::DataSelectorsGroup , i::Int) = (i <= length(d.d)) ? d.d[iterate(keys(d.d) , i)[1]] : error("out of range")
 	Base.keys(d::DataSelectorsGroup) = keys(d.d)

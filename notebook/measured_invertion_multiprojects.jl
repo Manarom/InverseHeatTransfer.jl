@@ -144,6 +144,13 @@ all_data[3]
 # ╔═╡ 6c4cb363-3bda-4dfa-8499-8201a013895d
 @bind show_data_table Select(collect(keys(all_data)))
 
+# ╔═╡ c69d07a3-ba0a-48a2-b296-1944b8cd322c
+@htl("""
+<div style="max-height: 300px; overflow-y: auto; border: 1px solid #ccc;">
+    $(pretty_table(HTML , hcat(_data_combined.time_data, _data_combined.temperatures) , column_labels = ["t" , _data_combined.selected_names...] , top_left_string ="Temeratures for $(show_data_table)"))
+</div>
+""")
+
 # ╔═╡ 12699165-eb53-4bca-b177-8326a0a72aed
 md"""
 
@@ -469,16 +476,6 @@ end;
 # ╔═╡ 5ef97b4a-4e44-47ee-b9a2-2ce9f73063f5
 multi_values(data::DC.DataSelectorsGroup; kwargs...) = multi_values(data.d; kwargs...)
 
-# ╔═╡ 60458134-1de0-475e-ba64-24b6f33a2980
-# makes pairs from name - value pairs iterator by taking the field `field_name` of `value` 
-function paired_selected_names(all_data ; unary_operator = Base.Fix2(getfield , :selected_variables))
-	out = Vector{Pair{String , String}}()
-	for (n , v) in all_data
-		append!(out , [ Pair(n , k)  for k in  unary_operator(v) ] )
-	end
-	return out
-end
-
 # ╔═╡ 6d0d7cb4-45fc-405f-8a5d-cf10ad5e380b
 function multi_values(all_data::AbstractDict; unary_operator=DC.selected_names , default_values=nothing , title = "Thermocouples locations , mm" )
 	PlutoUI.combine() do Child
@@ -500,6 +497,16 @@ function multi_values(all_data::AbstractDict; unary_operator=DC.selected_names ,
 		</ul>
 		""")
 	end
+end
+
+# ╔═╡ 60458134-1de0-475e-ba64-24b6f33a2980
+# makes pairs from name - value pairs iterator by taking the field `field_name` of `value` 
+function paired_selected_names(all_data ; unary_operator = Base.Fix2(getfield , :selected_variables))
+	out = Vector{Pair{String , String}}()
+	for (n , v) in all_data
+		append!(out , [ Pair(n , k)  for k in  unary_operator(v) ] )
+	end
+	return out
 end
 
 # ╔═╡ ae2c7800-31d1-45bc-b7cf-c39c0140b27d
@@ -690,13 +697,6 @@ if is_selected
 	title!(selected_plot , show_data_table)
 	selected_plot
 end
-
-# ╔═╡ c69d07a3-ba0a-48a2-b296-1944b8cd322c
-@htl("""
-<div style="max-height: 300px; overflow-y: auto; border: 1px solid #ccc;">
-    $(pretty_table(HTML , hcat(_data_combined.time_data, _data_combined.temperatures) , column_labels = ["t" , _data_combined.selected_names...] , top_left_string ="Temeratures for $(show_data_table)"))
-</div>
-""")
 
 # ╔═╡ b1f00c55-5ce9-4a0f-a548-a8a9041d02fc
 begin 
