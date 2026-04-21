@@ -253,6 +253,15 @@ function combine_selected_data(d::DataSelector)
 		fill_data_for_selected!(di)
 	end
 
+	function joined_selected_names(d::DataSelectorsGroup; delim::String = ":")
+		j_names = String[]
+		for (k_i , d_i) in d.d
+			for s_i in selected_names(d_i)
+				push!(j_names , join((k_i , s_i) , delim ))
+			end
+		end
+		return j_names
+	end
 	Base.getindex(d::DataSelectorsGroup , key::String) = d.d[key] 
 	Base.getindex(d::DataSelectorsGroup , i::Int) = (i <= length(d.d)) ? d.d[iterate(keys(d.d) , i)[1]] : error("out of range")
 	Base.keys(d::DataSelectorsGroup) = keys(d.d)
