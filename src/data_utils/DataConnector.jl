@@ -84,6 +84,7 @@ Returns the tuple of default values for tmin_tmax range according to the selecte
 	default_tmin_tmax(d::DataSelector) =_default_range(d , Inf , -Inf , :x)
 
 	WinPos.all_names(d::DataSelector) = WinPos.all_names(d.project)
+
 	function fill_data_for_selected!(d::DataSelector)
 		for (_ , data_pair_i) in each_selected(d)
 			WinPos.fill_data!(data_pair_i)
@@ -102,9 +103,14 @@ Returns the tuple of default values for tmin_tmax range according to the selecte
 		end
 		return (tmin = tmin , tmax = tmax)
 	end
-	function selected_names(ds::DataSelector)
-		isempty(ds.sample_properties.sensors_locations) && return String[] 
-		return [k for (k , _) in ds.sample_properties.sensors_locations if k ∈ ds.selected_names]
+	"""
+    selected_names(ds::DataSelector)
+
+Returns selected names in the same order as in the sensors locations ordered dict
+"""
+function selected_names(ds::DataSelector)
+		isempty(ds.selected_names) && return String[] 
+		return collect(ds.selected_names)#[k for (k , _) in ds.sample_properties.sensors_locations if isselected(ds , k)]
 	end
 	is_any_selected(d::DataSelector) = !isempty(d.selected_names)
 	tmin(d::DataSelector) = first(d.tmin_tmax)
@@ -126,7 +132,14 @@ Returns the tuple of default values for tmin_tmax range according to the selecte
 		isnothing(tmax) || setindex!(d.tmin_tmax ,tmax , 2 )
 		return nothing
 	end
-	each_selected(d::DataSelector) = Iterators.Filter(sens->( last(sens).name ∈ d.selected_names) , d.project)
+	"""
+    each_selected(d::DataSelector)
+
+Iterator over `DataPairs` which are selected in `DataSelector` returns pair of selected name - `DataPair`
+"""
+each_selected(d::DataSelector) = Iterators.map(s->Pair(s,d.project[s])  , d.selected_names)  
+# Iterators.Filter(sens->isselected(d , last(sens).name)  , d.project) # ( last(sens).name ∈ d.selected_names)
+
 
 	Base.show(io::IO , p::DataSelector) = begin 
         str = join(string.(selected_names(p)) , " , ")
@@ -152,8 +165,8 @@ end
 returns sensors locations
 """
 function sensors_locations(ds :: DataSelector)
-		isempty(ds.sample_properties.sensors_locations) && return Float64[] 
-		return [d for (k , d) in ds.sample_properties.sensors_locations if k ∈ ds.selected_names]
+		#isempty(ds.sample_properties.sensors_locations) && return Float64[] 
+		return map(s->get(ds.sample_properties.sensors_locations,s,-1.0) , selected_names(ds))#[d for (k , d) in ds.sample_properties.sensors_locations if isselected(ds , k)]
 	end
 		"""
 		selected_data_cutted_with_keys(d::DataSelector)
@@ -253,13 +266,14 @@ function combine_selected_data(d::DataSelector)
 	combine_selected_data_with_keys(d :: DataSelectorsGroup ) = Iterators.map( fun_map_wrap(combine_selected_data)  , d.d)	
 
 	fill_data_for_selected!(d::DataSelectorsGroup) = foreach(d.d) do (_,di)
+		
 		fill_data_for_selected!(di)
 	end
 
 	function joined_selected_names(d::DataSelectorsGroup; delim::String = ":")
 		j_names = String[]
 		for (k_i , d_i) in d.d
-			for s_i in selected_names(d_i)
+			for s_i in d_i.selected_names
 				push!(j_names , join((k_i , s_i) , delim ))
 			end
 		end

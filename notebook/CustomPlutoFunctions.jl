@@ -25,10 +25,10 @@ function multi_values(pluto_ui_slider::Type{T} ,
                     title = "no title", 
                     common_gui_kwargs...) where T <: Union{RangeSlider , Slider}
 
-    _opertor = isnothing(range_constructor) ? (_) -> (0.0 , 10.0 , 1e-2) : range_constructor
+    _opertor = isnothing(range_constructor) ? (_) -> (0.0 , 10.0 , 1000) : range_constructor
 	_range_constructor(d) = begin 
-		(tmin , tmax , step) = _opertor(d)
-		range(tmin , tmax , step=step)
+		(tmin , tmax , npoints) = _opertor(d)
+		range(tmin , tmax , npoints)
 	end
 	PlutoUI.combine() do Child
 		@htl("""

@@ -295,12 +295,6 @@ md" ##### Global optimizer iterations number $(@bind pso_iters Select(10:10:1000
 # ╔═╡ fc79d398-03d0-4f75-a777-41e2e27fee5e
 is_data_loaded && (lam_T_range = DC.default_temperature_range(all_data))
 
-# ╔═╡ 2bb61e43-384c-48ce-8a55-843726bf3f05
-if use_cp_table_for_constraints 
-	_bern_max = IHT.ScaledPolynomials.scale_ξ_to_x(  		IHT.ScaledPolynomials.bern_max_locations(IHT.BernsteinSymPoly{c_basis_degree , Float64}()),lam_T_range[1] , lam_T_range[2])
-	
-end;
-
 # ╔═╡ e06ac758-c5ae-4cf6-84b1-11d51a56f200
 initial_distribution = lam_T_range[1]
 
@@ -470,15 +464,18 @@ function filter_couple_breakage!(T)
 end
 
 # ╔═╡ dbd6f9d9-4b44-4238-86ca-7cd361545a56
-function prepare_constraints_gui(el_number , def ; title= "no title")
-	_names = ntuple(c_basis_degree) do i 
+function prepare_constraints_gui(el_number , def , lam_T_range ; title= "no title")
+	
+	_bern_max = IHT.ScaledPolynomials.scale_ξ_to_x(  		IHT.ScaledPolynomials.bern_max_locations(IHT.BernsteinSymPoly{el_number , Float64}()),lam_T_range[1] , lam_T_range[2])
+	
+	_names = ntuple(el_number) do i 
 		"T=$(string(round(Int , _bern_max[i])))"
 	end
 		
-	_default_values = ntuple(c_basis_degree) do _ 
+	_default_values = ntuple(el_number) do _ 
 		200.0:1:3000.0
 	end
-	_defaults = ntuple(c_basis_degree) do _ 
+	_defaults = ntuple(el_number) do _ 
 		def
 	end
 
@@ -486,23 +483,29 @@ function prepare_constraints_gui(el_number , def ; title= "no title")
 end
 
 # ╔═╡ c8cda804-9a2a-40c9-aa91-7a48500e85ff
-use_cp_table_for_constraints && @bind upper_cp_limit_table confirm(prepare_constraints_gui(c_basis_degree , 1500.0 , title = "upper bounds"))
+@bind upper_cp_limit_table confirm(prepare_constraints_gui(c_basis_degree , 1500.0 , lam_T_range, title = "upper bounds"))
 
 # ╔═╡ 315f6a9b-f37a-4213-be5a-3714b18c9d96
-use_cp_table_for_constraints && @bind lower_cp_limit_table confirm(prepare_constraints_gui(c_basis_degree , 500.0 , title = "lower bounds"))
+@bind lower_cp_limit_table confirm(prepare_constraints_gui(c_basis_degree , 500.0 , lam_T_range , title = "lower bounds"))
+
+# ╔═╡ 206e1e8f-16f3-4144-8401-c2cbf40c0125
+
+function bounds_convert(b::T , c::Union{T , Nothing} = nothing) where T <: Number
+		_c = isnothing(c) ? one(T) : c
+		return b * _c
+end
+
+# ╔═╡ 4b8ddfc0-ed4f-4b66-b752-fa075d348608
+function bounds_convert(b ,  c::T = 1.0) where T<: Number 
+	return ntuple(length(b)) do i 
+		c * b[i]
+	end
+end
 
 # ╔═╡ d051f5e5-f836-4043-9326-639b40acaf87
 begin 
-	cp_upper_bounds = if use_cp_table_for_constraints 
-		Tuple(density.*[v for v in upper_cp_limit_table])
-	else
-		density * upper_cp_limit
-	end
-	cp_lower_bounds = if use_cp_table_for_constraints 
-		Tuple(density.*[v for v in lower_cp_limit_table])
-	else
-		density*lower_cp_limit 
-	end
+	cp_upper_bounds = bounds_convert(upper_cp_limit_table , density)
+	cp_lower_bounds =bounds_convert(lower_cp_limit_table , density) 
 end;
 
 # ╔═╡ 16337bb4-438e-4b86-bdc5-b88ef210a960
@@ -859,7 +862,6 @@ end
 # ╟─4fdbfb71-ec8d-4d30-b7e7-f289f773fadd
 # ╟─eb755603-1eda-4182-a026-e9b163e78ae3
 # ╟─97618f0c-52ae-4772-b5b7-5512ea44af09
-# ╟─2bb61e43-384c-48ce-8a55-843726bf3f05
 # ╟─c8cda804-9a2a-40c9-aa91-7a48500e85ff
 # ╟─baffb68a-fb52-4bac-b484-4a215108aaed
 # ╟─315f6a9b-f37a-4213-be5a-3714b18c9d96
@@ -922,3 +924,5 @@ end
 # ╟─2bf91a7e-0da8-48e8-a779-962be2e7c03b
 # ╟─fd51a6c8-6569-4bfd-86ac-883c648fe6d9
 # ╟─dbd6f9d9-4b44-4238-86ca-7cd361545a56
+# ╟─206e1e8f-16f3-4144-8401-c2cbf40c0125
+# ╟─4b8ddfc0-ed4f-4b66-b752-fa075d348608

@@ -614,12 +614,19 @@ function load_from_ascii_folder(dir ; name_matcher::String , variable_name::Stri
                 data = readdlm(full_f; kwargs...)
                 break
             end
-            @assert length(data) > 1 "There is no data in $(fold) matrching $(name_matcher)"
+
+            d = OrderedDict{String , DataPair}()
+
+            if length(data) <= 0
+                @warn "There is no data in $(fold) matching $(name_matcher)"
+                return (d , full_f)
+            end
+
             t = data[: , 1]
             Tnumb = size(data , 2) - 1
             N = size(data , 1)
             data_names = variable_name .* string.(collect(1 : Tnumb))
-            d = OrderedDict{String , DataPair}()
+            
             for i in 2 : Tnumb + 1
                 name = data_names[ i -  1]
                 d[name] = DataPair(name , "" , "" , project_name) # 			DataPair(name , xfile , yfile , project)
