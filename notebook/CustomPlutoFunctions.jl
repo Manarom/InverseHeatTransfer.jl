@@ -36,7 +36,7 @@ function multi_values(pluto_ui_slider::Type{T} ,
 		<ul>
 		$([
 			@htl("<li>$(k): $(Child( k, pluto_ui_slider(_range_constructor(d); default =_range_constructor(d), common_gui_kwargs...)))</li>")
-			for (k , d) in data
+            for (k , d) in data
 		])
 		</ul>
 		""")

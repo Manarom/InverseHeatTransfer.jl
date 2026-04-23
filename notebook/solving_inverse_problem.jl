@@ -21,16 +21,13 @@ begin
 	import Pkg
 	Pkg.activate(@__DIR__)
 	Pkg.instantiate()
-	using Interpolations , StaticArrays , Plots  , Revise , PrettyTables
+	using Interpolations  
+	using StaticArrays , Plots  , Revise , PrettyTables
 	using Optimization , OptimizationOptimJL , OptimizationNLopt , OptimizationMetaheuristics
-	using LinearAlgebra , DelimitedFiles
-	using PlutoUI , PlutoPlotly , OrderedCollections
+	using PlutoUI ,  OrderedCollections
 	using HypertextLiteral
 	using Revise
 	import InverseHeatTransfer
-	using DataFrames
-	using CSV
-	using RecipesBase
 	using Dates
 end
 
@@ -619,7 +616,9 @@ begin
 end
 
 # ╔═╡ 672119a2-7a47-4813-a2d3-e0c15ee63491
-DataFrames.DataFrame(loss_table)
+begin 
+	pretty_table(HTML,hcat([v for v in loss_table]...) , column_labels  = [String(k) for k in keys(loss_table)])
+end
 
 # ╔═╡ f2943cf8-ffb9-4065-a272-1f344488dd0f
 begin 
@@ -829,7 +828,6 @@ begin
 	Plots.plot!(ppp,x_fit,y_fit, marker=:circle, label = nothing; plot_common_args...)
 	Plots.scatter!([Ttest] ,[lam_test] )
 	title!(ppp,"""Polynomial fitting of passport,
-		   r²=  $(norm(y_fit .- pp.(k))/norm(y_fit))
 		   """)
 end
 
@@ -883,8 +881,8 @@ end
 # ╟─10f7c083-a697-4b7e-87ea-de2791ed1a30
 # ╟─3f8c5c6a-f902-4b1e-abc1-7b572c8d2505
 # ╟─0a0324df-430f-4ac0-857b-4da6a7dca138
-# ╟─fe228354-5f3f-433d-9f8b-7d888e9c5ecb
-# ╟─f3e24d8a-e35d-41de-92e6-0df290d3503c
+# ╠═fe228354-5f3f-433d-9f8b-7d888e9c5ecb
+# ╠═f3e24d8a-e35d-41de-92e6-0df290d3503c
 # ╟─4c9a5a5f-5839-4211-b561-7539dfa74a7a
 # ╟─95dbc55f-ab5a-4828-a1e2-9a0c9a9ec19b
 # ╟─3281dd3c-0453-4098-a6ed-4d771717033b
@@ -901,8 +899,8 @@ end
 # ╟─042ea29b-63dd-43d0-a20f-68807c5f7cd4
 # ╟─a2a84394-1f18-48e3-a4dc-c03f64a3a1c0
 # ╟─9cd8c4c8-7d11-4fb0-92d5-439702aa9496
-# ╟─e9e9e16d-0b2c-45ce-aa5b-cdcda6b143f1
-# ╟─aea6fc8f-5ee2-40a3-aebd-942c45eec0d6
+# ╠═e9e9e16d-0b2c-45ce-aa5b-cdcda6b143f1
+# ╠═aea6fc8f-5ee2-40a3-aebd-942c45eec0d6
 # ╠═a8f5cc07-b2bd-445c-8797-ffe78a25641b
 # ╠═bce5f7ae-49c5-4520-a0f6-6215e5078674
 # ╠═dd8fb4fa-fa67-4e26-988d-3ede79bc9540

@@ -21,16 +21,10 @@ begin
 	import Pkg
 	Pkg.activate(@__DIR__)
 	Pkg.instantiate()
-	using Interpolations , StaticArrays , Plots  , Revise , PrettyTables
-	using Optimization , OptimizationOptimJL , OptimizationNLopt , OptimizationMetaheuristics
-	using LinearAlgebra , DelimitedFiles
-	using PlutoUI , PlutoPlotly , OrderedCollections
+	using StaticArrays , Plots  , Revise , PrettyTables
+	using PlutoUI ,  OrderedCollections
 	using HypertextLiteral
-	using Revise
 	import InverseHeatTransfer
-	using DataFrames
-	using CSV
-	using RecipesBase
 	using Dates
 end
 
@@ -321,7 +315,7 @@ end
 # ╔═╡ 6b4d07af-a40b-4ed1-a610-2a433311c94e
 function time_range_selector(all_data::DC.DataSelectorsGroup)
 
-	PF.multi_values(PlutoUI.RangeSlider , all_data.d , range_constructor ; title = "Select time range" , show_value = true)
+	PF.multi_values(PF.PlutoUI.RangeSlider , all_data.d , range_constructor ; title = "Select time range" , show_value = true)
 end
 
 # ╔═╡ df99b7b7-5a0d-4b71-bf5c-415b5cfa3b2d
@@ -443,7 +437,7 @@ end
 # ╟─450fb200-eec6-4e96-9ebd-81453c015830
 # ╟─6e062bd9-d20c-4e1d-b772-328bec8859ea
 # ╟─7370790d-cc53-4159-84b1-20e8839a8fc8
-# ╠═81c2f93b-05b1-4eb0-9919-4ef76ecad233
+# ╟─81c2f93b-05b1-4eb0-9919-4ef76ecad233
 # ╟─17fbc55f-12a8-431e-ac00-b28304f2eb6c
 # ╟─d9bac527-2858-4536-b35a-ecd03fb11ec8
 # ╟─46dc9aed-cbbe-4b8c-a6e3-9a5207bee10c
