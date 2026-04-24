@@ -2,7 +2,7 @@
 
 julia_version = "1.12.5"
 manifest_format = "2.0"
-project_hash = "beb8887aaebec8ca45c5b82b559ee197b1808047"
+project_hash = "ee843e6828a507dfa946c8f0b5ffc198f092d5a5"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "f7304359109c768cf32dc5fa2d371565bb63b68a"
@@ -168,6 +168,23 @@ weakdeps = ["SparseArrays"]
 
     [deps.ChainRulesCore.extensions]
     ChainRulesCoreSparseArraysExt = "SparseArrays"
+
+[[deps.ChunkCodecCore]]
+git-tree-sha1 = "1a3ad7e16a321667698a19e77362b35a1e94c544"
+uuid = "0b6fb165-00bc-4d37-ab8b-79f91016dbe1"
+version = "1.0.1"
+
+[[deps.ChunkCodecLibZlib]]
+deps = ["ChunkCodecCore", "Zlib_jll"]
+git-tree-sha1 = "cee8104904c53d39eb94fd06cbe60cb5acde7177"
+uuid = "4c0bbee4-addc-4d73-81a0-b6caacae83c8"
+version = "1.0.0"
+
+[[deps.ChunkCodecLibZstd]]
+deps = ["ChunkCodecCore", "Zstd_jll"]
+git-tree-sha1 = "34d9873079e4cb3d0c62926a225136824677073f"
+uuid = "55437552-ac27-4d47-9aa3-63184e8fd398"
+version = "1.0.0"
 
 [[deps.CodeTracking]]
 deps = ["InteractiveUtils", "REPL", "UUIDs"]
@@ -456,6 +473,16 @@ git-tree-sha1 = "acebe244d53ee1b461970f8910c235b259e772ef"
 uuid = "9aa1b823-49e4-5ca5-8b0f-3971ec8bab6a"
 version = "0.3.2"
 
+[[deps.FileIO]]
+deps = ["Pkg", "Requires", "UUIDs"]
+git-tree-sha1 = "6522cfb3b8fe97bec632252263057996cbd3de20"
+uuid = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
+version = "1.18.0"
+weakdeps = ["HTTP"]
+
+    [deps.FileIO.extensions]
+    HTTPExt = "HTTP"
+
 [[deps.FilePathsBase]]
 deps = ["Compat", "Dates"]
 git-tree-sha1 = "3bab2c5aa25e7840a4b065805c0cdfc01f3068d2"
@@ -722,7 +749,7 @@ weakdeps = ["Dates", "Test"]
     InverseFunctionsTestExt = "Test"
 
 [[deps.InverseHeatTransfer]]
-deps = ["Accessors", "Dates", "DelimitedFiles", "HDF5", "InteractiveUtils", "Interpolations", "LinearAlgebra", "Mmap", "OrderedCollections", "Random", "RecipesBase", "Reexport", "ScaledPolynomials", "Static", "StaticArrays", "Tables", "Unrolled"]
+deps = ["Accessors", "Dates", "DelimitedFiles", "HDF5", "InteractiveUtils", "Interpolations", "JLD2", "LinearAlgebra", "Mmap", "OrderedCollections", "Random", "RecipesBase", "Reexport", "ScaledPolynomials", "Static", "StaticArrays", "Tables", "Unrolled"]
 path = "."
 uuid = "2c8319c5-a44e-4544-92ed-020a4e1f37f0"
 version = "1.0.0"
@@ -741,6 +768,16 @@ version = "0.2.6"
 git-tree-sha1 = "a3f24677c21f5bbe9d2a714f95dcd58337fb2856"
 uuid = "82899510-4779-5014-852e-03e436cf321d"
 version = "1.0.0"
+
+[[deps.JLD2]]
+deps = ["ChunkCodecLibZlib", "ChunkCodecLibZstd", "FileIO", "MacroTools", "Mmap", "OrderedCollections", "PrecompileTools", "ScopedValues"]
+git-tree-sha1 = "941f87a0ae1b14d1ac2fa57245425b23a9d7a516"
+uuid = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
+version = "0.6.4"
+weakdeps = ["UnPack"]
+
+    [deps.JLD2.extensions]
+    UnPackExt = "UnPack"
 
 [[deps.JLFzf]]
 deps = ["REPL", "Random", "fzf_jll"]
@@ -1517,7 +1554,6 @@ version = "0.7.0"
 [[deps.ScaledPolynomials]]
 deps = ["LinearAlgebra", "RecipesBase", "StaticArrays"]
 git-tree-sha1 = "457e1fd87c222b4897f22d66a41f5807b34fb3e2"
-repo-rev = "main"
 repo-url = "https://github.com/Manarom/ScaledPolynomials.jl.git"
 uuid = "d11bbabd-dab6-4367-9c65-d486568a54a8"
 version = "0.1.0"

@@ -65,7 +65,7 @@ begin
 end
 
 # ╔═╡ 7370790d-cc53-4159-84b1-20e8839a8fc8
-begin 
+if @isdefined(working_folder) && isdir(working_folder) 
 	all_hdf5_files = [d for d in readdir(working_folder) if contains(d , ".hdf5") ]
 	if isempty(all_hdf5_files)
 		md" **There is no hdf5 files in the folder**"
@@ -73,6 +73,8 @@ begin
 		md" **Select data selection project** $(@bind data_selection_name Select(all_hdf5_files))"
 
 	end
+else
+	@isdefined(working_folder) ? md"**Not a folder:**" : md"**Not a folder: $(working_dir)**" 
 end
 
 # ╔═╡ 81c2f93b-05b1-4eb0-9919-4ef76ecad233
@@ -173,7 +175,7 @@ end;
 
 # ╔═╡ bc6ecff4-2ade-4436-9630-be573eb1ea04
 if is_sensors_selected
-	@bind thicknesses_mm confirm(PF.multi_values(PlutoUI.NumberField , collect(keys(all_data)) , title = "Thickness , mm"))
+	@bind thicknesses_mm confirm(PF.multi_values_table(PlutoUI.NumberField , collect(keys(all_data)) ,fontsize = 20 ,  column_names = ("Project" , " Thickness ") ,  title = "Thickness , mm"))
 end
 
 # ╔═╡ 999cefa4-3513-4c4f-86f1-49d4d55c66f8
@@ -187,7 +189,7 @@ if is_sensors_selected
 		end
 		global is_thickness_set = true
 	catch er 
-		md" **$(er.msg)**"
+		md" **$(er)**"
 		global is_thickness_set = false
 	end
 end;
@@ -225,6 +227,27 @@ is_projects_selected && raw_raw_data_plot
 
 # ╔═╡ 6c4cb363-3bda-4dfa-8499-8201a013895d
 is_projects_selected && @bind show_data_table Select(collect(keys(all_data)))
+
+# ╔═╡ c3f0a382-f886-41ae-86ae-e5dbebc16214
+
+
+# ╔═╡ d0118c80-2ece-4185-bd8c-76983b9954f2
+"""$(Dates.format(now(), "HH:MM:SS dd:mm:yyyy"))"""
+
+# ╔═╡ 6da6a4dd-2bf4-463c-91a0-5e73b3e3a1ef
+@bind comment_to_sample html"""
+<textarea 
+	rows='10' 
+	cols='50' 
+	placeholder=
+	'Enter sample description here... 
+					\n $(Dates.format(now(), "HH:MM:SS"))'
+	style='font-size: 20px; font-family: "Courier New", monospace; line-height: 1.5; padding: 10px;'
+></textarea>
+"""
+
+# ╔═╡ 77e39e2f-4a92-4add-944e-b8f7d4d139df
+comment_to_sample
 
 # ╔═╡ c9717703-5218-451d-9a80-a4ddb79b929d
 
@@ -321,7 +344,7 @@ end
 # ╔═╡ df99b7b7-5a0d-4b71-bf5c-415b5cfa3b2d
 if is_sensors_selected && is_thickness_set
 	selected_variables_multi
-	@bind time_region  confirm(time_range_selector(all_data))
+	@bind time_region  time_range_selector(all_data)
 end
 
 # ╔═╡ b31a7c52-7c4b-480f-84d8-fcb1c71dca1b
@@ -429,9 +452,74 @@ if is_data_ready &&  data_selection_save_trigger
 		"✅ Data selection saved to hdf5-file $(_f_f_file) at $(Dates.format(now(), "HH:MM:SS"))"
 end
 
+# ╔═╡ ffbf63bf-3929-4866-8377-a56ae3f25266
+PF.multi_values(PF.PlutoUI.RangeSlider , Dict("a"=>1 , "b" => 2))
+
+# ╔═╡ 2390e2fe-1bbe-4a21-a0fb-199cc314a29b
+function comment_block(d::DC.DataSelectorsGroup)
+	comments_dict["Date"] = """$(Dates.format(now(), "HH:MM:SS dd:mm:yyyy"))"""
+	ks = collect(keys(comments_dict))
+	def_vals = collect(values(comments_dict))
+	PF.multi_values(PlutoUI.TextField , 
+				ks , 
+				default_values = ntuple(_->50 , length(comments_dict)) , 
+				defaults = def_vals)
+
+end
+
+# ╔═╡ b7d63214-f644-42b9-b1c6-60edf7afd903
+comment_block(all_data)
+
+# ╔═╡ 5eee07e4-05d6-4125-80ac-fa0777f45dda
+#= const comments_dict = OrderedDict(
+		"Material"=>DaAn((PUITF,  , "" ) ),
+		"Date"=>DaAn( (PUITF , """$(Dates.format(now(), "HH:MM:SS"))""",
+		"User"=>"Родин Н.В.",
+		"TC type"=>"K",
+		"Cement" => "DKS8",
+		"Methodics" => "",
+		"DataDates" => ""
+)=#
+
+# ╔═╡ 77f3b5db-d76e-4518-9354-42d7ebfefa4b
+DaAn = NamedTuple{(:type , :default_value , :default)}
+
+# ╔═╡ 0bf33e66-036c-4a6b-aaa7-9b1f60ae5255
+PUITF = TextField;
+
+# ╔═╡ a6be5cb3-6277-4777-89d0-bc2a929e21ea
+DaAn((1,2,3))
+
+# ╔═╡ 400c5cb9-238a-42f7-9b5c-352f3635eaba
+PF.multi_values(PlutoUI.TextField , t->t, Dict("a"=>"b" , "c"=>"v") , title = "Title " , defaults = ("a" , "b"))
+
+# ╔═╡ 3ac499e2-1cff-400c-8902-85b2f6b01896
+PF.multi_values(PlutoUI.RangeSlider , ("a" , "b");default_values = (range(0,1,100) , range(2,10,400)), defaults = (range(0,1,100) , range(2,10,400)), show_value=true)
+
+# ╔═╡ 692b3992-cdbf-4881-90dc-74999d96f46a
+PF.multi_values(PlutoUI.Select,[:a,:b])
+
+# ╔═╡ 282b6913-8e2d-4f35-97cb-c7f653647deb
+@bind ff PF.multi_values( (RangeSlider , NumberField , Select) ,
+						  ("a" , "b" , "df"),
+			   				default_values = (range(2,10,400) , range(2,10,400) , 					["aa","bb","cc"]); defaults = (range(2,10,400) , 3.0 , "aa" )
+			   )
+
+# ╔═╡ e0bafdba-95ec-43a6-b120-679b559cf19b
+PF.same_kwargs_ui_constructor(NumberField , 1:10;  show_value=false)
+
+# ╔═╡ 3c3e26be-ccbe-4488-a5e3-cbf9f0dee3ef
+@bind fg PF.multi_values_table( (RangeSlider , NumberField , MultiSelect) ,
+						  ("a" , "b" , "df"),
+			   				default_values = (range(2,10,400) , range(2,10,400) , 					["aa","bb","cc"]); defaults = (range(2,10,400) , 3.0 , ["aa"] )
+			   )
+
+# ╔═╡ db11cb33-5e78-4ffb-9108-88a01fe6352b
+PF.multi_values_table(PlutoUI.MultiSelect , ["a" , "b"])
+
 # ╔═╡ Cell order:
 # ╟─a17fe1fe-5542-454b-b45e-942ac52b6f1a
-# ╟─5807712b-5d26-49c8-ab65-dac167ebad7b
+# ╠═5807712b-5d26-49c8-ab65-dac167ebad7b
 # ╟─35958e8a-eb7a-4eff-89a0-f9c04aff2a37
 # ╟─db671921-13dc-497b-81e5-dcb4da0695f9
 # ╟─450fb200-eec6-4e96-9ebd-81453c015830
@@ -446,24 +534,28 @@ end
 # ╟─c9fa68be-e2c4-4c4c-a6cc-f9f064a0a4c8
 # ╟─6e7839ca-da24-4a3e-927f-b035729a4cb7
 # ╟─3aa5a908-c4eb-4f6a-899e-c7ba2d29fa01
-# ╟─c30f95e5-93eb-4ab7-bc84-4bfe7092cf47
+# ╠═c30f95e5-93eb-4ab7-bc84-4bfe7092cf47
 # ╟─3126537e-cd1d-476d-9f0d-84b37ac15678
 # ╟─56a5f3c9-6a41-4326-83ab-2c19d65b3ed0
 # ╟─bc6ecff4-2ade-4436-9630-be573eb1ea04
-# ╟─999cefa4-3513-4c4f-86f1-49d4d55c66f8
+# ╠═999cefa4-3513-4c4f-86f1-49d4d55c66f8
 # ╟─c6764c6c-3504-42f8-9140-d40e7d050000
 # ╟─c1e54cfc-da70-4e29-8da7-19227cd56e6d
 # ╟─b8d5a2ee-5a5e-462f-9588-c7d910f446e8
-# ╟─b3c96eae-64a5-4245-85b6-b7b994e03ff7
+# ╠═b3c96eae-64a5-4245-85b6-b7b994e03ff7
 # ╟─ea647fc8-37c7-4726-980d-42f97ffc02e3
 # ╟─df99b7b7-5a0d-4b71-bf5c-415b5cfa3b2d
-# ╟─c69d07a3-ba0a-48a2-b296-1944b8cd322c
 # ╟─6c4cb363-3bda-4dfa-8499-8201a013895d
 # ╟─b31a7c52-7c4b-480f-84d8-fcb1c71dca1b
+# ╟─c69d07a3-ba0a-48a2-b296-1944b8cd322c
 # ╟─359994cc-01e8-453d-b3e3-a878ffe466eb
 # ╟─35b5c27e-921f-4fe7-90bc-3b327d9150fe
 # ╟─5be15388-cea2-4884-b8de-bff5be64e506
 # ╟─b1f00c55-5ce9-4a0f-a548-a8a9041d02fc
+# ╠═c3f0a382-f886-41ae-86ae-e5dbebc16214
+# ╠═d0118c80-2ece-4185-bd8c-76983b9954f2
+# ╠═6da6a4dd-2bf4-463c-91a0-5e73b3e3a1ef
+# ╠═77e39e2f-4a92-4add-944e-b8f7d4d139df
 # ╟─c9717703-5218-451d-9a80-a4ddb79b929d
 # ╟─8e0fff6a-4a02-4e6b-a017-477a46269918
 # ╟─85c827cd-c4c8-4c0a-b790-86b2ea070e1d
@@ -472,5 +564,19 @@ end
 # ╟─2bf91a7e-0da8-48e8-a779-962be2e7c03b
 # ╟─fd51a6c8-6569-4bfd-86ac-883c648fe6d9
 # ╟─c40ec284-b81a-4039-bb33-238de0ca09e4
-# ╟─6b4d07af-a40b-4ed1-a610-2a433311c94e
-# ╟─dd0ecd31-3cf5-4d4d-b3f8-125b5f899c29
+# ╠═6b4d07af-a40b-4ed1-a610-2a433311c94e
+# ╠═dd0ecd31-3cf5-4d4d-b3f8-125b5f899c29
+# ╠═ffbf63bf-3929-4866-8377-a56ae3f25266
+# ╠═2390e2fe-1bbe-4a21-a0fb-199cc314a29b
+# ╠═b7d63214-f644-42b9-b1c6-60edf7afd903
+# ╠═5eee07e4-05d6-4125-80ac-fa0777f45dda
+# ╠═77f3b5db-d76e-4518-9354-42d7ebfefa4b
+# ╠═0bf33e66-036c-4a6b-aaa7-9b1f60ae5255
+# ╠═a6be5cb3-6277-4777-89d0-bc2a929e21ea
+# ╠═400c5cb9-238a-42f7-9b5c-352f3635eaba
+# ╠═3ac499e2-1cff-400c-8902-85b2f6b01896
+# ╠═692b3992-cdbf-4881-90dc-74999d96f46a
+# ╠═282b6913-8e2d-4f35-97cb-c7f653647deb
+# ╠═e0bafdba-95ec-43a6-b120-679b559cf19b
+# ╠═3c3e26be-ccbe-4488-a5e3-cbf9f0dee3ef
+# ╠═db11cb33-5e78-4ffb-9108-88a01fe6352b

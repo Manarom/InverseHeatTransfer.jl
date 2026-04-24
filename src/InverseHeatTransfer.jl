@@ -4,6 +4,9 @@ module InverseHeatTransfer
     using InteractiveUtils
     using Static
     using Accessors
+    using HDF5
+    using JLD2
+
     @reexport using ScaledPolynomials
     export OptimizableVariable, SingleInverseProblem
 
@@ -851,16 +854,32 @@ has the same objects for  λ, λ' and cₚ, hence the problem can be simplified.
         return (m.p)
     end
     include("problem_ensemble_functions.jl")
+    const DC = DataConnector
+    const WP = DataConnector.WinPos
 
-    function WinPos.export_to_hdf5(inv_problem::SingleInverseProblem,
+    function WP.export_to_hdf5(inv_problem::SingleInverseProblem,
 		 	fullfilename::String ; 
         	opentype::String = "w" , 
-			overwrite_groups::Bool= true ,
-			group_name::Union{String , Nothing}= nothing , 
-        	add_path_info::Bool = true)
+			group_name::Union{String , Nothing}= nothing)    
 
-            
+            h5open(fullfilename, opentype) do h5
+			   WP.export_to_hdf5(inv_problem , h5 ; group_name = group_name) 
+            end
+            #jldopen()
+    end
+
+    function WP.export_to_hdf5(inv_problem::SingleInverseProblem , h5_file::HDF5.File ; group_name::String= "inverse_problem")
+        group = WP._delete_if_overwrite_or_create_group(h5_file , group_name , true)
+        WP.export_to_hdf5(inv_problem  , group )
+    end
+
+    function WP.export_to_hdf5(inv_problem::SingleInverseProblem , h5_file::HDF5.Group)
+
 
     end
 
+    function add_direct_problem(inv_problem::SingleInverseProblem  )
+        
+
+    end
 end

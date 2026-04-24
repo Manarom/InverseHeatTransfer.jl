@@ -317,7 +317,7 @@ function common_path(paths)
 			split_paths = splitpath.(paths)
 			min_len = minimum(length.(split_paths))
 			common = String[]
-			for i in 1:min_len
+			for i in 1 : min_len
 				segment = split_paths[1][i]
 				if all(p -> p[i] == segment, split_paths)
 					push!(common, segment)
