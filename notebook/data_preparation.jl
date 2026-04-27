@@ -26,6 +26,8 @@ begin
 	using HypertextLiteral
 	import InverseHeatTransfer
 	using Dates
+	using JLD2
+	using HDF5
 end
 
 # ╔═╡ 5807712b-5d26-49c8-ab65-dac167ebad7b
@@ -159,7 +161,7 @@ if is_any_projects && is_projects_selected
 end;
 
 # ╔═╡ c30f95e5-93eb-4ab7-bc84-4bfe7092cf47
-is_projects_selected && @bind selected_variables_multi  confirm(PF.multi_values_table(PlutoUI.MultiSelect , all_data.d , WP.all_names))
+is_projects_selected && @bind selected_variables_multi  confirm(PF.multi_values_table(PlutoUI.MultiSelect , all_data.d , WP.all_names , title = "Select sensors names"))
 
 # ╔═╡ 3126537e-cd1d-476d-9f0d-84b37ac15678
 is_sensors_selected = @isdefined(selected_variables_multi) && !any(isempty , selected_variables_multi);
@@ -194,11 +196,14 @@ if is_sensors_selected
 	end
 end;
 
-# ╔═╡ c6764c6c-3504-42f8-9140-d40e7d050000
-is_projects_selected && @bind show_raw_data_table Select(collect(keys(all_data)))
+# ╔═╡ a81d55fa-108a-48e4-8ddd-420f9c497ab5
+md" ### Raw data plot"
 
 # ╔═╡ 1730c035-2c46-4267-86ee-0cfc60073f96
 md" Show table $(@bind is_show_selected_data_table CheckBox(false))"
+
+# ╔═╡ c6764c6c-3504-42f8-9140-d40e7d050000
+is_projects_selected && @bind show_raw_data_table Select(collect(keys(all_data)))
 
 # ╔═╡ 3053a02a-15a2-444f-b555-a44876bdf0a6
 if is_projects_selected && is_sensors_selected
@@ -240,26 +245,16 @@ is_projects_selected && @bind show_data_table Select(collect(keys(all_data)))
 # ╔═╡ 29a0e7ad-c939-4dbc-a724-6afbad32ff5f
 md" Show table $(@bind is_show_all_data_table CheckBox(false))"
 
-# ╔═╡ c3f0a382-f886-41ae-86ae-e5dbebc16214
-
-
-# ╔═╡ d0118c80-2ece-4185-bd8c-76983b9954f2
-"""$(Dates.format(now(), "HH:MM:SS dd:mm:yyyy"))"""
-
 # ╔═╡ 6da6a4dd-2bf4-463c-91a0-5e73b3e3a1ef
 @bind comment_to_sample html"""
 <textarea 
-	rows='10' 
+	rows='5' 
 	cols='50' 
 	placeholder=
-	'Enter sample description here... 
-					\n $(Dates.format(now(), "HH:MM:SS"))'
+	'Дополнительные комментарии...'
 	style='font-size: 20px; font-family: "Courier New", monospace; line-height: 1.5; padding: 10px;'
 ></textarea>
 """
-
-# ╔═╡ 77e39e2f-4a92-4add-944e-b8f7d4d139df
-comment_to_sample
 
 # ╔═╡ c9717703-5218-451d-9a80-a4ddb79b929d
 
@@ -453,6 +448,36 @@ begin
 	end
 end
 
+# ╔═╡ 68331021-0c9e-4619-8531-e5b1deed35fa
+function parse_date_from_winpos_project_name(d::DC.DataSelectorsGroup)
+		dates = ""
+		foreach(d.d) do (_,d) 
+			name = DC.WinPos.name(d.project)
+			dates *=" $(!contains(name , "_") ? "no_date" : first(eachsplit(name , "_"))) "
+			
+		end
+	return dates
+end
+
+# ╔═╡ 04fc7a5c-5c79-4197-a73b-6b75551518c2
+begin 
+	PUITF  = PlutoUI.TextField
+	PUISELECTION = PlutoUI.Select
+	DaAn = NamedTuple{(:type , :default_value , :default)}
+	 const comments_dict = OrderedDict(
+		"Material"=>DaAn((PUITF, 50 , "RBSN" ) ),
+		"Date"=>DaAn( (PUITF ,50, """$(Dates.format(now(), "HH:MM:SS dd:mm:yyyy"))""")),
+		"User"=>DaAn((PUITF,50 , "Rodin" ) ),
+		"TC type"=>DaAn((PUISELECTION, ["K" , "R"  , "S"], ["K"] ) ),
+		"Cement" => DaAn((PUITF, 50 , "DKS8" ) ),
+		"Methodics" => DaAn((PUITF, 50 , "" ) ),
+		"DataDates" => DaAn((PUITF, 50 , "" ) )
+)
+end
+
+# ╔═╡ 01551368-aaeb-4d58-a1bc-87bf2a0cce3d
+comments_dict
+
 # ╔═╡ 7a0abf93-e203-40b2-bcae-3e50c9de5eba
 if is_data_ready &&  data_selection_save_trigger
 		resave_selection_trigger
@@ -460,44 +485,55 @@ if is_data_ready &&  data_selection_save_trigger
 	
 		_f_f_file	= joinpath(data_selection_save_path_ref[], data_selection_save_name_ref[]*".hdf5")
 		WP.export_to_hdf5(all_data , _f_f_file , group_name =data_selection_save_name_ref[] )
+
+
+
+	h5open(_f_f_file, "r+") do file
+			if haskey(file, "measurements_specification")
+		    	delete_object(file, k)
+		    end
+		 	g = create_group(file, "measurements_specification")
+		    for (k, v) in comments_dict
+				g[k] = last(v)
+		    end
+		end
 	
 		"✅ Data selection saved to hdf5-file $(_f_f_file) at $(Dates.format(now(), "HH:MM:SS"))"
 end
 
 # ╔═╡ 2390e2fe-1bbe-4a21-a0fb-199cc314a29b
 function comment_block(d::DC.DataSelectorsGroup)
-	comments_dict["Date"] = """$(Dates.format(now(), "HH:MM:SS dd:mm:yyyy"))"""
+	comments_dict["Date"] =DaAn((PUITF,50, """$(Dates.format(now(), "HH:MM:SS dd:mm:yyyy"))"""))
+	_projects_dates = parse_date_from_winpos_project_name(d)
+	comments_dict["DataDates"] = DaAn((PUITF , 50, _projects_dates))
+
+	
 	ks = collect(keys(comments_dict))
 	def_vals = collect(values(comments_dict))
-	PF.multi_values(PlutoUI.TextField , 
+	_types = Tuple([getfield(t , :type) for t in def_vals]) 
+	_default_values = Tuple([getfield(t , :default_value) for t in def_vals]) 
+	_defaults = Tuple([getfield(t , :default) for t in def_vals]) 
+	 PF.multi_values_table(_types , 
 				ks , 
-				default_values = ntuple(_->50 , length(comments_dict)) , 
-				defaults = def_vals)
+				default_values = _default_values , 
+				defaults = _defaults , title = "Описание измерений") 
 
 end
 
-# ╔═╡ b7d63214-f644-42b9-b1c6-60edf7afd903
-comment_block(all_data)
+# ╔═╡ c3f0a382-f886-41ae-86ae-e5dbebc16214
+is_data_ready && @bind measurements_description comment_block(all_data)
 
-# ╔═╡ 5eee07e4-05d6-4125-80ac-fa0777f45dda
-#= const comments_dict = OrderedDict(
-		"Material"=>DaAn((PUITF,  , "" ) ),
-		"Date"=>DaAn( (PUITF , """$(Dates.format(now(), "HH:MM:SS"))""",
-		"User"=>"Родин Н.В.",
-		"TC type"=>"K",
-		"Cement" => "DKS8",
-		"Methodics" => "",
-		"DataDates" => ""
-)=#
-
-# ╔═╡ 77f3b5db-d76e-4518-9354-42d7ebfefa4b
-DaAn = NamedTuple{(:type , :default_value , :default)}
-
-# ╔═╡ 0bf33e66-036c-4a6b-aaa7-9b1f60ae5255
-PUITF = TextField;
+# ╔═╡ 600060b7-41cb-4b48-9679-e5994098099f
+if is_data_ready
+	for (k,v) in pairs(measurements_description)
+		keystr = String(k)
+		_val = comments_dict[keystr]
+		comments_dict[keystr] =  DaAn((_val[1] , _val[2] , v))
+	end
+end
 
 # ╔═╡ Cell order:
-# ╟─a17fe1fe-5542-454b-b45e-942ac52b6f1a
+# ╠═a17fe1fe-5542-454b-b45e-942ac52b6f1a
 # ╟─5807712b-5d26-49c8-ab65-dac167ebad7b
 # ╟─35958e8a-eb7a-4eff-89a0-f9c04aff2a37
 # ╟─db671921-13dc-497b-81e5-dcb4da0695f9
@@ -509,17 +545,18 @@ PUITF = TextField;
 # ╟─d9bac527-2858-4536-b35a-ecd03fb11ec8
 # ╟─46dc9aed-cbbe-4b8c-a6e3-9a5207bee10c
 # ╟─ad3152ec-d481-4b65-856b-f7c1987d379e
-# ╠═f9bf69a8-9854-4c46-8c1c-e4af8ed176d8
+# ╟─f9bf69a8-9854-4c46-8c1c-e4af8ed176d8
 # ╟─c9fa68be-e2c4-4c4c-a6cc-f9f064a0a4c8
 # ╟─6e7839ca-da24-4a3e-927f-b035729a4cb7
 # ╟─3aa5a908-c4eb-4f6a-899e-c7ba2d29fa01
-# ╠═c30f95e5-93eb-4ab7-bc84-4bfe7092cf47
+# ╟─c30f95e5-93eb-4ab7-bc84-4bfe7092cf47
 # ╟─3126537e-cd1d-476d-9f0d-84b37ac15678
 # ╟─56a5f3c9-6a41-4326-83ab-2c19d65b3ed0
 # ╟─bc6ecff4-2ade-4436-9630-be573eb1ea04
 # ╟─999cefa4-3513-4c4f-86f1-49d4d55c66f8
 # ╟─3053a02a-15a2-444f-b555-a44876bdf0a6
 # ╟─c1e54cfc-da70-4e29-8da7-19227cd56e6d
+# ╟─a81d55fa-108a-48e4-8ddd-420f9c497ab5
 # ╟─1730c035-2c46-4267-86ee-0cfc60073f96
 # ╟─c6764c6c-3504-42f8-9140-d40e7d050000
 # ╟─b8d5a2ee-5a5e-462f-9588-c7d910f446e8
@@ -534,22 +571,20 @@ PUITF = TextField;
 # ╟─35b5c27e-921f-4fe7-90bc-3b327d9150fe
 # ╟─5be15388-cea2-4884-b8de-bff5be64e506
 # ╟─b1f00c55-5ce9-4a0f-a548-a8a9041d02fc
-# ╠═c3f0a382-f886-41ae-86ae-e5dbebc16214
-# ╠═d0118c80-2ece-4185-bd8c-76983b9954f2
+# ╟─c3f0a382-f886-41ae-86ae-e5dbebc16214
 # ╠═6da6a4dd-2bf4-463c-91a0-5e73b3e3a1ef
-# ╠═77e39e2f-4a92-4add-944e-b8f7d4d139df
+# ╟─600060b7-41cb-4b48-9679-e5994098099f
+# ╠═01551368-aaeb-4d58-a1bc-87bf2a0cce3d
 # ╟─c9717703-5218-451d-9a80-a4ddb79b929d
 # ╟─8e0fff6a-4a02-4e6b-a017-477a46269918
-# ╟─85c827cd-c4c8-4c0a-b790-86b2ea070e1d
+# ╠═85c827cd-c4c8-4c0a-b790-86b2ea070e1d
 # ╟─12699165-eb53-4bca-b177-8326a0a72aed
-# ╟─7a0abf93-e203-40b2-bcae-3e50c9de5eba
+# ╠═7a0abf93-e203-40b2-bcae-3e50c9de5eba
 # ╟─2bf91a7e-0da8-48e8-a779-962be2e7c03b
 # ╟─fd51a6c8-6569-4bfd-86ac-883c648fe6d9
 # ╟─c40ec284-b81a-4039-bb33-238de0ca09e4
-# ╠═6b4d07af-a40b-4ed1-a610-2a433311c94e
-# ╠═dd0ecd31-3cf5-4d4d-b3f8-125b5f899c29
-# ╠═2390e2fe-1bbe-4a21-a0fb-199cc314a29b
-# ╠═b7d63214-f644-42b9-b1c6-60edf7afd903
-# ╠═5eee07e4-05d6-4125-80ac-fa0777f45dda
-# ╠═77f3b5db-d76e-4518-9354-42d7ebfefa4b
-# ╠═0bf33e66-036c-4a6b-aaa7-9b1f60ae5255
+# ╟─6b4d07af-a40b-4ed1-a610-2a433311c94e
+# ╟─dd0ecd31-3cf5-4d4d-b3f8-125b5f899c29
+# ╟─2390e2fe-1bbe-4a21-a0fb-199cc314a29b
+# ╟─68331021-0c9e-4619-8531-e5b1deed35fa
+# ╠═04fc7a5c-5c79-4197-a73b-6b75551518c2
