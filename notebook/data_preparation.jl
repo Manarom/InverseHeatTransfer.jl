@@ -209,8 +209,8 @@ is_projects_selected && @bind show_raw_data_table Select(collect(keys(all_data))
 if is_projects_selected && is_sensors_selected
 	raw_raw_data_plot = Plots.plot(;plot_common_args...)
 	try
-	_data_combined_raw = DC.selected_data(all_data[show_raw_data_table])
-	raw_raw_headers = ["t" , DC.selected_names(all_data[show_raw_data_table])...] 
+	global _data_combined_raw = DC.selected_data(all_data[show_raw_data_table])
+	global raw_raw_headers = ["t" , DC.selected_names(all_data[show_raw_data_table])...] 
 
 	
 	raw_raw_t = @view _data_combined_raw[:,1] 
@@ -448,55 +448,44 @@ begin
 	end
 end
 
-# ╔═╡ 68331021-0c9e-4619-8531-e5b1deed35fa
-function parse_date_from_winpos_project_name(d::DC.DataSelectorsGroup)
-		dates = ""
-		foreach(d.d) do (_,d) 
-			name = DC.WinPos.name(d.project)
-			dates *=" $(!contains(name , "_") ? "no_date" : first(eachsplit(name , "_"))) "
-			
-		end
-	return dates
-end
-
 # ╔═╡ 04fc7a5c-5c79-4197-a73b-6b75551518c2
 begin 
 	PUITF  = PlutoUI.TextField
 	PUISELECTION = PlutoUI.Select
 	DaAn = NamedTuple{(:type , :default_value , :default)}
-	 const comments_dict = OrderedDict(
-		"Material"=>DaAn((PUITF, 50 , "RBSN" ) ),
-		"Date"=>DaAn( (PUITF ,50, """$(Dates.format(now(), "HH:MM:SS dd:mm:yyyy"))""")),
-		"User"=>DaAn((PUITF,50 , "Rodin" ) ),
-		"TC type"=>DaAn((PUISELECTION, ["K" , "R"  , "S"], ["K"] ) ),
-		"Cement" => DaAn((PUITF, 50 , "DKS8" ) ),
-		"Methodics" => DaAn((PUITF, 50 , "" ) ),
-		"DataDates" => DaAn((PUITF, 50 , "" ) )
-)
+	let _d = OrderedDict{String , Any}()
+		for (k_i , v_i) in DC.DEFAULT_MEASUREMENTS_SPECIFICATION
+			_d_i = if k_i == "Date"
+				 DaAn( (PUITF ,50, """$(Dates.format(now(), "HH:MM:SS dd:mm:yyyy"))"""))
+			elseif k_i == "TCtype"
+				DaAn((PUISELECTION, ["K" , "R"  , "S"], v_i ))
+			else
+				DaAn((PUITF, 50 , v_i))
+			end
+			push!(_d ,k_i => _d_i)
+		end
+		global const comments_dict = _d
+	end
+
 end
 
-# ╔═╡ 01551368-aaeb-4d58-a1bc-87bf2a0cce3d
-comments_dict
+# ╔═╡ 6c22dc1b-a6ad-4139-8192-3a46d4419ac1
+function extract_data_from_comments_dict()
+	d = OrderedDict{String , Any}(
+		[ Pair(k , last(d)) for (k,d) in comments_dict]... 
+	)
+end
 
 # ╔═╡ 7a0abf93-e203-40b2-bcae-3e50c9de5eba
 if is_data_ready &&  data_selection_save_trigger
-		resave_selection_trigger
-		isdir(data_selection_save_path_ref[]) || mkdir(data_selection_save_path_ref[])
+	resave_selection_trigger
+	isdir(data_selection_save_path_ref[]) || mkdir(data_selection_save_path_ref[])
+
+	_f_f_file	= joinpath(data_selection_save_path_ref[], data_selection_save_name_ref[]*".hdf5")
+	WP.export_to_hdf5(all_data , _f_f_file , group_name =data_selection_save_name_ref[] )
 	
-		_f_f_file	= joinpath(data_selection_save_path_ref[], data_selection_save_name_ref[]*".hdf5")
-		WP.export_to_hdf5(all_data , _f_f_file , group_name =data_selection_save_name_ref[] )
+	DC.add_measurements_specification_to_hdf5(_f_f_file , extract_data_from_comments_dict())
 
-
-
-	h5open(_f_f_file, "r+") do file
-			if haskey(file, "measurements_specification")
-		    	delete_object(file, k)
-		    end
-		 	g = create_group(file, "measurements_specification")
-		    for (k, v) in comments_dict
-				g[k] = last(v)
-		    end
-		end
 	
 		"✅ Data selection saved to hdf5-file $(_f_f_file) at $(Dates.format(now(), "HH:MM:SS"))"
 end
@@ -504,9 +493,9 @@ end
 # ╔═╡ 2390e2fe-1bbe-4a21-a0fb-199cc314a29b
 function comment_block(d::DC.DataSelectorsGroup)
 	comments_dict["Date"] =DaAn((PUITF,50, """$(Dates.format(now(), "HH:MM:SS dd:mm:yyyy"))"""))
-	_projects_dates = parse_date_from_winpos_project_name(d)
-	comments_dict["DataDates"] = DaAn((PUITF , 50, _projects_dates))
-
+	(_project_names , _projects_dates) = DC.winpos_projects_date_names_to_string(d)
+	comments_dict["ProjectsDates"] = DaAn((PUITF , 50, _projects_dates))
+	comments_dict["ProjectsNames"] =  DaAn((PUITF , 50, _project_names))
 	
 	ks = collect(keys(comments_dict))
 	def_vals = collect(values(comments_dict))
@@ -530,7 +519,10 @@ if is_data_ready
 		_val = comments_dict[keystr]
 		comments_dict[keystr] =  DaAn((_val[1] , _val[2] , v))
 	end
-end
+	let _val = comments_dict["SampleComment"] 
+		global comments_dict["SampleComment"] = DaAn((_val[1] , _val[2] , comment_to_sample))
+	end
+end;
 
 # ╔═╡ Cell order:
 # ╠═a17fe1fe-5542-454b-b45e-942ac52b6f1a
@@ -572,19 +564,18 @@ end
 # ╟─5be15388-cea2-4884-b8de-bff5be64e506
 # ╟─b1f00c55-5ce9-4a0f-a548-a8a9041d02fc
 # ╟─c3f0a382-f886-41ae-86ae-e5dbebc16214
-# ╠═6da6a4dd-2bf4-463c-91a0-5e73b3e3a1ef
+# ╟─6da6a4dd-2bf4-463c-91a0-5e73b3e3a1ef
 # ╟─600060b7-41cb-4b48-9679-e5994098099f
-# ╠═01551368-aaeb-4d58-a1bc-87bf2a0cce3d
 # ╟─c9717703-5218-451d-9a80-a4ddb79b929d
 # ╟─8e0fff6a-4a02-4e6b-a017-477a46269918
-# ╠═85c827cd-c4c8-4c0a-b790-86b2ea070e1d
+# ╟─85c827cd-c4c8-4c0a-b790-86b2ea070e1d
 # ╟─12699165-eb53-4bca-b177-8326a0a72aed
-# ╠═7a0abf93-e203-40b2-bcae-3e50c9de5eba
+# ╟─7a0abf93-e203-40b2-bcae-3e50c9de5eba
+# ╟─6c22dc1b-a6ad-4139-8192-3a46d4419ac1
 # ╟─2bf91a7e-0da8-48e8-a779-962be2e7c03b
 # ╟─fd51a6c8-6569-4bfd-86ac-883c648fe6d9
 # ╟─c40ec284-b81a-4039-bb33-238de0ca09e4
 # ╟─6b4d07af-a40b-4ed1-a610-2a433311c94e
 # ╟─dd0ecd31-3cf5-4d4d-b3f8-125b5f899c29
 # ╟─2390e2fe-1bbe-4a21-a0fb-199cc314a29b
-# ╟─68331021-0c9e-4619-8531-e5b1deed35fa
-# ╠═04fc7a5c-5c79-4197-a73b-6b75551518c2
+# ╟─04fc7a5c-5c79-4197-a73b-6b75551518c2

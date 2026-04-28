@@ -6,6 +6,8 @@ module InverseHeatTransfer
     using Accessors
     using HDF5
     using JLD2
+    using Serialization
+    using UUIDs 
 
     @reexport using ScaledPolynomials
     export OptimizableVariable, SingleInverseProblem
@@ -28,6 +30,8 @@ module InverseHeatTransfer
    
     const SupportedFlagType{N} = Union{Bool, AbstractVector{Bool}, NTuple{N,Bool}} where N
     const OPTIMIZABLE_VARIABLES_NAMES = (:λ , :C , :q_up , :q_dwn , :T₀ , :dλdT)
+    const INVERSE_PROBLEM_HDF5_SERIALIZED_GROUPNAME = "inverse_problem_serialized"
+    const INVERSE_PROBLEM_HDF5_GROUPNAME = "inverse_problem"
 """
     Wrappes any modifiable and callcable variable of type P, which has parameters accessabel by `coeffs` function
     and can be bounded by `lb` and `ub` constraints, constraints violation can be checked  with  `lb_violation_fun`
@@ -859,27 +863,51 @@ has the same objects for  λ, λ' and cₚ, hence the problem can be simplified.
 
     function WP.export_to_hdf5(inv_problem::SingleInverseProblem,
 		 	fullfilename::String ; 
-        	opentype::String = "w" , 
+        	opentype::String = "a" , 
 			group_name::Union{String , Nothing}= nothing)    
 
             h5open(fullfilename, opentype) do h5
 			   WP.export_to_hdf5(inv_problem , h5 ; group_name = group_name) 
             end
-            #jldopen()
     end
 
-    function WP.export_to_hdf5(inv_problem::SingleInverseProblem , h5_file::HDF5.File ; group_name::String= "inverse_problem")
+    function WP.export_to_hdf5(inv_problem::SingleInverseProblem , h5_file::HDF5.File ; group_name::String = INVERSE_PROBLEM_HDF5_GROUPNAME)
         group = WP._delete_if_overwrite_or_create_group(h5_file , group_name , true)
         WP.export_to_hdf5(inv_problem  , group )
     end
 
-    function WP.export_to_hdf5(inv_problem::SingleInverseProblem , h5_file::HDF5.Group)
-
-
+    function WP.export_to_hdf5(inv_problem::SingleInverseProblem , group::HDF5.Group)
+        group_op = WP._delete_if_overwrite_or_create_group(group , "optimizable" , true)
+        for (k , o) in pairs(inv_problem.optimizable)
+            k_str = string(k)
+            o_str = string(o)
+            if applicable(coeffs, o)
+                group_op[k_str] = coeffs(o)
+                attrs = attributes(group_op[k_str])
+                attrs["string"] = o_str
+            else
+                group_op[k_str] = o_str
+            end
+        end
+        add_direct_problem(inv_problem::SingleInverseProblem , group)    
+        group_ser = WP._delete_if_overwrite_or_create_group(group , INVERSE_PROBLEM_HDF5_SERIALIZED_GROUPNAME , true)
+        add_serialized_to_hdf5(inv_problem::SingleInverseProblem , group_ser )
     end
-
-    function add_direct_problem(inv_problem::SingleInverseProblem  )
-        
+    function add_serialized_to_hdf5(inv_problem::SingleInverseProblem , group ::HDF5.Group , name::String = ""  )
+            if length(name) == 0
+                name = string(uuid4())
+            end    
+            io = IOBuffer()
+            serialize(io, inv_problem)
+            blob = take!(io) 
+            # group_ser = WP._delete_if_overwrite_or_create_group(group , name , true)
+            if haskey(group , name)
+                delete_object(group , name)
+            end
+            group[name] = blob
+    end
+    function add_direct_problem(inv_problem::SingleInverseProblem , group::HDF5.Group  )
+        group_dir = WP._delete_if_overwrite_or_create_group(group , "direct_problem" , true)
 
     end
 end

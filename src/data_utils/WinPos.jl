@@ -450,7 +450,7 @@ function _check_hdf5_filename_opentype(fullfilename , projects::AbstractWinPosPr
         fullfilename
     end
     opentype = if (opentype != "w") &&  !isfile(fullfilename)
-         "w"  
+        "w"  
     else
         opentype
     end 
@@ -638,6 +638,42 @@ function load_from_ascii_folder(dir ; name_matcher::String , variable_name::Stri
 	    return (d , full_f)
     end
 
+    
+    """
+        repack_h5(filename::String; compress::Int=0)
+
+    Compact an HDF5 file to reclaim space from deleted objects.
+    Optionally apply GZIP compression (0-9).
+    """
+    function repack_h5(filename::String; compress::Int=0)
+        # Ensure the source file exists before proceeding
+        if !isfile(filename)
+            @error "File not found: $filename"
+            return
+        end
+
+        # Create a temporary filename for the repacked output
+        temp_file = filename * ".tmp"
+        
+        # Construct the compression flag if requested (GZIP levels 1-9)
+        # 0 means no compression
+        compression_flags = compress > 0 ? `-f GZIP=$(compress)` : ``
+        
+        try
+            # Use h5repack from the JLL package to ensure cross-platform compatibility
+            # h5repack() returns the path to the executable
+            run(`$(h5repack()) $compression_flags $filename $temp_file`)
+            
+            # Replace the original bloated file with the new compacted one
+            mv(temp_file, filename, force=true)
+            @info "Successfully repacked $filename (Compression level: $compress)"
+            
+        catch e
+            # Clean up the temporary file if the process failed
+            rm(temp_file, force=true)
+            @error "Failed to repack HDF5 file. Ensure the file is closed in Julia. Error: $e"
+        end
+    end
 
     @recipe function f(d::DataPair)
         label --> d.name

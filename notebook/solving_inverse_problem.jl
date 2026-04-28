@@ -29,6 +29,8 @@ begin
 	using Revise
 	import InverseHeatTransfer
 	using Dates
+	using Tables
+	using CSV
 end
 
 # ╔═╡ 5807712b-5d26-49c8-ab65-dac167ebad7b
@@ -53,7 +55,7 @@ end;
 PF = Main.CustomPlutoFunctions;
 
 # ╔═╡ db671921-13dc-497b-81e5-dcb4da0695f9
-md""" ## Loading experimental data from winpos project"""
+md""" ## Data selection file loading """
 
 # ╔═╡ 450fb200-eec6-4e96-9ebd-81453c015830
 md" ##### Load data from : $(@bind input_data_type Select([:hdf5_data_selector] , default = :winpos))"
@@ -71,7 +73,8 @@ begin
 end
 
 # ╔═╡ a7abe643-2553-450d-ac81-d4a690a1c2ff
-begin 
+if isdir(data_selection_folder) 
+	reload_trigger
 	all_hdf5_files = [d for d in readdir(data_selection_folder) if contains(d , ".hdf5") ]
 	if isempty(all_hdf5_files)
 		md" **There is no hdf5 files in the folder**"
@@ -79,6 +82,17 @@ begin
 		md" **Select data selection project** $(@bind data_selection_name Select(all_hdf5_files))"
 
 	end
+else
+	md" Incorrect folder $(data_selection_folder)"
+end
+
+# ╔═╡ 34b63c47-678d-4a5f-aed3-1896b778e117
+try
+	fful_name = joinpath(data_selection_folder , @isdefined(data_selection_name) ? 	data_selection_name : "" )
+		Text(DC.read_measurements_specification_string(fful_name))
+	catch er 
+		md" There is no file  $(er)"
+
 end
 
 # ╔═╡ 444236e5-e010-4b8b-8709-31c0307dc5d8
@@ -171,6 +185,9 @@ is_data_loaded && @htl("""
 </div>
 """)
 
+# ╔═╡ 2b3a1a65-8d3c-424e-a6cf-0e96646795f4
+md" ### refit $(@bind is_fit_on CheckBox(default = false))"
+
 # ╔═╡ 62069546-44fb-4a77-986d-f03624719e29
 md" ## Physical properties setup"
 
@@ -192,11 +209,11 @@ if is_data_loaded
 	is_data_ready
 end
 
-# ╔═╡ 2b3a1a65-8d3c-424e-a6cf-0e96646795f4
-md" ### refit $(@bind is_fit_on CheckBox(default = false))"
-
 # ╔═╡ a46970c8-7c91-4795-83a9-41c56a7ca399
 md""" ### Compare to passport $(@bind show_passport CheckBox(default = true))"""
+
+# ╔═╡ 74707b89-d91c-468d-9b4a-a06dc99f69c0
+md"### Heat capacity setup"
 
 # ╔═╡ 4f3e1899-541d-4809-810c-f2e6b7ca1ad1
 md"#### Optimize C : $(@bind is_optimize_c CheckBox(default = false))"
@@ -211,7 +228,12 @@ md" **Use table for constraints** $(@bind use_cp_table_for_constraints CheckBox(
 !use_cp_table_for_constraints  && md" **Upper Cp limit** = $(@bind upper_cp_limit confirm(Slider(100.0 : 1e-1 : 10000.0, default = 1500.0, show_value = true)))"
 
 # ╔═╡ baffb68a-fb52-4bac-b484-4a215108aaed
-!use_cp_table_for_constraints && md" **Lower Cp limit** = $(@bind lower_cp_limit confirm(Slider(100.0 : 1e-1 : 10000.0, default = 600.0, show_value = true)))"
+if !use_cp_table_for_constraints 
+	md" **Lower Cp limit** = $(@bind lower_cp_limit confirm(Slider(100.0 : 1e-1 : 10000.0, default = 600.0, show_value = true)))"
+end
+
+# ╔═╡ 0ff89750-2a97-436b-b759-7da1354b2c6f
+md" ## Thermal conductivity setup"
 
 # ╔═╡ 4ca95124-8a7a-4e4f-9e65-ff7b2adf35a5
 md" #### Optimize λ ? $( @bind is_optimize_lambda CheckBox(default = true))"
@@ -283,7 +305,7 @@ md" Direct problem number of time steps $(@bind dp_tpoints Select(10:10:5000, de
 
 # ╔═╡ 2a1ca349-3732-443e-bc48-5be611a5d91f
 md"""
-### Select optimizer $(@bind optimizer Select([ParticleSwarm => "Particle swarm", OptimizationNLopt.NLopt.LN_COBYLA => "COBYLA", OptimizationNLopt.NLopt.LN_BOBYQA => "BOBYQA"  ], default = OptimizationNLopt.NLopt.LN_COBYLA)) 
+### Select optimizer $(@bind optimizer Select([OptimizationMetaheuristics.PSO => "Particle swarm", OptimizationNLopt.NLopt.LN_COBYLA => "COBYLA", OptimizationNLopt.NLopt.LN_BOBYQA => "BOBYQA"  ], default = OptimizationNLopt.NLopt.LN_COBYLA)) 
 """
 
 # ╔═╡ d02ec3fd-1b0d-4bc3-92e9-adedc8bf2c8c
@@ -476,14 +498,18 @@ function prepare_constraints_gui(el_number , def , lam_T_range ; title= "no titl
 		def
 	end
 
-	PF.multi_values(PlutoUI.NumberField , _names , title = title, default_values = _default_values , defaults = _defaults )
+	PF.multi_values_table(PlutoUI.NumberField , _names , title = title, default_values = _default_values , defaults = _defaults )
 end
 
 # ╔═╡ c8cda804-9a2a-40c9-aa91-7a48500e85ff
-@bind upper_cp_limit_table confirm(prepare_constraints_gui(c_basis_degree , 1500.0 , lam_T_range, title = "upper bounds"))
+if  use_cp_table_for_constraints 
+	@bind upper_cp_limit_table confirm(prepare_constraints_gui(c_basis_degree , 1500.0 , lam_T_range, title = "upper bounds"))
+end
 
 # ╔═╡ 315f6a9b-f37a-4213-be5a-3714b18c9d96
-@bind lower_cp_limit_table confirm(prepare_constraints_gui(c_basis_degree , 500.0 , lam_T_range , title = "lower bounds"))
+if use_cp_table_for_constraints 
+	@bind lower_cp_limit_table confirm(prepare_constraints_gui(c_basis_degree , 500.0 , lam_T_range , title = "lower bounds"))
+end
 
 # ╔═╡ 206e1e8f-16f3-4144-8401-c2cbf40c0125
 
@@ -493,16 +519,17 @@ function bounds_convert(b::T , c::Union{T , Nothing} = nothing) where T <: Numbe
 end
 
 # ╔═╡ 4b8ddfc0-ed4f-4b66-b752-fa075d348608
-function bounds_convert(b ,  c::T = 1.0) where T<: Number 
+function bounds_convert(b::Union{Tuple , NamedTuple , AbstractArray} ,  c::T = 1.0) where T<: Number 
 	return ntuple(length(b)) do i 
 		c * b[i]
 	end
 end
 
 # ╔═╡ d051f5e5-f836-4043-9326-639b40acaf87
-begin 
-	cp_upper_bounds = bounds_convert(upper_cp_limit_table , density)
-	cp_lower_bounds =bounds_convert(lower_cp_limit_table , density) 
+(cp_upper_bounds , cp_lower_bounds) = if use_cp_table_for_constraints 
+	(bounds_convert(upper_cp_limit_table , density) , bounds_convert(lower_cp_limit_table , density))
+else
+	(ntuple((_)->density*upper_cp_limit , c_basis_degree) , ntuple((_) -> density*lower_cp_limit , c_basis_degree)) 	
 end;
 
 # ╔═╡ 16337bb4-438e-4b86-bdc5-b88ef210a960
@@ -526,20 +553,9 @@ end;
 begin
 	xpoints_number = dp_xpoints
 	tpoints_number = dp_tpoints
-	#thickness = 1e-3 * thickness_mm
 	if is_data_ready
 		probls = []
 		for (_ , d_i) in all_data.d
-			#= 
-			
-			therm_locations = d.locations
-			thickness = d.total_thickness
-			inds = sortperm(therm_locations)
-			
-			t = d.data_cutted[: , 1]
-			T = d.data_cutted[: , 2:end]
-			
-			=#
 			cov = covariance_type(cargs...)
 			inv_probl = IHT.SingleInverseProblem(d_i, C,λ, dλdT,  xpoints_number, tpoints_number , covariance=cov , regularization = reg_type())
 			push!(probls , inv_probl)
@@ -658,9 +674,6 @@ begin
 	end
 end ;
 
-# ╔═╡ a660bf26-5b50-4910-b0ab-8e453623dc1a
-p_residual
-
 # ╔═╡ 538487b4-b2fc-42c2-ba69-663b2ca5b768
 begin 
 	c_plot = Plots.plot(Tplot,C.(Tplot) ./density, label = "inverse", xlabel = "Temperature",linecolor = :green , ylabel = "Heat capacity, J/K"; plot_common_args...)
@@ -669,6 +682,9 @@ end
 
 # ╔═╡ 67763d8f-e1ac-4b1f-978f-4734af1e03ba
 ylims!(p_fit_lam, lam_y_scale_region)
+
+# ╔═╡ a660bf26-5b50-4910-b0ab-8e453623dc1a
+p_residual
 
 # ╔═╡ 042ea29b-63dd-43d0-a20f-68807c5f7cd4
 p_distr
@@ -705,11 +721,9 @@ if use_l_curve
 	
 	alphas = is_l_curve_logscale ? 10.0 .^alpha_range : alpha_range
 
-	#prob_fun = Main.regularization_scan(alphas , Optimization.remake)
 	lcurve_probs = IHT.ParallelInverseProblems(Tuple(probls)...)
 	
 	(_start, _lb, _ub)  =  IHT.fill_starting_vectors(lcurve_probs)
-	#@. _start = res_l.u
 	
 	
 	sols = Dict{Int , Any}()
@@ -832,7 +846,7 @@ begin
 end
 
 # ╔═╡ Cell order:
-# ╟─a17fe1fe-5542-454b-b45e-942ac52b6f1a
+# ╠═a17fe1fe-5542-454b-b45e-942ac52b6f1a
 # ╟─5807712b-5d26-49c8-ab65-dac167ebad7b
 # ╟─2bfb4e52-6248-4832-aca1-98ba58959bff
 # ╟─db671921-13dc-497b-81e5-dcb4da0695f9
@@ -840,6 +854,7 @@ end
 # ╟─41bc1a0a-73c8-430d-a1d3-4eb98487c815
 # ╟─6e062bd9-d20c-4e1d-b772-328bec8859ea
 # ╟─a7abe643-2553-450d-ac81-d4a690a1c2ff
+# ╟─34b63c47-678d-4a5f-aed3-1896b778e117
 # ╟─444236e5-e010-4b8b-8709-31c0307dc5d8
 # ╟─81c2f93b-05b1-4eb0-9919-4ef76ecad233
 # ╟─074c47c6-a1ae-4ded-8e64-b40393d7ba4a
@@ -849,28 +864,29 @@ end
 # ╟─b31a7c52-7c4b-480f-84d8-fcb1c71dca1b
 # ╟─c69d07a3-ba0a-48a2-b296-1944b8cd322c
 # ╟─b1f00c55-5ce9-4a0f-a548-a8a9041d02fc
+# ╟─2b3a1a65-8d3c-424e-a6cf-0e96646795f4
 # ╟─62069546-44fb-4a77-986d-f03624719e29
 # ╟─fc5c1209-26ec-41d7-9238-e57d18330de1
-# ╟─2b3a1a65-8d3c-424e-a6cf-0e96646795f4
 # ╟─8f65e989-1abe-4689-9c3f-fdb6cabd7eae
 # ╟─a46970c8-7c91-4795-83a9-41c56a7ca399
 # ╟─5843fcfb-4e0e-480d-b263-e3f3ad6a7ac3
 # ╟─7d37019a-34bf-43ca-aa81-8b6c29191473
+# ╟─74707b89-d91c-468d-9b4a-a06dc99f69c0
 # ╟─4f3e1899-541d-4809-810c-f2e6b7ca1ad1
 # ╟─4fdbfb71-ec8d-4d30-b7e7-f289f773fadd
 # ╟─eb755603-1eda-4182-a026-e9b163e78ae3
 # ╟─97618f0c-52ae-4772-b5b7-5512ea44af09
 # ╟─c8cda804-9a2a-40c9-aa91-7a48500e85ff
 # ╟─baffb68a-fb52-4bac-b484-4a215108aaed
+# ╟─538487b4-b2fc-42c2-ba69-663b2ca5b768
 # ╟─315f6a9b-f37a-4213-be5a-3714b18c9d96
 # ╟─d051f5e5-f836-4043-9326-639b40acaf87
 # ╟─16337bb4-438e-4b86-bdc5-b88ef210a960
+# ╟─0ff89750-2a97-436b-b759-7da1354b2c6f
 # ╟─4ca95124-8a7a-4e4f-9e65-ff7b2adf35a5
 # ╟─fa72774e-040a-4bc3-a759-5eb68c243fb4
 # ╟─c8dc4f9d-a549-4dc2-82bd-38ffe949ea55
 # ╟─bfa23359-8bac-4db0-bac1-0885ebe8ec4b
-# ╟─a660bf26-5b50-4910-b0ab-8e453623dc1a
-# ╟─538487b4-b2fc-42c2-ba69-663b2ca5b768
 # ╟─67763d8f-e1ac-4b1f-978f-4734af1e03ba
 # ╟─68ed85b2-7308-4ea7-b696-0f1951219592
 # ╟─9b35c13b-24ba-4c43-a621-a3f8ba45fe4a
@@ -881,8 +897,8 @@ end
 # ╟─10f7c083-a697-4b7e-87ea-de2791ed1a30
 # ╟─3f8c5c6a-f902-4b1e-abc1-7b572c8d2505
 # ╟─0a0324df-430f-4ac0-857b-4da6a7dca138
-# ╠═fe228354-5f3f-433d-9f8b-7d888e9c5ecb
-# ╠═f3e24d8a-e35d-41de-92e6-0df290d3503c
+# ╟─fe228354-5f3f-433d-9f8b-7d888e9c5ecb
+# ╟─f3e24d8a-e35d-41de-92e6-0df290d3503c
 # ╟─4c9a5a5f-5839-4211-b561-7539dfa74a7a
 # ╟─95dbc55f-ab5a-4828-a1e2-9a0c9a9ec19b
 # ╟─3281dd3c-0453-4098-a6ed-4d771717033b
@@ -896,19 +912,20 @@ end
 # ╟─6cd83678-860c-41c8-b3cd-007725f9e01d
 # ╟─544201c6-90b3-48dd-9651-69ca3c5c4979
 # ╟─f2943cf8-ffb9-4065-a272-1f344488dd0f
+# ╟─a660bf26-5b50-4910-b0ab-8e453623dc1a
 # ╟─042ea29b-63dd-43d0-a20f-68807c5f7cd4
 # ╟─a2a84394-1f18-48e3-a4dc-c03f64a3a1c0
 # ╟─9cd8c4c8-7d11-4fb0-92d5-439702aa9496
-# ╠═e9e9e16d-0b2c-45ce-aa5b-cdcda6b143f1
-# ╠═aea6fc8f-5ee2-40a3-aebd-942c45eec0d6
-# ╠═a8f5cc07-b2bd-445c-8797-ffe78a25641b
-# ╠═bce5f7ae-49c5-4520-a0f6-6215e5078674
-# ╠═dd8fb4fa-fa67-4e26-988d-3ede79bc9540
-# ╠═cf8665e2-07d9-4464-b833-0531205408e9
-# ╠═2614e5ad-0d45-4046-abfd-053dd872c17c
-# ╠═1c32440c-32af-414c-9a7a-d6cc83685f7c
-# ╠═84e23b57-e5a4-4bf0-97ef-6b41b502b4e6
-# ╠═c2564f33-dcf5-45fe-a462-70fe105bcf0a
+# ╟─e9e9e16d-0b2c-45ce-aa5b-cdcda6b143f1
+# ╟─aea6fc8f-5ee2-40a3-aebd-942c45eec0d6
+# ╟─a8f5cc07-b2bd-445c-8797-ffe78a25641b
+# ╟─bce5f7ae-49c5-4520-a0f6-6215e5078674
+# ╟─dd8fb4fa-fa67-4e26-988d-3ede79bc9540
+# ╟─cf8665e2-07d9-4464-b833-0531205408e9
+# ╟─2614e5ad-0d45-4046-abfd-053dd872c17c
+# ╟─1c32440c-32af-414c-9a7a-d6cc83685f7c
+# ╟─84e23b57-e5a4-4bf0-97ef-6b41b502b4e6
+# ╟─c2564f33-dcf5-45fe-a462-70fe105bcf0a
 # ╟─27031733-7ade-4bda-b464-5a9ade0b2950
 # ╟─f5b13ec5-98f9-48bb-ad95-7dbd87e11f7b
 # ╟─d71fd6d1-167d-40fb-a253-b0982e19c0d0
