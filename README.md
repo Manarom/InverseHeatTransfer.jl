@@ -65,6 +65,10 @@ This allows for:
     *   Simultaneous estimation of $\lambda$ and $C$ across multiple experimental datasets.
     *   A **joint discrepancy function** that aggregates residuals from several measurements with different heating regimes.
     *   Improved parameter identifiability by leveraging diverse thermal loading scenarios within a single optimization framework.
+## Data formats compatibility
+
+    *   **Experimental data  :** Import from HDF5,ASCII and binary formats for import and export experimental data.
+    *   **Inverse problem solution:** Saving to HDF5.
 
 ## Numerical Solvers (Direct Problem)
 
@@ -75,6 +79,5 @@ The direct problem can be solved using the following Finite Difference Schemes:
 4. **BDF-Implicit**
 
 ## Roadmap (TODO)
-- [ ] Add HDF5 format support for experimental datasets and optimization results
 - [ ] Integration of **Spectral Methods** via `OrdinaryDiffEq.jl`.
 - [ ] Advanced **Sensitivity Analysis** for inverse problems.
