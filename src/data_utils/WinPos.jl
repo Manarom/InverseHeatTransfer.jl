@@ -637,7 +637,42 @@ function load_from_ascii_folder(dir ; name_matcher::String , variable_name::Stri
             end
 	    return (d , full_f)
     end
+    """
+    try_write_struct_to_hdf5(group::Union{HDF5.Group , HDF5.File} , obj::T; overwrite=true) where T
 
+Function tryes to write composite object (`struct`) to HDF5 file branch or root 
+(just scans fields without going deeper)
+"""
+function try_write_struct_to_hdf5(group::Union{HDF5.Group , HDF5.File} , obj::T; overwrite=true) where T
+        isstructtype(T) || return nothing
+        for fn in fieldnames(T)
+            fn_str = string(fn)
+            val = getfield(obj , fn)
+            if is_hdf5_compatible_simple_type(val)
+                if overwrite && haskey(group , fn_str)
+                    HDF5.delete_object(group , fn_str)
+                end
+                group[fn_str] = val 
+            end
+        end     
+    end 
+    is_hdf5_compatible_simple_type(::T) where T = is_hdf5_compatible_simple_type(T)
+    function is_hdf5_compatible_simple_type(::Type{T}) where T
+        if T <: Union{Matrix , Vector}
+            return is_hdf5_compatible_simple_type(eltype(T))
+        end
+        isstructtype(T) && return false
+        if T === String
+            return true
+        end
+
+        try
+            HDF5.datatype(T)
+            return true
+        catch
+            return false
+        end
+    end
     
     """
         repack_h5(filename::String; compress::Int=0)

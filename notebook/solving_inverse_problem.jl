@@ -39,7 +39,7 @@ begin
 	data_selection_path_ref = Ref("") # data selection saving path
 	data_selection_name_ref = Ref("") # data selection saving name
 	
-	default_data_fodler = joinpath(@__DIR__, "..","src","data_utils","binary_files")
+	default_data_fodler = joinpath(@__DIR__, "..","src","data_utils","property_inversion_ansys_new")
 	source_path = joinpath(@__DIR__,"..","src")
 	includet(joinpath(@__DIR__ , "CustomPlutoFunctions.jl"))
 	
@@ -398,6 +398,18 @@ if density != Rho_Dict[material_name]
 	md" passport density is $(Rho_Dict[material_name])"
 end
 
+# ╔═╡ 23902c7d-5973-4868-8488-e0c7634573c4
+@bind default_save_file TextField(60,default=first(eachsplit(data_selection_name , "."))*"_solution.hdf5")
+
+# ╔═╡ 6800ae42-c5b1-4d1e-84fb-a03015bf138f
+@bind save_folder TextField(90, default = realpath(default_data_fodler))
+
+# ╔═╡ ea412a80-0bf7-4ac6-9b90-8530a4c26008
+md"### Save data to file ? $(@bind is_write_file CheckBox(false))"
+
+# ╔═╡ c4053281-7cd4-4590-b004-b4ca43771094
+md"""### Click to resave file $(@bind resave_file Button("resave"))"""
+
 # ╔═╡ 023dc25f-6cf8-4802-83b4-77d1827cd2a7
 L_Dict =Dict( "RBSN" =>(;
 						x = Float64.([ 25, 100, 300, 500, 700, 900, 1100, 1300, 1500, 1600, 1700, 1800, 2000, 2500]),
@@ -440,14 +452,8 @@ if is_data_ready
 	end
 end;
 
-# ╔═╡ 23902c7d-5973-4868-8488-e0c7634573c4
-@bind default_save_file TextField(60,"thermal_conductivity.txt")
-
-# ╔═╡ 6800ae42-c5b1-4d1e-84fb-a03015bf138f
-@bind save_folder TextField(90, default = realpath(default_data_fodler))
-
-# ╔═╡ ea412a80-0bf7-4ac6-9b90-8530a4c26008
-md"### Save data to file ? $(@bind is_write_file Button())"
+# ╔═╡ d28e55d2-f847-45f7-98b8-f34c4226ba27
+all_data
 
 # ╔═╡ 2bf91a7e-0da8-48e8-a779-962be2e7c03b
 function plot_optimizable(C; xmin,xmax , kwargs...)
@@ -689,16 +695,6 @@ p_residual
 # ╔═╡ 042ea29b-63dd-43d0-a20f-68807c5f7cd4
 p_distr
 
-# ╔═╡ 4cf77d64-a720-41da-a9c2-5d875ea00135
-begin 
-	is_write_file
-	#save_folder = select_folder_gtk()
-	Tsave = range(Tmin, Tmax, 100)
-	mat = hcat(Tsave, λ.(Tsave))
-	fullfile_name = joinpath(save_folder,default_save_file)
-	CSV.write(fullfile_name,Tables.table(mat, header = ["T", "lambda"] ), delim = " ")
-end
-
 # ╔═╡ a2a84394-1f18-48e3-a4dc-c03f64a3a1c0
 begin
 	refresh_graph
@@ -845,18 +841,29 @@ begin
 		   """)
 end
 
+# ╔═╡ 4cf77d64-a720-41da-a9c2-5d875ea00135
+if is_write_file 
+	resave_file
+	refresh_graph
+	_ff_init = joinpath(data_selection_path_ref[] , data_selection_name_ref[])
+	ff_name = joinpath(save_folder , default_save_file)
+	cp(_ff_init, ff_name; force = true)
+	DC.WinPos.export_to_hdf5(parallel_probls, ff_name)
+	"✅ Data selection saved to hdf5-file $(ff_name) at $(Dates.format(now(), "HH:MM:SS"))"
+end
+
 # ╔═╡ Cell order:
 # ╠═a17fe1fe-5542-454b-b45e-942ac52b6f1a
-# ╟─5807712b-5d26-49c8-ab65-dac167ebad7b
-# ╟─2bfb4e52-6248-4832-aca1-98ba58959bff
+# ╠═5807712b-5d26-49c8-ab65-dac167ebad7b
+# ╠═2bfb4e52-6248-4832-aca1-98ba58959bff
 # ╟─db671921-13dc-497b-81e5-dcb4da0695f9
 # ╟─450fb200-eec6-4e96-9ebd-81453c015830
 # ╟─41bc1a0a-73c8-430d-a1d3-4eb98487c815
 # ╟─6e062bd9-d20c-4e1d-b772-328bec8859ea
 # ╟─a7abe643-2553-450d-ac81-d4a690a1c2ff
-# ╟─34b63c47-678d-4a5f-aed3-1896b778e117
-# ╟─444236e5-e010-4b8b-8709-31c0307dc5d8
-# ╟─81c2f93b-05b1-4eb0-9919-4ef76ecad233
+# ╠═34b63c47-678d-4a5f-aed3-1896b778e117
+# ╠═444236e5-e010-4b8b-8709-31c0307dc5d8
+# ╠═81c2f93b-05b1-4eb0-9919-4ef76ecad233
 # ╟─074c47c6-a1ae-4ded-8e64-b40393d7ba4a
 # ╟─35b5c27e-921f-4fe7-90bc-3b327d9150fe
 # ╟─5be15388-cea2-4884-b8de-bff5be64e506
@@ -931,11 +938,13 @@ end
 # ╟─d71fd6d1-167d-40fb-a253-b0982e19c0d0
 # ╟─fb2937d0-738b-4329-aef5-f3af1d17497a
 # ╟─efa9120f-5a45-41a0-9132-dc26f967fec3
-# ╟─023dc25f-6cf8-4802-83b4-77d1827cd2a7
 # ╟─23902c7d-5973-4868-8488-e0c7634573c4
 # ╟─6800ae42-c5b1-4d1e-84fb-a03015bf138f
 # ╟─ea412a80-0bf7-4ac6-9b90-8530a4c26008
+# ╟─c4053281-7cd4-4590-b004-b4ca43771094
 # ╟─4cf77d64-a720-41da-a9c2-5d875ea00135
+# ╟─023dc25f-6cf8-4802-83b4-77d1827cd2a7
+# ╟─d28e55d2-f847-45f7-98b8-f34c4226ba27
 # ╟─2bf91a7e-0da8-48e8-a779-962be2e7c03b
 # ╟─fd51a6c8-6569-4bfd-86ac-883c648fe6d9
 # ╟─dbd6f9d9-4b44-4238-86ca-7cd361545a56
