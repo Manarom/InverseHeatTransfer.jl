@@ -38,7 +38,7 @@ begin
 	data_selection_save_path_ref = Ref("") # data selection saving path
 	data_selection_save_name_ref = Ref("") # data selection saving name
 	
-	default_data_fodler = joinpath(@__DIR__, "..","src","data_utils","binary_files")
+	default_data_fodler = joinpath(@__DIR__, "..","src","data_utils","property_inversion_ansys_new")
 	source_path = joinpath(@__DIR__,"..","src")
 
 	includet(joinpath(@__DIR__ , "CustomPlutoFunctions.jl"))
@@ -59,7 +59,7 @@ end;
 md""" ## Loading experimental data from winpos project"""
 
 # ╔═╡ 450fb200-eec6-4e96-9ebd-81453c015830
-md" Load data from : $(@bind input_data_type Select([:winpos, :ascii , :hdf5_winpos , :hdf5_data_selector] , default = :winpos))"
+md" Load data from : $(@bind input_data_type Select([:winpos, :ascii , :hdf5_winpos , :hdf5_data_selector] , default = :ascii))"
 
 # ╔═╡ 6e062bd9-d20c-4e1d-b772-328bec8859ea
 begin 
@@ -566,11 +566,11 @@ end;
 # ╟─c3f0a382-f886-41ae-86ae-e5dbebc16214
 # ╟─6da6a4dd-2bf4-463c-91a0-5e73b3e3a1ef
 # ╟─600060b7-41cb-4b48-9679-e5994098099f
-# ╠═c9717703-5218-451d-9a80-a4ddb79b929d
+# ╟─c9717703-5218-451d-9a80-a4ddb79b929d
 # ╟─8e0fff6a-4a02-4e6b-a017-477a46269918
 # ╟─85c827cd-c4c8-4c0a-b790-86b2ea070e1d
 # ╟─12699165-eb53-4bca-b177-8326a0a72aed
-# ╠═7a0abf93-e203-40b2-bcae-3e50c9de5eba
+# ╟─7a0abf93-e203-40b2-bcae-3e50c9de5eba
 # ╟─6c22dc1b-a6ad-4139-8192-3a46d4419ac1
 # ╟─2bf91a7e-0da8-48e8-a779-962be2e7c03b
 # ╟─fd51a6c8-6569-4bfd-86ac-883c648fe6d9

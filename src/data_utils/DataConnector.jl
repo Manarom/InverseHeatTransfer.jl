@@ -484,7 +484,7 @@ function add_sample_properties_to_hdf5!(proj_branch , data_selector::DataSelecto
 		add_measurements_specification_to_hdf5(file , comments_dict)
 	end
 	function add_measurements_specification_to_hdf5(hdf5::Union{HDF5.File , HDF5.Group} , comments_dict::AbstractDict)
-		 	g = WP._delete_if_overwrite_or_create_group(hdf5 , MEASUREMENTS_SPECIFICATION_GOUP_NAME , true )
+		 	g = WinPos._delete_if_overwrite_or_create_group!(hdf5 , MEASUREMENTS_SPECIFICATION_GOUP_NAME , true )
 		    for (k, v) in comments_dict
 				g[k] = v
 		    end
