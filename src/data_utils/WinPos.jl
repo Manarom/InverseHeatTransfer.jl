@@ -450,7 +450,7 @@ function _check_hdf5_filename_opentype(fullfilename , projects::AbstractWinPosPr
         fullfilename
     end
     opentype = if (opentype != "w") &&  !isfile(fullfilename)
-         "w"  
+        "w"  
     else
         opentype
     end 
@@ -614,12 +614,19 @@ function load_from_ascii_folder(dir ; name_matcher::String , variable_name::Stri
                 data = readdlm(full_f; kwargs...)
                 break
             end
-            @assert length(data) > 1 "There is no data in $(fold) matrching $(name_matcher)"
+
+            d = OrderedDict{String , DataPair}()
+
+            if length(data) <= 0
+                @warn "There is no data in $(fold) matching $(name_matcher)"
+                return (d , full_f)
+            end
+
             t = data[: , 1]
             Tnumb = size(data , 2) - 1
             N = size(data , 1)
             data_names = variable_name .* string.(collect(1 : Tnumb))
-            d = OrderedDict{String , DataPair}()
+            
             for i in 2 : Tnumb + 1
                 name = data_names[ i -  1]
                 d[name] = DataPair(name , "" , "" , project_name) # 			DataPair(name , xfile , yfile , project)
@@ -630,7 +637,78 @@ function load_from_ascii_folder(dir ; name_matcher::String , variable_name::Stri
             end
 	    return (d , full_f)
     end
+    """
+    try_write_struct_to_hdf5(group::Union{HDF5.Group , HDF5.File} , obj::T; overwrite=true) where T
 
+Function tryes to write composite object (`struct`) to HDF5 file branch or root 
+(just scans fields without going deeper)
+"""
+function try_write_struct_to_hdf5(group::Union{HDF5.Group , HDF5.File} , obj::T; overwrite=true) where T
+        isstructtype(T) || return nothing
+        for fn in fieldnames(T)
+            fn_str = string(fn)
+            val = getfield(obj , fn)
+            if is_hdf5_compatible_simple_type(val)
+                if overwrite && haskey(group , fn_str)
+                    HDF5.delete_object(group , fn_str)
+                end
+                group[fn_str] = val 
+            end
+        end     
+    end 
+    is_hdf5_compatible_simple_type(::T) where T = is_hdf5_compatible_simple_type(T)
+    function is_hdf5_compatible_simple_type(::Type{T}) where T
+        if T <: Union{Matrix , Vector}
+            return is_hdf5_compatible_simple_type(eltype(T))
+        end
+        isstructtype(T) && return false
+        if T === String
+            return true
+        end
+
+        try
+            HDF5.datatype(T)
+            return true
+        catch
+            return false
+        end
+    end
+    
+    """
+        repack_h5(filename::String; compress::Int=0)
+
+    Compact an HDF5 file to reclaim space from deleted objects.
+    Optionally apply GZIP compression (0-9).
+    """
+    function repack_h5(filename::String; compress::Int=0)
+        # Ensure the source file exists before proceeding
+        if !isfile(filename)
+            @error "File not found: $filename"
+            return
+        end
+
+        # Create a temporary filename for the repacked output
+        temp_file = filename * ".tmp"
+        
+        # Construct the compression flag if requested (GZIP levels 1-9)
+        # 0 means no compression
+        compression_flags = compress > 0 ? `-f GZIP=$(compress)` : ``
+        
+        try
+            # Use h5repack from the JLL package to ensure cross-platform compatibility
+            # h5repack() returns the path to the executable
+            run(`$(h5repack()) $compression_flags $filename $temp_file`)
+            
+            # Replace the original bloated file with the new compacted one
+            mv(temp_file, filename, force=true)
+            @info "Successfully repacked $filename (Compression level: $compress)"
+            
+        catch e
+            # Clean up the temporary file if the process failed
+            rm(temp_file, force=true)
+            @error "Failed to repack HDF5 file. Ensure the file is closed in Julia. Error: $e"
+        end
+    end
 
     @recipe function f(d::DataPair)
         label --> d.name

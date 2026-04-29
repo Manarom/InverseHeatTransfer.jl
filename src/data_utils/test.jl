@@ -6,9 +6,7 @@ include(joinpath(@__DIR__ , "DataConnector.jl"))
 import .DataConnector as DC
 using Test
 fold = joinpath(@__DIR__ , "binary_files")
-
-
-
+data_utils_folder = @__DIR__()
 ascii_folder = joinpath(@__DIR__, ".."  , ".." , raw"test\test_data\property_inversion_ansys_new") 
 #tempdir()
 function _test_winpos_groups_equality(w1 , w2 ; common_sensors = ("T1" , "T2" )  , atol = 1e-8)
@@ -81,7 +79,7 @@ wp_ascii = DC.WinPos.load_from_ascii_folder(ascii_folder , name_matcher = "Tmeas
     println("ok")
 end
 
-dc_group_file = raw"E:\JULIA\JULIA_DEPOT\dev\InverseHeatTransfer.jl\src\data_utils\data_selector_test.hdf5"
+dc_group_file = joinpath(data_utils_folder , "data_selector_test.hdf5")
 dc_group_loaded = DC.load_from_hdf5(dc_group_file , DC.DataSelectorsGroup)
 
 DC.selected_names(dc_group_loaded)
@@ -99,35 +97,32 @@ end
 
 
 
-    sample_properties = DataConnector.SampleProperties(thickness = 9.3e-3)
-    d1 = DC.DataSelector(project = wp_ascii[1] , sample_properties = sample_properties)
-    d2 = DC.DataSelector(project = wp_ascii[2], sample_properties = sample_properties)
-    d3 = DC.DataSelector(project = wp_ascii[3], sample_properties = sample_properties)
+sample_properties = DataConnector.SampleProperties(thickness = 9.3e-3)
+d1 = DC.DataSelector(project = wp_ascii[1] , sample_properties = sample_properties)
+d2 = DC.DataSelector(project = wp_ascii[2], sample_properties = sample_properties)
+d3 = DC.DataSelector(project = wp_ascii[3], sample_properties = sample_properties)
 
 
 
-    locs = ntuple(10) do i 
-        name = "T$(i)"
-        val = 1e-3*(i - 0.7 - 1e-6)
-        Pair(name , val)
-    end
+locs = ntuple(10) do i 
+    name = "T$(i)"
+    val = 1e-3*(i - 0.7 - 1e-6)
+    Pair(name , val)
+end
 
-    for d in (d1,d2,d3)
-        DC.select!(d , ("T1" , "T3" , "T5" , "T6" , "T8" , "T10"  ))
-        DC.set_location!(d , locs)
-    end
+for d in (d1,d2,d3)
+    DC.select!(d , ("T1" , "T3" , "T5" , "T6" , "T8" , "T10"  ))
+    DC.set_location!(d , locs)
+end
 
-    DC.sensors_locations(d1)
-    DC.selected_names(d1)
-    DC.unselect!(d1 , ("T1" , "T3" , "T5" , "T6" , "T8" , "T10"  ))
-    DC.sensors_locations(d1)
-    DC.unselect!(d1 , ("T10" , "T5" , "T7"  ))
-    DC.set_location!(d1 , "T10" , 0.0001)
-    DC.thickness(d1)
-    DC.sensors_locations(d1)
-    DC.select!(d1 , "T10")
+DC.sensors_locations(d1)
+DC.selected_names(d1)
+DC.unselect!(d1 , ("T1" , "T3" , "T5" , "T6" , "T8" , "T10"  ))
+DC.sensors_locations(d1)
+DC.unselect!(d1 , ("T10" , "T5" , "T7"  ))
+DC.set_location!(d1 , "T10" , 0.0001)
+DC.thickness(d1)
+DC.sensors_locations(d1)
+DC.select!(d1 , "T10")
 
-
-
-    
-    dc_group = DC.DataSelectorsGroup("t1" => d1 , "t2" => d2, "t3" => d3)
+dc_group = DC.DataSelectorsGroup("t1" => d1 , "t2" => d2, "t3" => d3)

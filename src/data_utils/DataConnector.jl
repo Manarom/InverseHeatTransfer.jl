@@ -2,10 +2,22 @@
 module DataConnector
 	include("WinPos.jl")
 	using StaticArrays , OrderedCollections , RecipesBase , Reexport
-	using HDF5
+	using HDF5 , Dates
 	@reexport using .WinPos
 	export SampleProperties , DataSelector , DataSelectorsGroup ,
 	 combine_selected_data 
+	const DEFAULT_MEASUREMENTS_SPECIFICATION = OrderedDict(
+				"Material"=> "RBSN",
+				"Date"=>  """$(Dates.format(now(), "HH:MM:SS dd:mm:yyyy"))""",
+				"User"=> "Родин Никита",
+				"TCtype"=> "K" ,
+				"Cement" =>  "DKS8",
+				"Methodics" =>  "ПМ 234-26" ,
+				"ProjectsDates" =>  "" ,
+				"SampleComment" => "",
+				"ProjectsNames" => ""
+		)
+	 const MEASUREMENTS_SPECIFICATION_GOUP_NAME = "measurements_specification" 
 """
 Structure to store the information on temperature experiment
 
@@ -84,6 +96,7 @@ Returns the tuple of default values for tmin_tmax range according to the selecte
 	default_tmin_tmax(d::DataSelector) =_default_range(d , Inf , -Inf , :x)
 
 	WinPos.all_names(d::DataSelector) = WinPos.all_names(d.project)
+
 	function fill_data_for_selected!(d::DataSelector)
 		for (_ , data_pair_i) in each_selected(d)
 			WinPos.fill_data!(data_pair_i)
@@ -102,9 +115,14 @@ Returns the tuple of default values for tmin_tmax range according to the selecte
 		end
 		return (tmin = tmin , tmax = tmax)
 	end
-	function selected_names(ds::DataSelector)
-		isempty(ds.sample_properties.sensors_locations) && return String[] 
-		return [k for (k , _) in ds.sample_properties.sensors_locations if k ∈ ds.selected_names]
+	"""
+    selected_names(ds::DataSelector)
+
+Returns selected names in the same order as in the sensors locations ordered dict
+"""
+function selected_names(ds::DataSelector)
+		isempty(ds.selected_names) && return String[] 
+		return collect(ds.selected_names)#[k for (k , _) in ds.sample_properties.sensors_locations if isselected(ds , k)]
 	end
 	is_any_selected(d::DataSelector) = !isempty(d.selected_names)
 	tmin(d::DataSelector) = first(d.tmin_tmax)
@@ -126,7 +144,14 @@ Returns the tuple of default values for tmin_tmax range according to the selecte
 		isnothing(tmax) || setindex!(d.tmin_tmax ,tmax , 2 )
 		return nothing
 	end
-	each_selected(d::DataSelector) = Iterators.Filter(sens->( last(sens).name ∈ d.selected_names) , d.project)
+	"""
+    each_selected(d::DataSelector)
+
+Iterator over `DataPairs` which are selected in `DataSelector` returns pair of selected name - `DataPair`
+"""
+each_selected(d::DataSelector) = Iterators.map(s->Pair(s,d.project[s])  , d.selected_names)  
+# Iterators.Filter(sens->isselected(d , last(sens).name)  , d.project) # ( last(sens).name ∈ d.selected_names)
+
 
 	Base.show(io::IO , p::DataSelector) = begin 
         str = join(string.(selected_names(p)) , " , ")
@@ -152,8 +177,8 @@ end
 returns sensors locations
 """
 function sensors_locations(ds :: DataSelector)
-		isempty(ds.sample_properties.sensors_locations) && return Float64[] 
-		return [d for (k , d) in ds.sample_properties.sensors_locations if k ∈ ds.selected_names]
+		#isempty(ds.sample_properties.sensors_locations) && return Float64[] 
+		return map(s->get(ds.sample_properties.sensors_locations,s,-1.0) , selected_names(ds))#[d for (k , d) in ds.sample_properties.sensors_locations if isselected(ds , k)]
 	end
 		"""
 		selected_data_cutted_with_keys(d::DataSelector)
@@ -253,13 +278,14 @@ function combine_selected_data(d::DataSelector)
 	combine_selected_data_with_keys(d :: DataSelectorsGroup ) = Iterators.map( fun_map_wrap(combine_selected_data)  , d.d)	
 
 	fill_data_for_selected!(d::DataSelectorsGroup) = foreach(d.d) do (_,di)
+		
 		fill_data_for_selected!(di)
 	end
 
 	function joined_selected_names(d::DataSelectorsGroup; delim::String = ":")
 		j_names = String[]
 		for (k_i , d_i) in d.d
-			for s_i in selected_names(d_i)
+			for s_i in d_i.selected_names
 				push!(j_names , join((k_i , s_i) , delim ))
 			end
 		end
@@ -303,7 +329,7 @@ function common_path(paths)
 			split_paths = splitpath.(paths)
 			min_len = minimum(length.(split_paths))
 			common = String[]
-			for i in 1:min_len
+			for i in 1 : min_len
 				segment = split_paths[1][i]
 				if all(p -> p[i] == segment, split_paths)
 					push!(common, segment)
@@ -454,6 +480,15 @@ function add_sample_properties_to_hdf5!(proj_branch , data_selector::DataSelecto
 			combined_data_branch[name_str] = val
 		end	
 	end
+	add_measurements_specification_to_hdf5(hdf5::AbstractString ,comments_dict::AbstractDict)= h5open(hdf5, "r+") do file
+		add_measurements_specification_to_hdf5(file , comments_dict)
+	end
+	function add_measurements_specification_to_hdf5(hdf5::Union{HDF5.File , HDF5.Group} , comments_dict::AbstractDict)
+		 	g = WinPos._delete_if_overwrite_or_create_group!(hdf5 , MEASUREMENTS_SPECIFICATION_GOUP_NAME , true )
+		    for (k, v) in comments_dict
+				g[k] = v
+		    end
+	end
 	"""
 		Initially, all measurements are stored in one folder. However, a single sample may involve
 	multiple measurement projects, and a specific material may have several different samples.
@@ -461,26 +496,40 @@ function add_sample_properties_to_hdf5!(proj_branch , data_selector::DataSelecto
 	"""
 	DataConnector
 
-	#=function sample_properties_summary(d::DataSelectorsGroup)
+	function read_measurements_specification(hdf5::Union{HDF5.File , HDF5.Group}; 
+							specification_node_key::String = MEASUREMENTS_SPECIFICATION_GOUP_NAME)
 
-    function to_table(proj::WinPosProject; kwargs...) 
-        (data, names) = to_matrix(proj ; kwargs...)
-        return Tables.table(data, header = names)
-    end
+		root = WinPos.find_first_node(hdf5 ,specification_node_key )
+		isnothing(root) && return nothing 
+		ms = OrderedDict{String , Union{String , Vector{String} , Number}}()
+		for k in keys(DEFAULT_MEASUREMENTS_SPECIFICATION)
+			haskey(root , k) && push!(ms , k => read(root[k]))
+		end
+		return ms
 	end
-	@recipe function f(dsg::DataSelectorsGroup; selected_keys = nothing , xmin = nothing, xmax = nothing)
-        has_keys = isnothing(selected_keys)
-        for (k , d_i) in dsg.d
-			data_coll = selected_data_cutted(d_i)
-			_names = selected_names(d_i)
-			t_i = data_coll
-			for ()
-				@series begin
-					label := "$(k):"
-					(t_i , y)
-				end
-			end
-        end    
-    end
-	=#
+	function read_measurements_specification(hdf5::AbstractString)
+		isfile(hdf5) || error("Not  a file $(hdf5)")
+		return h5open(hdf5 , "r") do io 
+			read_measurements_specification(io)
+		end
+	end
+	function read_measurements_specification_string(hdf5_full_file::AbstractString)
+		isfile(hdf5_full_file) || return "not a file"
+		key_val_iterator = read_measurements_specification(hdf5_full_file)
+		return join(["$k : $v" for (k, v) in key_val_iterator], "\n")
+	end
+	
+	function winpos_projects_date_names_to_string(d::DataSelectorsGroup)
+		dates = ""
+		names = ""
+		foreach(d.d) do (_,d) 
+			name = WinPos.name(d.project)
+			is_first_loop = (length(names) == 0) 
+			names *= is_first_loop ? "$(name)" : " , $(name)"
+			date_str = !contains(name , "_") ?  "unknown" : first(eachsplit(name , "_")) 
+			dates *= is_first_loop ? "$(date_str)" : " , $(date_str)"
+			
+		end
+		return (names , dates)
+	end
 end
