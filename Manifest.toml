@@ -2,7 +2,7 @@
 
 julia_version = "1.12.5"
 manifest_format = "2.0"
-project_hash = "015a3eee56591e19086ea9ef474e7f50ab03b107"
+project_hash = "5b3cb32327de467d5e720f86702d3cd40908bdf8"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "bbc22a9a08a0ef6460041086d8a7b27940ed4ffd"
@@ -777,7 +777,7 @@ weakdeps = ["Dates", "Test"]
     InverseFunctionsTestExt = "Test"
 
 [[deps.InverseHeatTransfer]]
-deps = ["Accessors", "Dates", "DelimitedFiles", "HDF5", "InteractiveUtils", "Interpolations", "JLD2", "LinearAlgebra", "Mmap", "OrderedCollections", "Random", "RecipesBase", "Reexport", "ScaledPolynomials", "Serialization", "Static", "StaticArrays", "Tables", "UUIDs", "Unrolled"]
+deps = ["Accessors", "Dates", "DelimitedFiles", "FiniteDiff", "HDF5", "InteractiveUtils", "Interpolations", "JLD2", "LinearAlgebra", "Mmap", "OrderedCollections", "Random", "RecipesBase", "Reexport", "ScaledPolynomials", "Serialization", "Static", "StaticArrays", "Tables", "UUIDs", "Unrolled"]
 path = "."
 uuid = "2c8319c5-a44e-4544-92ed-020a4e1f37f0"
 version = "1.0.0"
@@ -1251,9 +1251,9 @@ uuid = "91d4177d-7536-5919-b921-800302f37372"
 version = "1.6.1+0"
 
 [[deps.OrderedCollections]]
-git-tree-sha1 = "05868e21324cede2207c6f0f466b4bfef6d5e7ee"
+git-tree-sha1 = "94ba93778373a53bfd5a0caaf7d809c445292ff4"
 uuid = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
-version = "1.8.1"
+version = "1.8.2"
 
 [[deps.PCRE2_jll]]
 deps = ["Artifacts", "Libdl"]

@@ -130,12 +130,18 @@ all_names(p::AbstractWinPosProject) = collect(keys(p))
         str = join(string.(keys(p.data)) , " , ")
         println(io , " WinPosProjects group named $(p.name) contains : $(str) WinPos projects" )  
     end
-    fill_data!(p::AbstractWinPosProject) = foreach(fill_data! , p)
+    """
+    fill_data!(p::AbstractWinPosProject)
+
+Version with no arguments fills all sensors data 
+"""
+fill_data!(p::AbstractWinPosProject) = foreach(fill_data! , p)
     fill_data!(p::Pair{String , T}) where T <: AbstractWinPosProject = fill_data!(last(p))
 
     fill_data!(p::WinPosProject , names) = foreach(p) do (k,d)
         (k ∈ names) && fill_data!(d)
     end
+    #fill_all_data!(p::AbstractWinPosProject) = fill_data!(p , keys(p))
    """
     write_to_winpos_folder(p::WinPosProject , root_folder; new_name::Union{String , Nothing} = nothing)
 

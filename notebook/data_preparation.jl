@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.24
+# v1.0.1
 
 using Markdown
 using InteractiveUtils
@@ -54,6 +54,15 @@ begin
 	PF = Main.CustomPlutoFunctions
 	plot_common_args = (grid = true, gridlinewidth=3, gridstyle = :dot,minorgrid=true, box = :on, linewidth = 3 , xlabel = "time , s" , ylabel = "temperature , ᵒC");
 end;
+
+# ╔═╡ 9c2f5a06-e214-49d6-ab1c-8d09736c1712
+html"""
+<style>
+.plutoui-rangeslider {
+		width : 100%;
+}
+</style>
+"""
 
 # ╔═╡ db671921-13dc-497b-81e5-dcb4da0695f9
 md""" ## Loading experimental data from winpos project"""
@@ -263,17 +272,17 @@ md" Show table $(@bind is_show_all_data_table CheckBox(false))"
 # ╔═╡ 8e0fff6a-4a02-4e6b-a017-477a46269918
 md""" Resave data selection $(@bind resave_selection_trigger Button("resave"))"""
 
-# ╔═╡ 85c827cd-c4c8-4c0a-b790-86b2ea070e1d
-begin 
-	data_selection_save_path_ref[] = data_selection_save_pathname.path
-	data_selection_save_name_ref[] = data_selection_save_pathname.name
-end;
-
 # ╔═╡ 12699165-eb53-4bca-b177-8326a0a72aed
 md"""
 
 **Save data selection ?** $(@bind data_selection_save_trigger PlutoUI.CheckBox(false))
 """
+
+# ╔═╡ 85c827cd-c4c8-4c0a-b790-86b2ea070e1d
+begin 
+	data_selection_save_path_ref[] = data_selection_save_pathname.path
+	data_selection_save_name_ref[] = data_selection_save_pathname.name
+end;
 
 # ╔═╡ 2bf91a7e-0da8-48e8-a779-962be2e7c03b
 function plot_optimizable(C; xmin,xmax , kwargs...)
@@ -482,9 +491,10 @@ if is_data_ready &&  data_selection_save_trigger
 	isdir(data_selection_save_path_ref[]) || mkdir(data_selection_save_path_ref[])
 
 	_f_f_file	= joinpath(data_selection_save_path_ref[], data_selection_save_name_ref[]*".hdf5")
+	DC.fill_all_data!(all_data) # filling all data before saving
 	WP.export_to_hdf5(all_data , _f_f_file , group_name =data_selection_save_name_ref[] )
 	
-	DC.add_measurements_specification_to_hdf5(_f_f_file , extract_data_from_comments_dict())
+	DC.add_measurements_specification_to_hdf5(_f_f_file , extract_data_from_comments_dict() , specification_node_key = "x_comment")
 
 	
 		"✅ Data selection saved to hdf5-file $(_f_f_file) at $(Dates.format(now(), "HH:MM:SS"))"
@@ -525,9 +535,10 @@ if is_data_ready
 end;
 
 # ╔═╡ Cell order:
-# ╠═a17fe1fe-5542-454b-b45e-942ac52b6f1a
+# ╟─a17fe1fe-5542-454b-b45e-942ac52b6f1a
 # ╟─5807712b-5d26-49c8-ab65-dac167ebad7b
 # ╟─35958e8a-eb7a-4eff-89a0-f9c04aff2a37
+# ╟─9c2f5a06-e214-49d6-ab1c-8d09736c1712
 # ╟─db671921-13dc-497b-81e5-dcb4da0695f9
 # ╟─450fb200-eec6-4e96-9ebd-81453c015830
 # ╟─6e062bd9-d20c-4e1d-b772-328bec8859ea
@@ -568,14 +579,14 @@ end;
 # ╟─600060b7-41cb-4b48-9679-e5994098099f
 # ╟─c9717703-5218-451d-9a80-a4ddb79b929d
 # ╟─8e0fff6a-4a02-4e6b-a017-477a46269918
-# ╟─85c827cd-c4c8-4c0a-b790-86b2ea070e1d
 # ╟─12699165-eb53-4bca-b177-8326a0a72aed
 # ╟─7a0abf93-e203-40b2-bcae-3e50c9de5eba
+# ╟─85c827cd-c4c8-4c0a-b790-86b2ea070e1d
 # ╟─6c22dc1b-a6ad-4139-8192-3a46d4419ac1
 # ╟─2bf91a7e-0da8-48e8-a779-962be2e7c03b
 # ╟─fd51a6c8-6569-4bfd-86ac-883c648fe6d9
 # ╟─c40ec284-b81a-4039-bb33-238de0ca09e4
-# ╟─6b4d07af-a40b-4ed1-a610-2a433311c94e
-# ╟─dd0ecd31-3cf5-4d4d-b3f8-125b5f899c29
+# ╠═6b4d07af-a40b-4ed1-a610-2a433311c94e
+# ╠═dd0ecd31-3cf5-4d4d-b3f8-125b5f899c29
 # ╟─2390e2fe-1bbe-4a21-a0fb-199cc314a29b
-# ╟─04fc7a5c-5c79-4197-a73b-6b75551518c2
+# ╠═04fc7a5c-5c79-4197-a73b-6b75551518c2

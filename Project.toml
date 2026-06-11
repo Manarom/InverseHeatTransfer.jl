@@ -8,8 +8,10 @@ projects = ["test", "notebook", "data_utils"]
 
 [deps]
 Accessors = "7d9f7c33-5ae7-4f3b-8dc6-eff91059b697"
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
+FiniteDiff = "6a86dc24-6348-571c-b903-95158fe2bd41"
 HDF5 = "f67ccb44-e63f-5c2f-98bd-6dc0ccc4ba2f"
 InteractiveUtils = "b77e0a4c-d291-57a0-90e8-8db25a27a240"
 Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
@@ -33,13 +35,14 @@ ScaledPolynomials = {url = "https://github.com/Manarom/ScaledPolynomials.jl.git"
 
 [compat]
 Accessors = "0.1.43"
+BenchmarkTools = "1.8.0"
 Dates = "1.11.0"
 DelimitedFiles = "1.9.1"
+FiniteDiff = "2.31.0"
 HDF5 = "0.17.2"
 InteractiveUtils = "1.11.0"
 JLD2 = "0.6.4"
 Mmap = "1.11.0"
-OrderedCollections = "1.8.1"
 RecipesBase = "1.3.4"
 Reexport = "1.2.2"
 ScaledPolynomials = "0.1.0"

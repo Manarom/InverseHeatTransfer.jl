@@ -35,7 +35,7 @@ const DEFAULT_DEFAULS_DICT = Dict(
 const SupportedUI = Union{NumberField, TextField, CheckBox, Slider, RangeSlider, Select, MultiSelect}
 
 unsupported_kwarg_names(T) = (:show_value,)
-unsupported_kwarg_names(::Type{<:Union{Slider, RangeSlider, Scrubbable}}) = (:default,)
+unsupported_kwarg_names(::Type{<:Union{Slider,  Scrubbable}}) = (:default,)
 unsupported_kwarg_names(::Type{T}) where T <:Union{CheckBox } = (:show_value, :default)
 
 @inline function same_kwargs_ui_constructor(::Type{T}, args...; kwargs...) where T <: SupportedUI

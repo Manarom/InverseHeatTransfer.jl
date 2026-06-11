@@ -17,7 +17,7 @@ module DataConnector
 				"SampleComment" => "",
 				"ProjectsNames" => ""
 		)
-	 const MEASUREMENTS_SPECIFICATION_GOUP_NAME = "measurements_specification" 
+	 const MEASUREMENTS_SPECIFICATION_GOUP_NAME = Ref("measurements_specification") 
 """
 Structure to store the information on temperature experiment
 
@@ -101,6 +101,15 @@ Returns the tuple of default values for tmin_tmax range according to the selecte
 		for (_ , data_pair_i) in each_selected(d)
 			WinPos.fill_data!(data_pair_i)
 		end
+	end
+
+	"""
+    fill_all_data!(d::DataSelector)
+
+Fills all data for associated files 
+"""
+function fill_all_data!(d::DataSelector)
+		WinPos.fill_data!(d.project)
 	end
 
 	default_temperature_range(d::DataSelector) = _default_range(d , Inf , -Inf , :y)
@@ -277,11 +286,22 @@ function combine_selected_data(d::DataSelector)
 	# (k , v) -> Pair(k ,combine_selected_data(v))
 	combine_selected_data_with_keys(d :: DataSelectorsGroup ) = Iterators.map( fun_map_wrap(combine_selected_data)  , d.d)	
 
-	fill_data_for_selected!(d::DataSelectorsGroup) = foreach(d.d) do (_,di)
-		
+	"""
+    fill_data_for_selected!(d::DataSelectorsGroup)
+
+Loads data from associated winpos files for all selected sensors for each element of selection group
+"""
+fill_data_for_selected!(d::DataSelectorsGroup) = foreach(d.d) do (_,di)
 		fill_data_for_selected!(di)
 	end
+"""
+    fill_all_data!(d::DataSelectorsGroup)
 
+Fills all data (not only selected), all data! 
+"""
+fill_all_data!(d::DataSelectorsGroup) = foreach(d.d) do (_,di)
+	fill_all_data!(di)
+end
 	function joined_selected_names(d::DataSelectorsGroup; delim::String = ":")
 		j_names = String[]
 		for (k_i , d_i) in d.d
@@ -480,11 +500,11 @@ function add_sample_properties_to_hdf5!(proj_branch , data_selector::DataSelecto
 			combined_data_branch[name_str] = val
 		end	
 	end
-	add_measurements_specification_to_hdf5(hdf5::AbstractString ,comments_dict::AbstractDict)= h5open(hdf5, "r+") do file
-		add_measurements_specification_to_hdf5(file , comments_dict)
+	add_measurements_specification_to_hdf5(hdf5::AbstractString ,comments_dict::AbstractDict; specification_node_key = MEASUREMENTS_SPECIFICATION_GOUP_NAME[])= h5open(hdf5, "r+") do file
+		add_measurements_specification_to_hdf5(file , comments_dict , specification_node_key = specification_node_key)
 	end
-	function add_measurements_specification_to_hdf5(hdf5::Union{HDF5.File , HDF5.Group} , comments_dict::AbstractDict)
-		 	g = WinPos._delete_if_overwrite_or_create_group!(hdf5 , MEASUREMENTS_SPECIFICATION_GOUP_NAME , true )
+	function add_measurements_specification_to_hdf5(hdf5::Union{HDF5.File , HDF5.Group} , comments_dict::AbstractDict; specification_node_key = MEASUREMENTS_SPECIFICATION_GOUP_NAME[])
+		 	g = WinPos._delete_if_overwrite_or_create_group!(hdf5 , specification_node_key , true )
 		    for (k, v) in comments_dict
 				g[k] = v
 		    end
@@ -497,9 +517,9 @@ function add_sample_properties_to_hdf5!(proj_branch , data_selector::DataSelecto
 	DataConnector
 
 	function read_measurements_specification(hdf5::Union{HDF5.File , HDF5.Group}; 
-							specification_node_key::String = MEASUREMENTS_SPECIFICATION_GOUP_NAME)
+							specification_node_key::String = MEASUREMENTS_SPECIFICATION_GOUP_NAME[])
 
-		root = WinPos.find_first_node(hdf5 ,specification_node_key )
+		root = WinPos.find_first_node(hdf5 , specification_node_key )
 		isnothing(root) && return nothing 
 		ms = OrderedDict{String , Union{String , Vector{String} , Number}}()
 		for k in keys(DEFAULT_MEASUREMENTS_SPECIFICATION)
@@ -507,15 +527,17 @@ function add_sample_properties_to_hdf5!(proj_branch , data_selector::DataSelecto
 		end
 		return ms
 	end
-	function read_measurements_specification(hdf5::AbstractString)
+	function read_measurements_specification(hdf5::AbstractString; 
+							specification_node_key::String = MEASUREMENTS_SPECIFICATION_GOUP_NAME[])
 		isfile(hdf5) || error("Not  a file $(hdf5)")
 		return h5open(hdf5 , "r") do io 
-			read_measurements_specification(io)
+			read_measurements_specification(io , specification_node_key = specification_node_key)
 		end
 	end
-	function read_measurements_specification_string(hdf5_full_file::AbstractString)
+	function read_measurements_specification_string(hdf5_full_file::AbstractString , ; 
+							specification_node_key::String = MEASUREMENTS_SPECIFICATION_GOUP_NAME[])
 		isfile(hdf5_full_file) || return "not a file"
-		key_val_iterator = read_measurements_specification(hdf5_full_file)
+		key_val_iterator = read_measurements_specification(hdf5_full_file , specification_node_key = specification_node_key)
 		return join(["$k : $v" for (k, v) in key_val_iterator], "\n")
 	end
 	

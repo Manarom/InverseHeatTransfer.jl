@@ -30,8 +30,8 @@ module InverseHeatTransfer
    
     const SupportedFlagType{N} = Union{Bool, AbstractVector{Bool}, NTuple{N,Bool}} where N
     const OPTIMIZABLE_VARIABLES_NAMES = (:λ , :C , :q_up , :q_dwn , :T₀ , :dλdT)
-    const INVERSE_PROBLEM_HDF5_SERIALIZED_GROUPNAME = "inverse_problem_serialized"
-    const INVERSE_PROBLEM_HDF5_GROUPNAME = "inverse_problem"
+    const INVERSE_PROBLEM_HDF5_SERIALIZED_GROUPNAME = Ref("inverse_problem_serialized")
+    const INVERSE_PROBLEM_HDF5_GROUPNAME = Ref("inverse_problem")
 """
     Wrappes any modifiable and callcable variable of type P, which has parameters accessabel by `coeffs` function
     and can be bounded by `lb` and `ub` constraints, constraints violation can be checked  with  `lb_violation_fun`
@@ -234,10 +234,14 @@ function modify!(ov::OV{N , DT}, x , r) where {N , DT}
     function fixed_diagonal_regularization_loss(ov::OV{N,DT} ) where {N , DT}
 
         loss = zero(DT)
+        avg_coeffs = zero(DT)
         @inbounds @simd for i in 1 : N
-            loss += coeffs(ov)[i] ^2.0
+            _c = coeffs(ov)[i]
+            #avg_coeffs += _c
+            loss +=  _c^2.0
         end 
-        return loss / N  
+        
+        return loss / N 
     end
     fview_coeffs(ov::OV) = view(coeffs(ov), ov.flag)
     fview_lb_coeffs(ov::OV) = view(lb_coeffs(ov), ov.flag)
@@ -248,7 +252,7 @@ function modify!(ov::OV{N , DT}, x , r) where {N , DT}
     extract_all_params(ov::OV) = copy(coeffs(ov))
     extract_optimizable_params(ov::OV) = copy(fview_coeffs(ov))
     # interface
-    # necessary
+    # necessary function for details see the implementation for ScaledPolynomials
     coeffs(::OV{N,DT,P}) where {N,DT,P}  = error("OptimizableVariable wrappers is not implemenented for $(P) type")
     lb_coeffs(::OV{N,DT,P})  where {N,DT,P}  = error("OptimizableVariable wrappers around $(P) is not implemenented")
     ub_coeffs(::OV{N,DT,P}) where {N,DT,P}  = error("OptimizableVariable wrappers around $(P) is not implemenented")
@@ -566,15 +570,10 @@ function modify!(ov::OV{N , DT}, x , r) where {N , DT}
         end
 
 function SingleInverseProblem(
-                                #time_data ::Vector{DT},
-                                #temperatures ::Matrix{DT}, 
-                                #initial_distribution::Union{OptimizableVariable, Number , VecOrMat{DT}},
-                                #thermocouples_locations::AbstractVector{DT},
                                 data_selector :: DataConnector.DataSelector,
                                 C,
                                 λ, 
                                 dλdT,
-                                #thickness::Number, 
                                 xpoints_number::Int = 200, 
                                 time_points_number::Union{Int,Nothing} = 2000;kwargs...)
                 (   
@@ -642,8 +641,8 @@ function create_index_mapping(optimizable)
         end
 #= 
 looks like version using ntuple is faster than `Unrolled`
-    @unroll function _modify_optimizables(optimizables , index_mapper , x)
-        @unroll for i  in 1 : length(index_mapper)
+    @unroll function _modify_optimizables(optimizables , index_mapper::D{V} , x) where V
+        @unroll for i  in 1 : V
                 (ov, r) = (optimizables[i] , index_mapper[i])
                 #modify!(ov, view(x , r))
                 modify!(ov, x , r)
@@ -755,7 +754,8 @@ function discrepancy!(x , p::SingleInverseProblem{DT}) where DT
         fill_residual!(p) # fills residual matrix 
         return evaluate_loss(p)
     end
-    set_regularization_multiplier!(s::SingleInverseProblem{DT} , α::DT) where DT = begin 
+
+function set_regularization_multiplier!(s::SingleInverseProblem{DT} , α::DT) where DT 
         s.α[] = α
         return nothing
     end
@@ -864,7 +864,7 @@ has the same objects for  λ, λ' and cₚ, hence the problem can be simplified.
     function WP.export_to_hdf5(inv_problem::SingleInverseProblem,
 		 	fullfilename::String ; 
         	opentype::String = "cw" , 
-			group_name::String = INVERSE_PROBLEM_HDF5_GROUPNAME)    
+			group_name::String = INVERSE_PROBLEM_HDF5_GROUPNAME[])    
 
             h5open(fullfilename, opentype) do h5
                group = WP._delete_if_overwrite_or_create_group!(h5 , group_name , true)
@@ -876,7 +876,7 @@ has the same objects for  λ, λ' and cₚ, hence the problem can be simplified.
     function WP.export_to_hdf5(multiproblems::ParallelInverseProblems,
 		 	fullfilename::String ; 
         	opentype::String = "cw" , 
-			group_name::String = INVERSE_PROBLEM_HDF5_GROUPNAME , 
+			group_name::String = INVERSE_PROBLEM_HDF5_GROUPNAME[] , 
             add_serialized = true)    
 
             h5open(fullfilename, opentype) do h5
@@ -913,7 +913,7 @@ has the same objects for  λ, λ' and cₚ, hence the problem can be simplified.
         end
         add_direct_problem(inv_problem , group , add_serialized = add_serialized)    
         
-       add_serialized && add_serialized_to_hdf5(inv_problem , group , INVERSE_PROBLEM_HDF5_SERIALIZED_GROUPNAME )
+       add_serialized && add_serialized_to_hdf5(inv_problem , group , INVERSE_PROBLEM_HDF5_SERIALIZED_GROUPNAME[] )
 
     end
     function add_serialized_to_hdf5(data , group ::HDF5.Group , name::String = ""  )
@@ -969,4 +969,69 @@ has the same objects for  λ, λ' and cₚ, hence the problem can be simplified.
         
         add_serialized && add_serialized_to_hdf5(d , group_dir , "direct_problem_serialized" )
     end
-end
+    """
+        The main idea behind StaticProblemWrapper is to make a static version of the optimization problem, which makes a 
+        deppcopy of initial problem, but after any modification returns to the initial state of the problem , this may be useful 
+        for local sensitivity analysis, several methods like residual calculation , scalar loss calculation are implemented 
+        on this wrapper 
+    """
+    struct StaticProblemWrapper{P,T}
+        problem::P
+        problem_shadow::P
+        u₀::T
+        StaticProblemWrapper(p::P , u₀::T) where {P<:AbstractInverseProblem , T<:AbstractVector} = begin 
+            new{P,T}(p , deepcopy(p) , u₀)
+        end
+    end
+    """
+    default_state(p::StaticProblemWrapper)
+
+Returns StaticProblemWrapper to its initial state 
+"""
+function default_state(p::StaticProblemWrapper)
+        update_all_optimizables!(p.problem_shadow , p.u₀) # refreshes the values of parameters without solving the direct problem 
+        solve_direct_problem!(p.problem_shadow) # solves the direct problem 
+        fill_residual!(p.problem_shadow ) # fills residual matrix 
+    end
+    """
+    discrepancy(p::StaticProblemWrapper , x)
+
+Evaluates scalar discrepancy function on input vector 'x' but 
+"""
+function discrepancy(p::StaticProblemWrapper , x)
+        loss=discrepancy!(p.problem_shadow, x)
+        default_state(p)
+        return loss
+    end
+    function residual(p::StaticProblemWrapper , x)
+        discrepancy!(p.problem_shadow, x)
+        r = p.problem_shadow |> extract_residual_vector|> collect
+        default_state(p)
+        return r
+    end
+    function residual!(r , p::StaticProblemWrapper , x)
+        discrepancy!(p.problem_shadow, x)
+        copyto!(r , extract_residual_vector(p.problem_shadow ))
+        default_state(p)
+        return r
+    end
+    """
+    extract_residual_vector(p::SingleInverseProblem)
+
+retutrns reference to the residual vector 
+"""
+function extract_residual_vector(p::SingleInverseProblem)
+        return Iterators.flatten(p.residual)
+    end
+function extract_residual_vector(p::ParallelInverseProblems{D,N}) where {D,N}
+        return Iterators.flatten(
+            ntuple(N) do i 
+                getfield(p,:residual)
+            end
+        )
+    end
+
+
+
+end ##end_of_module
+
