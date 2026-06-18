@@ -775,7 +775,7 @@ function evaluate_loss(p :: SingleInverseProblem{DT}) where DT
         stop_col <= 0 && (stop_col = size(M,2))
         iter_step = start_col <= stop_col ? 1 : -1
         for (i , c) in enumerate(eachcol(M)[start_col : iter_step : stop_col])
-            interpolator = linear_interpolation(t , c)
+            interpolator = linear_interpolation(t , c , extrapolation_bc=Line())
             c_data = @view Mout[: , i] 
             @. c_data = interpolator(tnew)
         end       
@@ -1026,7 +1026,7 @@ function extract_residual_vector(p::SingleInverseProblem)
 function extract_residual_vector(p::ParallelInverseProblems{D,N}) where {D,N}
         return Iterators.flatten(
             ntuple(N) do i 
-                getfield(p,:residual)
+                getfield(p.problems[i],:residual)
             end
         )
     end
