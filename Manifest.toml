@@ -2,7 +2,7 @@
 
 julia_version = "1.12.5"
 manifest_format = "2.0"
-project_hash = "5b3cb32327de467d5e720f86702d3cd40908bdf8"
+project_hash = "fd18ccabef5b936c1805f052b68aa27fd38e7a5e"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "bbc22a9a08a0ef6460041086d8a7b27940ed4ffd"
@@ -777,7 +777,7 @@ weakdeps = ["Dates", "Test"]
     InverseFunctionsTestExt = "Test"
 
 [[deps.InverseHeatTransfer]]
-deps = ["Accessors", "Dates", "DelimitedFiles", "FiniteDiff", "HDF5", "InteractiveUtils", "Interpolations", "JLD2", "LinearAlgebra", "Mmap", "OrderedCollections", "Random", "RecipesBase", "Reexport", "ScaledPolynomials", "Serialization", "Static", "StaticArrays", "Tables", "UUIDs", "Unrolled"]
+deps = ["Accessors", "BenchmarkTools", "Dates", "DelimitedFiles", "FiniteDiff", "HDF5", "InteractiveUtils", "Interpolations", "JLD2", "LinearAlgebra", "Mmap", "OrderedCollections", "Random", "RecipesBase", "Reexport", "ScaledPolynomials", "Serialization", "Static", "StaticArrays", "StatsBase", "Tables", "UUIDs", "Unrolled"]
 path = "."
 uuid = "2c8319c5-a44e-4544-92ed-020a4e1f37f0"
 version = "1.0.0"

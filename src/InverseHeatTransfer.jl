@@ -603,6 +603,8 @@ function SingleInverseProblem(
             return nothing
     end
 
+    residual_length(::SingleInverseProblem{DT, TN, N} ) where {DT , TN, N} = N * TN
+
     solve_direct_problem!(p::SingleInverseProblem) = solve_problem!(p.direct_problem)
 
     """
@@ -811,9 +813,19 @@ has the same objects for  λ, λ' and cₚ, hence the problem can be simplified.
         end
     end
 
+    function residual_length(::ParallelInverseProblems{TP , N}) where {TP , N}
+        return sum( ntuple(N) do i
+            residual_length(pp.problems[i]) 
+        end  
+        )
+    end
     fill_starting_vectors(pp::ParallelInverseProblems) = fill_starting_vectors(pp.problems[1])
 
-    function discrepancy!(x , pp::ParallelInverseProblems{TP, N, T}) where {TP , N , T}
+    """
+    discrepancy!(x , pp::ParallelInverseProblems{TP, N, T}) where {TP , N , T}
+
+"""
+function discrepancy!(x , pp::ParallelInverseProblems{TP, N, T}) where {TP , N , T}
         return sum(
             ntuple( N ) do i 
                 discrepancy!(x , pp.problems[i])
@@ -850,9 +862,114 @@ has the same objects for  λ, λ' and cₚ, hence the problem can be simplified.
 
                 )
     end
-
+    optimizable_parnumber(p::ParallelInverseProblems) = optimizable_parnumber(first(p.problems))
     const ALL_REGULARIZATION_TYPES = subtypes(AbstractRegularization)
     const ALL_COVARIANCE_TYPES = subtypes(AbstractCovariance)
+
+"""
+        The main idea behind StaticProblemWrapper is to make a static version of the optimization problem, which makes a 
+        deppcopy of initial problem, but after any modification returns to the initial state of the problem , this may be useful 
+        for local sensitivity analysis, several methods like residual calculation , scalar loss calculation are implemented 
+        on this wrapper 
+    """
+    struct StaticProblemWrapper{P,T}
+        problem::P
+        problem_shadow::P
+        u₀::T
+        StaticProblemWrapper(p::P , u₀::T) where {P<:AbstractInverseProblem , T<:AbstractVector} = begin 
+            new{P,T}(p , deepcopy(p) , u₀)
+        end
+    end
+    """
+    default_state(p::StaticProblemWrapper)
+
+Returns StaticProblemWrapper to its initial state 
+"""
+function default_state(p::StaticProblemWrapper)
+        update_all_optimizables!(p.problem_shadow , p.u₀) # refreshes the values of parameters without solving the direct problem 
+        solve_direct_problem!(p.problem_shadow) # solves the direct problem 
+        fill_residual!(p.problem_shadow ) # fills residual matrix 
+    end
+    """
+    discrepancy(p::StaticProblemWrapper , x)
+
+Evaluates scalar discrepancy function on input vector 'x' but 
+"""
+function discrepancy(p::StaticProblemWrapper , x; is_specific::Bool = false)
+        loss=discrepancy!(p.problem_shadow, x) 
+        is_specific && (loss *= residual_length(p.problem))
+        default_state(p)
+        return loss
+    end
+    function residual(p::StaticProblemWrapper , x::T) where {T}
+        return residual!(
+                        Vector{T}(undef , residual_length(p.problem) ), 
+                        p ,
+                        x
+                         )
+    end
+    function residual!(r , p::StaticProblemWrapper , x)
+        discrepancy!(p.problem_shadow, x)
+        copyto!(r , extract_residual_vector(p.problem_shadow ))
+        default_state(p)
+        return r
+    end
+    """
+    extract_residual_vector(p::SingleInverseProblem)
+
+retutrns reference to the residual vector 
+"""
+extract_residual_vector(p::SingleInverseProblem) = Iterators.flatten(p.residual)
+
+function extract_residual_vector(p::ParallelInverseProblems{D,N}) where {D,N}
+        return Iterators.flatten(
+            ntuple(N) do i 
+                getfield(p.problems[i],:residual)
+            end
+        )
+    end
+
+    struct IPstats{N ,P}
+        σ2 # estimated dispersion
+        s2 # sample dispersion
+        sse 
+        sst 
+        r2 # rsquared
+        r2a # rsquared adjusted
+        
+        function IPstats(y , r , P::Int=1)
+            sse = sumsqr(r)
+            N = length(y)
+            σ2  = sse/(N - P)
+            m = mean(y)
+            sst = sumsqr(y , m)
+            s2 = sst/(N - 1)
+            r2 = 1 - SSE/SST 
+            r2a = 1 - (sse/(N - 1)) * (N - P)/sst
+            new{N , P}( σ2, s2, sse , sst , r2 , r2a )
+        end
+    end
+    function sumsqr(x::T, μ::T=0.0) where T 
+            s = zero(T)
+            for t in x
+                s+=(t - μ)^2
+            end
+            return s
+    end
+
+# Inverse problems descriptive stats 
+    function ip_covariance(p::StaticProblemWrapper , u)
+        #probs = deepcopy(p)
+        f(x) = discrepancy(p , x)
+        N = sum([length(p.residual) for p in probs.problems])
+        σ = sum([sum(t->t^2 , p.residual) for p in probs.problems])/(N^2)
+        Σ  = inv(FiniteDiff.finite_difference_hessian(f , u ))
+        Cov = Σ * σ
+        s = extract_diag(Cov)
+        return (;std = s , Cov=Cov , Σ = Σ , σ=σ , N=N)
+    end
+
+
 
     @recipe function f(m::OptimizableVariable)
         return (m.p)
@@ -969,69 +1086,6 @@ has the same objects for  λ, λ' and cₚ, hence the problem can be simplified.
         
         add_serialized && add_serialized_to_hdf5(d , group_dir , "direct_problem_serialized" )
     end
-    """
-        The main idea behind StaticProblemWrapper is to make a static version of the optimization problem, which makes a 
-        deppcopy of initial problem, but after any modification returns to the initial state of the problem , this may be useful 
-        for local sensitivity analysis, several methods like residual calculation , scalar loss calculation are implemented 
-        on this wrapper 
-    """
-    struct StaticProblemWrapper{P,T}
-        problem::P
-        problem_shadow::P
-        u₀::T
-        StaticProblemWrapper(p::P , u₀::T) where {P<:AbstractInverseProblem , T<:AbstractVector} = begin 
-            new{P,T}(p , deepcopy(p) , u₀)
-        end
-    end
-    """
-    default_state(p::StaticProblemWrapper)
-
-Returns StaticProblemWrapper to its initial state 
-"""
-function default_state(p::StaticProblemWrapper)
-        update_all_optimizables!(p.problem_shadow , p.u₀) # refreshes the values of parameters without solving the direct problem 
-        solve_direct_problem!(p.problem_shadow) # solves the direct problem 
-        fill_residual!(p.problem_shadow ) # fills residual matrix 
-    end
-    """
-    discrepancy(p::StaticProblemWrapper , x)
-
-Evaluates scalar discrepancy function on input vector 'x' but 
-"""
-function discrepancy(p::StaticProblemWrapper , x)
-        loss=discrepancy!(p.problem_shadow, x)
-        default_state(p)
-        return loss
-    end
-    function residual(p::StaticProblemWrapper , x)
-        discrepancy!(p.problem_shadow, x)
-        r = p.problem_shadow |> extract_residual_vector|> collect
-        default_state(p)
-        return r
-    end
-    function residual!(r , p::StaticProblemWrapper , x)
-        discrepancy!(p.problem_shadow, x)
-        copyto!(r , extract_residual_vector(p.problem_shadow ))
-        default_state(p)
-        return r
-    end
-    """
-    extract_residual_vector(p::SingleInverseProblem)
-
-retutrns reference to the residual vector 
-"""
-function extract_residual_vector(p::SingleInverseProblem)
-        return Iterators.flatten(p.residual)
-    end
-function extract_residual_vector(p::ParallelInverseProblems{D,N}) where {D,N}
-        return Iterators.flatten(
-            ntuple(N) do i 
-                getfield(p.problems[i],:residual)
-            end
-        )
-    end
-
-
-
+    
 end ##end_of_module
 
