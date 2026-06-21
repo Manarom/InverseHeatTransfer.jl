@@ -36,7 +36,7 @@ begin
 end
 
 # ╔═╡ cc2826a1-d6bf-4025-9ef3-2c5e7a15ff85
-using StatsBase
+using StatsBase, BenchmarkTools
 
 # ╔═╡ 5807712b-5d26-49c8-ab65-dac167ebad7b
 begin 
@@ -316,6 +316,9 @@ Regularization type : $(@bind reg_type Select(IHT.ALL_REGULARIZATION_TYPES))
 
 Regularization multiplier α: $(@bind reg_multiplier confirm(NumberField(0.0 : 1e-3 : 1000 , default = 1e-3)))
 """
+
+# ╔═╡ 5e5b27d1-fdc8-451d-a4f0-93f33adbcf76
+md" Show weighted residuals $(@bind is_weighted_res CheckBox(true))"
 
 # ╔═╡ 2a1ca349-3732-443e-bc48-5be611a5d91f
 md"""
@@ -641,18 +644,6 @@ begin
 	end
 end;
 
-# ╔═╡ 1b4e65ae-5643-4917-b332-78aec1412c15
-begin 
-	p_autocor = plot(;plot_common_args...)
-	for (p_n , p_i) in enumerate(parallel_probls.problems)
-		#@show typeof(p_i)
-		for (i,r) in enumerate(eachcol(p_i.residual))
-			plot!(p_autocor,autocor(r) ;plot_common_args... ,label="P$(p_n):T$(i)")
-		end
-	end
-	p_autocor
-end
-
 # ╔═╡ fe228354-5f3f-433d-9f8b-7d888e9c5ecb
 begin 
 	IHT.set_regularization_multiplier!(parallel_probls , reg_multiplier)
@@ -821,8 +812,9 @@ function covariance(p , u)
 	IHT.discrepancy!(u , probs)
 	f(x) = IHT.discrepancy!(x , deepcopy(probs))
 	N = sum([length(p.residual) for p in probs.problems])
-	σ = sum([sum(t->t^2 , p.residual) for p in probs.problems])/(N^2)
+	σ = sum(IHT.evaluate_loss , p.problems)/N#sum([sum(t->t^2 , p.residual) for p in probs.problems])/(N^2)
 	Σ  = inv(FiniteDiff.finite_difference_hessian(f , u ))
+	@show Σ
 	Cov = Σ * σ
 	s = extract_diag(Cov)
 	return (;std = s , Cov=Cov , Σ = Σ , σ=σ , N=N)
@@ -870,23 +862,6 @@ begin
 	pretty_table(HTML,hcat(table_data[:,1] , [v for v in loss_table]...) , column_labels  =vcat("name", [String(k) for k in keys(loss_table)]...))
 end
 
-# ╔═╡ a2a84394-1f18-48e3-a4dc-c03f64a3a1c0
-begin
-	refresh_graph
-	p_hist = Plots.histogram()
-	#Plots.histogram(inv_probl.residual[:,1] )
-	for (p_n , inv_probl) in enumerate(parallel_probls.problems)
-		for (i,c) in enumerate(eachcol(inv_probl.residual))
-			bb = range(minimum(c),maximum(c),20)
-			Plots.histogram!(p_hist,c,bins = bb,
-							 alpha=0.5, label="P$(p_n):T$(i)"; plot_common_args...)
-		end
-	end
-	ylabel!(p_hist , "Counts number")
-	xlabel!(p_hist , "ΔT")
-	p_hist
-end
-
 # ╔═╡ 4c9a5a5f-5839-4211-b561-7539dfa74a7a
 # plotting covariance 
 begin 
@@ -910,7 +885,7 @@ begin
 	end
 	if !isnothing(stats) && is_show_lambda_conf && is_optimize_lambda && !is_optimize_c
 
-			_ol = eval_conf_bounds(stats ,λ.p , α = 4.0)
+			_ol = eval_conf_bounds(stats ,λ.p , α = 1.0)
 			plot!(p_fit_lam , Tplot , 
 				  _ol.up.(Tplot) , label = nothing)
 			plot!(p_fit_lam , Tplot , 
@@ -928,6 +903,9 @@ begin
 	# plotting temeprature distribution 
 	p_residual = Plots.plot(;plot_common_args...)
 	p_distr = Plots.plot(;plot_common_args...)
+	p_autocor = Plots.plot(;plot_common_args...)
+	p_hist = Plots.histogram()
+	
 	for (p_n , inv_probl) in enumerate(parallel_probls.problems)
 		discr = IHT.evaluate_loss(inv_probl)
 		for (i,(te,tm)) in enumerate(zip(eachcol(inv_probl.Tdata_evaluated) , eachcol(inv_probl.Tdata_measured)))
@@ -937,15 +915,32 @@ begin
 		title!(p_distr,"discrepancy = $(discr)")
 		xlabel!(p_distr, "Timestep index")
 		ylabel!(p_distr, "Temperature, ᵒC")
-		
-		
+
 		# ploting residuals
-		for (i , c) in enumerate(eachcol(inv_probl.residual))
-			Plots.plot!(p_residual , c ; plot_common_args... , label = "P$(p_n):T$(i)")
+		res_handle = is_weighted_res ? IHT.ResidualIterator(Val(true), inv_probl) : inv_probl.residual
+		for (i , c) in enumerate(eachcol(res_handle))
+			
+			c_i = collect(c)
+			
+			Plots.plot!(p_residual ,  c_i ; plot_common_args... , label = "P$(p_n):T$(i)")
+			
+			Plots.plot!(p_autocor , autocor(c_i) ; plot_common_args... ,label="P$(p_n):T$(i)")
+
+			bb = range(minimum(c_i),maximum(c_i),20)
+			Plots.histogram!(p_hist , c_i , bins = bb,
+								 alpha=0.5 , label="P$(p_n):T$(i)";
+							 plot_common_args...)
 		end
 		title!(p_residual, "Residuals")
 		xlabel!(p_residual, "Timestep")
 		ylabel!(p_residual, "ΔT, ᵒC")
+
+		title!(p_autocor, "Autocorrelation")
+		xlabel!(p_autocor, "Timestep")
+		ylabel!(p_autocor, "ΔT, ᵒC")
+
+		ylabel!(p_hist , "Counts number")
+		xlabel!(p_hist , "ΔT")
 	end
 end ;
 
@@ -970,6 +965,12 @@ ylims!(p_fit_lam, lam_y_scale_region)
 
 # ╔═╡ a660bf26-5b50-4910-b0ab-8e453623dc1a
 p_residual
+
+# ╔═╡ 9464897c-8591-4fe3-aa24-9c710a37f7b6
+p_autocor
+
+# ╔═╡ 33280e2b-2567-4289-970a-b034ba4c8cd2
+p_hist
 
 # ╔═╡ 042ea29b-63dd-43d0-a20f-68807c5f7cd4
 p_distr
@@ -1001,9 +1002,15 @@ if is_write_file
 	"✅ Data selection saved to hdf5-file $(ff_name) at $(Dates.format(now(), "HH:MM:SS"))"
 end
 
+# ╔═╡ ccb77626-1b6d-4462-99f1-f98246700e83
+sss = covariance(parallel_probls , res.u)
+
+# ╔═╡ a156ad24-411b-4310-892b-c33098bcc0e3
+eigen(sss.Σ)
+
 # ╔═╡ Cell order:
 # ╠═a17fe1fe-5542-454b-b45e-942ac52b6f1a
-# ╟─cc2826a1-d6bf-4025-9ef3-2c5e7a15ff85
+# ╠═cc2826a1-d6bf-4025-9ef3-2c5e7a15ff85
 # ╠═5807712b-5d26-49c8-ab65-dac167ebad7b
 # ╟─2bfb4e52-6248-4832-aca1-98ba58959bff
 # ╟─3b1c3b0a-558e-4987-bf16-072963e455cf
@@ -1035,8 +1042,8 @@ end
 # ╟─c8cda804-9a2a-40c9-aa91-7a48500e85ff
 # ╟─538487b4-b2fc-42c2-ba69-663b2ca5b768
 # ╟─8345302e-0b9d-4208-9a66-3d9f32903b39
-# ╟─672119a2-7a47-4813-a2d3-e0c15ee63491
-# ╟─41bc1a0a-73c8-430d-a1d3-4eb98487c815
+# ╠═672119a2-7a47-4813-a2d3-e0c15ee63491
+# ╠═41bc1a0a-73c8-430d-a1d3-4eb98487c815
 # ╟─5843fcfb-4e0e-480d-b263-e3f3ad6a7ac3
 # ╟─d051f5e5-f836-4043-9326-639b40acaf87
 # ╟─16337bb4-438e-4b86-bdc5-b88ef210a960
@@ -1046,7 +1053,7 @@ end
 # ╟─c8dc4f9d-a549-4dc2-82bd-38ffe949ea55
 # ╟─bfa23359-8bac-4db0-bac1-0885ebe8ec4b
 # ╟─88e8d37d-e4e4-486d-921e-03a74fbf00f2
-# ╟─67763d8f-e1ac-4b1f-978f-4734af1e03ba
+# ╠═67763d8f-e1ac-4b1f-978f-4734af1e03ba
 # ╟─68ed85b2-7308-4ea7-b696-0f1951219592
 # ╟─4330cdcd-24fc-459b-8d29-a935c6a7c347
 # ╟─ce3dc022-0f15-41cb-8cd2-2c33b726c482
@@ -1058,9 +1065,10 @@ end
 # ╟─bbc2d0df-28bf-4754-bbdf-bece0bbfe76b
 # ╟─95dbc55f-ab5a-4828-a1e2-9a0c9a9ec19b
 # ╟─33473b7a-e22f-4333-a2f2-374778c0d603
+# ╟─5e5b27d1-fdc8-451d-a4f0-93f33adbcf76
 # ╟─a660bf26-5b50-4910-b0ab-8e453623dc1a
-# ╠═1b4e65ae-5643-4917-b332-78aec1412c15
-# ╠═a2a84394-1f18-48e3-a4dc-c03f64a3a1c0
+# ╠═9464897c-8591-4fe3-aa24-9c710a37f7b6
+# ╟─33280e2b-2567-4289-970a-b034ba4c8cd2
 # ╟─2a1ca349-3732-443e-bc48-5be611a5d91f
 # ╟─d02ec3fd-1b0d-4bc3-92e9-adedc8bf2c8c
 # ╟─0a0324df-430f-4ac0-857b-4da6a7dca138
@@ -1078,14 +1086,14 @@ end
 # ╟─fc79d398-03d0-4f75-a777-41e2e27fee5e
 # ╟─1318f293-f606-4a9f-8896-853b87c0665d
 # ╟─6cd83678-860c-41c8-b3cd-007725f9e01d
-# ╟─f2943cf8-ffb9-4065-a272-1f344488dd0f
+# ╠═f2943cf8-ffb9-4065-a272-1f344488dd0f
 # ╟─ffeafacd-2b98-48c0-b840-297fb51f5e54
 # ╟─042ea29b-63dd-43d0-a20f-68807c5f7cd4
 # ╟─ea412a80-0bf7-4ac6-9b90-8530a4c26008
 # ╟─23902c7d-5973-4868-8488-e0c7634573c4
 # ╟─6800ae42-c5b1-4d1e-84fb-a03015bf138f
 # ╟─c4053281-7cd4-4590-b004-b4ca43771094
-# ╠═9cd8c4c8-7d11-4fb0-92d5-439702aa9496
+# ╟─9cd8c4c8-7d11-4fb0-92d5-439702aa9496
 # ╟─e9e9e16d-0b2c-45ce-aa5b-cdcda6b143f1
 # ╟─70e2c8f2-d896-4773-8280-d391d9975307
 # ╟─bce5f7ae-49c5-4520-a0f6-6215e5078674
@@ -1110,3 +1118,5 @@ end
 # ╟─4b8ddfc0-ed4f-4b66-b752-fa075d348608
 # ╟─04ad22b9-e474-41ed-bc87-7dbf9a2b1dcc
 # ╠═3b9e739c-9519-4efa-b2da-cac5451d55d3
+# ╠═ccb77626-1b6d-4462-99f1-f98246700e83
+# ╠═a156ad24-411b-4310-892b-c33098bcc0e3

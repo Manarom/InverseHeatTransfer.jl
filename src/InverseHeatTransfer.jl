@@ -901,16 +901,15 @@ function discrepancy(p::StaticProblemWrapper , x; is_specific::Bool = false)
         default_state(p)
         return loss
     end
-    function residual(p::StaticProblemWrapper , x::T) where {T}
+    function residual(p::StaticProblemWrapper , x::AbstractVector{T}) where {T}
         return residual!(
                         Vector{T}(undef , residual_length(p.problem) ), 
                         p ,
-                        x
-                         )
+                        x)
     end
-    function residual!(r , p::StaticProblemWrapper , x)
+    function residual!(r::AbstractVector , p::StaticProblemWrapper , x)
         discrepancy!(p.problem_shadow, x)
-        copyto!(r , extract_residual_vector(p.problem_shadow ))
+        copyto!(r , extract_weighted_residual_vector(p.problem_shadow ))
         default_state(p)
         return r
     end
@@ -928,6 +927,16 @@ function extract_residual_vector(p::ParallelInverseProblems{D,N}) where {D,N}
             end
         )
     end
+function extract_weighted_residual_vector(p::SingleInverseProblem)
+    return ResidualIterator(Val(true) , p)
+end
+function extract_weighted_residual_vector(p::ParallelInverseProblems{D,N}) where {D,N}
+        return Iterators.flatten(
+            ntuple(N) do i 
+                ResidualIterator(Val(true) , p.problems[i])
+            end
+        )
+end
 
     struct IPstats{N ,P}
         σ2 # estimated dispersion
@@ -963,7 +972,7 @@ function extract_residual_vector(p::ParallelInverseProblems{D,N}) where {D,N}
         f(x) = discrepancy(p , x)
         N = sum([length(p.residual) for p in probs.problems])
         σ = sum([sum(t->t^2 , p.residual) for p in probs.problems])/(N^2)
-        Σ  = inv(FiniteDiff.finite_difference_hessian(f , u ))
+        Σ  = inv( FiniteDiff.finite_difference_hessian(f , u ) )
         Cov = Σ * σ
         s = extract_diag(Cov)
         return (;std = s , Cov=Cov , Σ = Σ , σ=σ , N=N)

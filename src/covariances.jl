@@ -16,7 +16,7 @@
             (N , TN) = size(cache)
             @inbounds for j in 1:TN
                     @simd for i in 1:N
-                        cache[i , j] = σ²(Tij[i,j])
+                        cache[i , j] = σ²(Tij[i , j])
                     end
             end
             return new{typeof(σ²) , DT , TN , N}(σ² , cache)
@@ -155,3 +155,91 @@ function fill_covariance_cache!(p::SingleInverseProblem{DT, TN, N,
         end
         return loss/(N * TN)
     end
+
+
+    # trying to implement the lazy iterator over  residuals
+    """ResidualIterator{W , PT , CV, N , TN , DT} structure to iterate over residauls as a vector without allocating 
+    new vector 
+    W - Val{true} - weighted residuals, unweighted otherwise
+    PT - problem type 
+    CV - porblem covariance type 
+    N - number of time steps 
+    TN - number of residual vector columns 
+    DT - residual matrix eltype 
+    """
+    struct ResidualIterator{W , PT , CV, N , TN , DT , RT}
+        p::PT
+        r::RT
+       function  ResidualIterator(w::W, 
+                                    p::PT) where PT <: SingleInverseProblem{DT, TN, N,
+                                    DP , CV  } where { W, DT, TN, N,
+                                                            DP , CV  }
+
+            new{W , PT , CV , N , TN , DT , typeof(p.residual)}(p , p.residual)
+            
+        end
+    end
+
+    Base.length(::ResidualIterator{W , PT , CV, N , TN}) where {W , PT , CV, N , TN} = N * TN
+    Base.eltype(::ResidualIterator{W , PT , CV, N , TN , DT}) where {W , PT , CV, N , TN , DT} = DT
+
+    #
+    function Base.iterate(iter::ResidualIterator{Val{false}, PT , CV, N , TN , RT}, state=1) where {PT , CV, N , TN , RT}
+        if state > length(iter)
+            return nothing
+        end 
+        i = (state - 1) % N + 1
+        j = (state - 1) ÷ N + 1
+        val = iter.r[i, j]
+        return (val , state + 1)
+    end
+
+
+    function Base.iterate(iter::ResidualIterator{Val{true}, PT , CV, N , TN , RT}, state=1) where {PT , CV<:AR1Covariance
+                                                                                                    , N , TN , RT}
+        if state > length(iter)
+            return nothing
+        end
+        i = (state - 1) % N + 1
+        j = (state - 1) ÷ N + 1
+        dt = timestep(iter.p.direct_problem)
+        ρ = exp(- dt / iter.p.covariance.τ)
+        val = if i == 1
+            iter.r[1 , j] / sqrt(iter.p.covariance.σ²)
+        else
+            σ_eps = sqrt(iter.p.covariance.σ² * (1.0 - ρ^2))
+            (iter.r[i , j] - ρ * iter.r[i - 1 , j]) / σ_eps
+        end
+        return (val  , state + 1)
+    end
+
+
+struct ResidualColumn{W, PT, CV, N, TN, DT, RT} <: AbstractVector{DT} # {W , PT , CV, N , TN , DT , RT}
+    iter::ResidualIterator{W, PT, CV, N, TN, DT, RT}
+    col_idx::Int 
+end
+
+Base.size(::ResidualColumn{W, PT, CV, N}) where {W, PT, CV, N} = (N,)
+Base.IndexStyle(::Type{<:ResidualColumn}) = IndexLinear()
+
+@inline function Base.getindex(rc::ResidualColumn{W, PT, CV, N}, i::Int) where {W, PT, CV, N}
+
+    global_state = i + (rc.col_idx - 1) * N
+    return first(Base.iterate(rc.iter, global_state))
+end
+
+struct ResidualCols{W, PT, CV, N, TN, DT, RT}
+    iter::ResidualIterator{W, PT, CV, N, TN, DT, RT}
+end
+
+Base.length(::ResidualCols{W, PT, CV, N, TN}) where {W, PT, CV, N, TN} = TN
+Base.eltype(::ResidualCols{W, PT, CV, N, TN, DT, RT}) where {W, PT, CV, N, TN, DT, RT} = ResidualColumn{W, PT, CV, N, TN, DT, RT}
+
+function Base.iterate(rcols::ResidualCols, state_col=1)
+    if state_col > length(rcols)
+        return nothing
+    end
+    return (ResidualColumn(rcols.iter, state_col), state_col + 1)
+end
+
+Base.eachcol(iter::ResidualIterator) = ResidualCols(iter)
