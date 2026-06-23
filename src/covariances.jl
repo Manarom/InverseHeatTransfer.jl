@@ -8,7 +8,7 @@
     Callable object σ² returns the square of dispertion as a function of measured temperature, 
     cache - stores values of sigma once evaluated at the starting 
     """
-    struct TemperatureDependentDiagonalCovariance{F , DT , TN , N} <: AbstractCovariance 
+    struct TemperatureDependentDiagonalCovariance{ DT , F, TN , N} <: AbstractCovariance 
         σ²::F
         cache::Matrix{DT}
         function TemperatureDependentDiagonalCovariance(σ² , Tij::AbstractMatrix{DT}) where DT
@@ -19,9 +19,30 @@
                         cache[i , j] = σ²(Tij[i , j])
                     end
             end
-            return new{typeof(σ²) , DT , TN , N}(σ² , cache)
+            return new{ DT , typeof(σ²), TN , N}(σ² , cache)
         end
     end 
+    struct FixedDiagonalCovariance{DT , M , N} <: AbstractCovariance
+        σ²::M
+        FixedDiagonalCovariance(σ²::M) where {M <: AbstractVector{DT}} where {DT} = new{DT , M , length(σ²)}(σ²)
+    end
+    function covariance_loss(p::SingleInverseProblem{DT, TN, N,
+                        PT , CV  } ) where {DT, TN, N,
+                                            PT , CV <: FixedDiagonalCovariance{DT} }
+        loss = zero(DT)
+    
+        # iteration over thermocouples
+        @inbounds for j in 1 : TN
+        # iteration over time
+            @simd for i in 1 : N
+                r = p.residual[i , j]
+                loss += (r * r) / p.covariance.σ²[i]
+            end
+        end
+        return loss/(N * TN)
+    end
+
+
     struct AR1Covariance{DT} <: AbstractCovariance
         τ::DT
         σ²::DT
@@ -98,24 +119,31 @@ function covariance_loss(::SingleInverseProblem{DT, TN, N,
 
 By default covariance fill cache do nothing
 """
-function fill_covariance_cache!(::SingleInverseProblem) end
-function fill_covariance_cache!(p::SingleInverseProblem{DT, TN, N,
-                                PT , CV  } ) where {DT, 
-                                                    PT , 
-                                                    CV <: TemperatureDependentDiagonalCovariance{F , DT , TN , N} } where {F, TN, N}
-        @inbounds for j in 1:TN
-        # iteration over time
-            @simd for i in 1:N
-                Tij = p.Tdata_measured[i , j]
-                p.covariance.cache[i , j] = p.covariance.σ²(Tij)
-            end
-        end      
+    function fill_covariance_cache!(::SingleInverseProblem) end
+    function fill_covariance_cache!(::SingleInverseProblem{DT, TN, N, PT , CV } ) where {DT, 
+                                                        PT , 
+                                                        CV <: FixedDiagonalCovariance{ DT , F , NCOV} } where {F, TN, N , NCOV} 
+        @assert NCOV == N "Covariance weighting vector length $(NCOV) and residual column vector length $(N)" 
+    end
+    function fill_covariance_cache!(p::SingleInverseProblem{DT, TN, N,
+                                    PT , CV  } ) where {DT, 
+                                                        PT , 
+                                                        CV <: TemperatureDependentDiagonalCovariance{ DT , F , TNCOV , NCOV} } where {F, TN, N , TNCOV , NCOV}
+            @assert NCOV == N "Covariance weighting vector length $(NCOV) and residual column vector length $(N)" 
+            @assert TNCOV == TN "Covariance weighting vector length $(TNCOV) and residual column vector length $(TN)" 
+            @inbounds for j in 1:TN
+            # iteration over time
+                @simd for i in 1:N
+                    Tij = p.Tdata_measured[i , j]
+                    p.covariance.cache[i , j] = p.covariance.σ²(Tij)
+                end
+            end      
 
     end
     function covariance_loss(p::SingleInverseProblem{DT, TN, N,
                         PT , CV  } ) where {DT, 
                                             PT , CV <: TemperatureDependentDiagonalCovariance{F , DT , TN , N} } where {F, TN, N}
-        axes(p.Tdata_measured) == axes(cov.cache) || throw(DimensionMismatch("Dimentions of covariance cache and T_measured are somehow different"))
+        
         loss = zero(DT)
         # iteration over thermocouples
         @inbounds for j in 1 : TN
@@ -165,15 +193,17 @@ function fill_covariance_cache!(p::SingleInverseProblem{DT, TN, N,
     CV - porblem covariance type 
     N - number of time steps 
     TN - number of residual vector columns 
-    DT - residual matrix eltype 
+    DT - data type 
+    RT - residual matrix eltype 
     """
     struct ResidualIterator{W , PT , CV, N , TN , DT , RT}
         p::PT
         r::RT
-       function  ResidualIterator(w::W, 
+       function  ResidualIterator(  ::W, 
                                     p::PT) where PT <: SingleInverseProblem{DT, TN, N,
-                                    DP , CV  } where { W, DT, TN, N,
-                                                            DP , CV  }
+                                    DP , CV  } where { W <: Union{Val{true} , Val{false}},
+                                                       DT, TN, N,
+                                                       DP , CV  }
 
             new{W , PT , CV , N , TN , DT , typeof(p.residual)}(p , p.residual)
             
@@ -183,63 +213,59 @@ function fill_covariance_cache!(p::SingleInverseProblem{DT, TN, N,
     Base.length(::ResidualIterator{W , PT , CV, N , TN}) where {W , PT , CV, N , TN} = N * TN
     Base.eltype(::ResidualIterator{W , PT , CV, N , TN , DT}) where {W , PT , CV, N , TN , DT} = DT
 
-    #
-    function Base.iterate(iter::ResidualIterator{Val{false}, PT , CV, N , TN , RT}, state=1) where {PT , CV, N , TN , RT}
+    function Base.iterate(iter::ResidualIterator{W , PT , CV, N }, state=1) where {W , PT , CV, N }
         if state > length(iter)
             return nothing
         end 
         i = (state - 1) % N + 1
         j = (state - 1) ÷ N + 1
-        val = iter.r[i, j]
-        return (val , state + 1)
+        return (_get_weighted_residual_val(iter , i , j) , state + 1)
     end
-
-
-    function Base.iterate(iter::ResidualIterator{Val{true}, PT , CV, N , TN , RT}, state=1) where {PT , CV<:AR1Covariance
-                                                                                                    , N , TN , RT}
-        if state > length(iter)
-            return nothing
-        end
-        i = (state - 1) % N + 1
-        j = (state - 1) ÷ N + 1
+    _get_weighted_residual_val(iter::ResidualIterator{Val{false}}, i , j) = iter.r[i, j]
+    _get_weighted_residual_val(iter::ResidualIterator{Val{true}, PT , CV} , i , j) where {PT , CV <: NoCovariance} = iter.r[i, j]
+    _get_weighted_residual_val(iter::ResidualIterator{Val{true}, PT , CV} , i , j) where {PT , CV <:TemperatureDependentDiagonalCovariance}  = iter.r[i , j] / sqrt(iter.p.covariance.cache[i , j])
+    function _get_weighted_residual_val(iter::ResidualIterator{Val{true}, PT , CV} , i , j) where {PT , CV <: AR1Covariance{DT}} where DT 
         dt = timestep(iter.p.direct_problem)
         ρ = exp(- dt / iter.p.covariance.τ)
-        val = if i == 1
+        return if i == 1
             iter.r[1 , j] / sqrt(iter.p.covariance.σ²)
         else
-            σ_eps = sqrt(iter.p.covariance.σ² * (1.0 - ρ^2))
+            σ_eps = sqrt(iter.p.covariance.σ² * (one(DT) - ρ^2))
             (iter.r[i , j] - ρ * iter.r[i - 1 , j]) / σ_eps
         end
-        return (val  , state + 1)
+    end
+    function _get_weighted_residual_val(iter::ResidualIterator{Val{true}, PT , CV} , i , j) where {PT , CV <: RelativeDiagonalCovariance{DT}} where DT
+        rel_s = iter.p.covariance.relative_sigma
+        floor_s = iter.p.covariance.floor_sigma
+        sigma_sq = (rel_s * Tij)^2 + floor_s^2
+        return iter.r[i , j] / sqrt(sigma_sq)
     end
 
-
-struct ResidualColumn{W, PT, CV, N, TN, DT, RT} <: AbstractVector{DT} # {W , PT , CV, N , TN , DT , RT}
-    iter::ResidualIterator{W, PT, CV, N, TN, DT, RT}
-    col_idx::Int 
-end
-
-Base.size(::ResidualColumn{W, PT, CV, N}) where {W, PT, CV, N} = (N,)
-Base.IndexStyle(::Type{<:ResidualColumn}) = IndexLinear()
-
-@inline function Base.getindex(rc::ResidualColumn{W, PT, CV, N}, i::Int) where {W, PT, CV, N}
-
-    global_state = i + (rc.col_idx - 1) * N
-    return first(Base.iterate(rc.iter, global_state))
-end
-
-struct ResidualCols{W, PT, CV, N, TN, DT, RT}
-    iter::ResidualIterator{W, PT, CV, N, TN, DT, RT}
-end
-
-Base.length(::ResidualCols{W, PT, CV, N, TN}) where {W, PT, CV, N, TN} = TN
-Base.eltype(::ResidualCols{W, PT, CV, N, TN, DT, RT}) where {W, PT, CV, N, TN, DT, RT} = ResidualColumn{W, PT, CV, N, TN, DT, RT}
-
-function Base.iterate(rcols::ResidualCols, state_col=1)
-    if state_col > length(rcols)
-        return nothing
+    struct ResidualColumn{W, PT, CV, N, TN, DT, RT} <: AbstractVector{DT} # {W , PT , CV, N , TN , DT , RT}
+        iter::ResidualIterator{W, PT, CV, N, TN, DT, RT} # iterator over weighted residuals 
+        col_idx::Int 
     end
-    return (ResidualColumn(rcols.iter, state_col), state_col + 1)
-end
 
-Base.eachcol(iter::ResidualIterator) = ResidualCols(iter)
+    Base.size(::ResidualColumn{W, PT, CV, N}) where {W, PT, CV, N} = (N,)
+    Base.IndexStyle(::Type{<:ResidualColumn}) = IndexLinear()
+
+    @inline function Base.getindex(rc::ResidualColumn{W, PT, CV, N}, i::Int) where {W, PT, CV, N}
+        global_state = i + (rc.col_idx - 1) * N
+        return first(Base.iterate(rc.iter, global_state))
+    end
+
+    struct ResidualCols{W, PT, CV, N, TN, DT, RT}
+        iter::ResidualIterator{W, PT, CV, N, TN, DT, RT}
+    end
+
+    Base.length(::ResidualCols{W, PT, CV, N, TN}) where {W, PT, CV, N, TN} = TN
+    Base.eltype(::ResidualCols{W, PT, CV, N, TN, DT, RT}) where {W, PT, CV, N, TN, DT, RT} = ResidualColumn{W, PT, CV, N, TN, DT, RT}
+
+    function Base.iterate(rcols::ResidualCols, state_col=1)
+        if state_col > length(rcols)
+            return nothing
+        end
+        return (ResidualColumn(rcols.iter, state_col), state_col + 1)
+    end
+
+    Base.eachcol(iter::ResidualIterator) = ResidualCols(iter)

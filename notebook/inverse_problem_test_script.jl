@@ -1,13 +1,17 @@
 	
     #using Revise
-    include(joinpath(@__DIR__,"InverseHeatTransfer.jl"))
+    import Pkg 
+    Pkg.activate(@__DIR__)
+    #source_path = joinpath(@__DIR__,"..","src")
+    #include(joinpath(source_path,"InverseHeatTransfer.jl"))
     using Plots, BenchmarkTools, Test
     using CSV, Tables , Optimization,OptimizationOptimJL
     using OptimizationNLopt
     using OptimizationMetaheuristics
     import .InverseHeatTransfer as IHT
     # working_folder = raw"E:\JULIA\JULIA_DEPOT\dev\InverseHeatTransfer.jl\test\test_data\property_inversion_ansys_new\25ks"
-    working_folder = raw"D:\JuliaDepoth\dev\InverseHeatTransfer.jl\test\test_data\property_inversion_ansys_new\25ks"
+    
+    working_folder = raw"D:\JULIA\JuliaDepoth\dev\InverseHeatTransfer.jl\test\test_data\property_inversion_ansys_new\25ks"
     hr_file = filter(f->  contains(f,"Tmeasured") , readdir(working_folder))
 	isempty(hr_file) && error("folder must constain file with  Tmeasured")
 	T_measured = CSV.read(joinpath(working_folder,hr_file[]), Tables.matrix)

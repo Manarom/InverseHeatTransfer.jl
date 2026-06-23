@@ -8,6 +8,8 @@ module InverseHeatTransfer
     using JLD2
     using Serialization
     using UUIDs 
+    using StatsBase
+    using FiniteDiff
 
     @reexport using ScaledPolynomials
     export OptimizableVariable, SingleInverseProblem
@@ -799,21 +801,15 @@ function evaluate_loss(p :: SingleInverseProblem{DT}) where DT
     This type of problems include only physical properties modification, thus all problems 
 has the same objects for  λ, λ' and cₚ, hence the problem can be simplified.
 """
-    struct ParallelInverseProblems{TP <: Tuple, N, T}
+    struct ParallelInverseProblems{TP <: Tuple, N, T} <: AbstractInverseProblem
         problems::TP
-        loss_vect::MVector{N,T}
         function ParallelInverseProblems(probls::SingleInverseProblem{DT}...) where DT
             N = length(probls)
-            loss_vect = MVector{N , DT}(
-                ntuple( N ) do i 
-                    evaluate_loss(probls[i])
-                end
-            )
-            new{typeof(probls) , N , DT}(probls , loss_vect)
+            new{typeof(probls) , N , DT}(probls )
         end
     end
 
-    function residual_length(::ParallelInverseProblems{TP , N}) where {TP , N}
+    function residual_length(pp::ParallelInverseProblems{TP , N}) where {TP , N}
         return sum( ntuple(N) do i
             residual_length(pp.problems[i]) 
         end  
@@ -825,14 +821,16 @@ has the same objects for  λ, λ' and cₚ, hence the problem can be simplified.
     discrepancy!(x , pp::ParallelInverseProblems{TP, N, T}) where {TP , N , T}
 
 """
-function discrepancy!(x , pp::ParallelInverseProblems{TP, N, T}) where {TP , N , T}
+function discrepancy!(x , pp::ParallelInverseProblems{TP, N}) where {TP , N}
         return sum(
             ntuple( N ) do i 
                 discrepancy!(x , pp.problems[i])
             end
             )/N # total discrepancy divided by the problems number 
     end
-
+ function evaluate_loss(pp::ParallelInverseProblems{TP, N}) where {TP , N }
+     return sum(evaluate_loss , pp.problems)/N
+ end
     set_regularization_multiplier!(pp::ParallelInverseProblems , val) = foreach(pp.problems) do p 
                                     set_regularization_multiplier!(p , val)
                                 end
@@ -866,6 +864,71 @@ function discrepancy!(x , pp::ParallelInverseProblems{TP, N, T}) where {TP , N ,
     const ALL_REGULARIZATION_TYPES = subtypes(AbstractRegularization)
     const ALL_COVARIANCE_TYPES = subtypes(AbstractCovariance)
 
+
+        """
+        extract_residual_vector(p::SingleInverseProblem)
+
+    retutrns reference to the residual vector 
+    """
+    #extract_residual_vector(p::SingleInverseProblem) = Iterators.flatten(p.residual)
+    #extract_residual_vector(p::ParallelInverseProblems{D,N}) where {D,N}
+
+    for (field_name , func_name) in zip((:residual, :Tdata_measured , :Tdata_evaluated), (:extract_residual_vector , :extract_measured_vector , :extract_evaluated_vector))
+        str = String(field_name)
+        @eval $func_name(p::SingleInverseProblem) = Iterators.flatten(getfield(p , Symbol($str)))
+        @eval function $func_name(p::ParallelInverseProblems{D,N}) where {D,N}
+            return Iterators.flatten(
+                ntuple(N) do i 
+                    getfield(p.problems[i] , Symbol($str))
+                end
+            )
+        end
+
+    end
+
+
+    function extract_weighted_residual_vector(p::SingleInverseProblem)
+        return ResidualIterator(Val(true) , p)
+    end
+    function extract_weighted_residual_vector(p::ParallelInverseProblems{D,N}) where {D,N}
+            return Iterators.flatten(
+                ntuple(N) do i 
+                    ResidualIterator(Val(true) , p.problems[i])
+                end
+            )
+    end
+
+    struct IPstats{N ,P}
+        σ2 # estimated dispersion
+        s2 # sample dispersion
+        sse 
+        sst 
+        r2 # rsquared
+        r2a # rsquared adjusted
+        
+        function IPstats(y , r , N::Int, P::Int=1)
+            sse = sumsqr(r)
+            σ2  = sse/(N - P)
+            m = StatsBase.mean(y)
+            sst = sumsqr(y , m)
+            s2 = sst/(N - 1)
+            r2 = 1 - sse/sst 
+            r2a = 1 - (sse/(N - 1)) * (N - P)/sst
+            new{N , P}( σ2, s2, sse , sst , r2 , r2a )
+        end
+    end
+    function IPstats(p::AbstractInverseProblem)
+        IPstats(extract_measured_vector(p) , extract_weighted_residual_vector(p) , residual_length(p) , optimizable_parnumber(p) )
+    end
+    function sumsqr(itr, μ::T =0.0) where T 
+            s = zero(T)
+            for t in itr
+                s+=(t - μ)^2
+            end
+            return s
+    end
+
+
 """
         The main idea behind StaticProblemWrapper is to make a static version of the optimization problem, which makes a 
         deppcopy of initial problem, but after any modification returns to the initial state of the problem , this may be useful 
@@ -886,18 +949,21 @@ function discrepancy!(x , pp::ParallelInverseProblems{TP, N, T}) where {TP , N ,
 Returns StaticProblemWrapper to its initial state 
 """
 function default_state(p::StaticProblemWrapper)
-        update_all_optimizables!(p.problem_shadow , p.u₀) # refreshes the values of parameters without solving the direct problem 
-        solve_direct_problem!(p.problem_shadow) # solves the direct problem 
-        fill_residual!(p.problem_shadow ) # fills residual matrix 
+        #update_all_optimizables!(p.problem_shadow , p.u₀) # refreshes the values of parameters without solving the direct problem 
+        #solve_direct_problem!(p.problem_shadow) # solves the direct problem 
+        #fill_residual!(p.problem_shadow ) # fills residual matrix 
+        discrepancy!(p.u₀ , p.problem_shadow)
     end
     """
     discrepancy(p::StaticProblemWrapper , x)
 
 Evaluates scalar discrepancy function on input vector 'x' but 
+if `is_specific` is true (default) returns total discrepancy divided 
+by the total number of residual points 
 """
-function discrepancy(p::StaticProblemWrapper , x; is_specific::Bool = false)
-        loss=discrepancy!(p.problem_shadow, x) 
-        is_specific && (loss *= residual_length(p.problem))
+function discrepancy(x , p::StaticProblemWrapper; is_specific::Bool = true)
+        loss=discrepancy!(x , p.problem_shadow) 
+        !is_specific && (loss *= residual_length(p.problem))
         default_state(p)
         return loss
     end
@@ -908,193 +974,44 @@ function discrepancy(p::StaticProblemWrapper , x; is_specific::Bool = false)
                         x)
     end
     function residual!(r::AbstractVector , p::StaticProblemWrapper , x)
-        discrepancy!(p.problem_shadow, x)
+        discrepancy!(x , p.problem_shadow)
         copyto!(r , extract_weighted_residual_vector(p.problem_shadow ))
         default_state(p)
         return r
     end
-    """
-    extract_residual_vector(p::SingleInverseProblem)
 
-retutrns reference to the residual vector 
-"""
-extract_residual_vector(p::SingleInverseProblem) = Iterators.flatten(p.residual)
-
-function extract_residual_vector(p::ParallelInverseProblems{D,N}) where {D,N}
-        return Iterators.flatten(
-            ntuple(N) do i 
-                getfield(p.problems[i],:residual)
-            end
-        )
-    end
-function extract_weighted_residual_vector(p::SingleInverseProblem)
-    return ResidualIterator(Val(true) , p)
-end
-function extract_weighted_residual_vector(p::ParallelInverseProblems{D,N}) where {D,N}
-        return Iterators.flatten(
-            ntuple(N) do i 
-                ResidualIterator(Val(true) , p.problems[i])
-            end
-        )
-end
-
-    struct IPstats{N ,P}
-        σ2 # estimated dispersion
-        s2 # sample dispersion
-        sse 
-        sst 
-        r2 # rsquared
-        r2a # rsquared adjusted
-        
-        function IPstats(y , r , P::Int=1)
-            sse = sumsqr(r)
-            N = length(y)
-            σ2  = sse/(N - P)
-            m = mean(y)
-            sst = sumsqr(y , m)
-            s2 = sst/(N - 1)
-            r2 = 1 - SSE/SST 
-            r2a = 1 - (sse/(N - 1)) * (N - P)/sst
-            new{N , P}( σ2, s2, sse , sst , r2 , r2a )
-        end
-    end
-    function sumsqr(x::T, μ::T=0.0) where T 
-            s = zero(T)
-            for t in x
-                s+=(t - μ)^2
-            end
-            return s
-    end
 
 # Inverse problems descriptive stats 
-    function ip_covariance(p::StaticProblemWrapper , u)
+    function ip_covariance(spw::StaticProblemWrapper , u)
         #probs = deepcopy(p)
-        f(x) = discrepancy(p , x)
-        N = sum([length(p.residual) for p in probs.problems])
-        σ = sum([sum(t->t^2 , p.residual) for p in probs.problems])/(N^2)
+        f = x-> discrepancy( x , spw)
+        N = residual_length(spw.problem_shadow)
+        σ = evaluate_loss(spw.problem_shadow)
         Σ  = inv( FiniteDiff.finite_difference_hessian(f , u ) )
+        P = length(u)
         Cov = Σ * σ
-        s = extract_diag(Cov)
-        return (;std = s , Cov=Cov , Σ = Σ , σ=σ , N=N)
+        s = Vector{eltype(Σ)}(undef, P)
+        @inbounds for i in 1:P 
+            s[i] = Σ[i,i]
+        end
+        return (;std = s , Cov = Cov , Σ = Σ , σ = σ , N = N)
     end
 
+    #=
 
+    function extract_diag(m::AbstractMatrix)
+        N = size(m , 1)
+        @assert N==size(m, 2) "Matrix must be square"
+        return [m[i , i] for i in 1:N]
+    end
+
+    =#
 
     @recipe function f(m::OptimizableVariable)
         return (m.p)
     end
     include("problem_ensemble_functions.jl")
-    const DC = DataConnector
-    const WP = DataConnector.WinPos
-
-    function WP.export_to_hdf5(inv_problem::SingleInverseProblem,
-		 	fullfilename::String ; 
-        	opentype::String = "cw" , 
-			group_name::String = INVERSE_PROBLEM_HDF5_GROUPNAME[])    
-
-            h5open(fullfilename, opentype) do h5
-               group = WP._delete_if_overwrite_or_create_group!(h5 , group_name , true)
-			   WP.export_to_hdf5(inv_problem , group) 
-            end
-    end
-
-  
-    function WP.export_to_hdf5(multiproblems::ParallelInverseProblems,
-		 	fullfilename::String ; 
-        	opentype::String = "cw" , 
-			group_name::String = INVERSE_PROBLEM_HDF5_GROUPNAME[] , 
-            add_serialized = true)    
-
-            h5open(fullfilename, opentype) do h5
-               group = WP._delete_if_overwrite_or_create_group!(h5 , group_name , true)
-               for (i,p) in enumerate(multiproblems.problems)
-                    _name = "ip_$(i)"
-                    group_i = WP._delete_if_overwrite_or_create_group!(group , _name , true)
-			        WP.export_to_hdf5(p , group_i , add_serialized = add_serialized) 
-               end
-            end
-    end
-    function WP.export_to_hdf5(inv_problem::SingleInverseProblem , 
-                                group::HDF5.Group; add_serialized::Bool = true)
-
-        group_setup = WP._delete_if_overwrite_or_create_group!(group , "setup" , true)
-        WP.try_write_struct_to_hdf5(group_setup , inv_problem)
-
-        group_setup["alpha"] = inv_problem.α[]
-        group_setup["regularization"] = string(inv_problem.regularization)
-        group_setup["psi"] = inv_problem.ψ[]
-        group_setup["covariance"] = string(inv_problem.covariance)
-
-        group_op = WP._delete_if_overwrite_or_create_group!(group , "optimizable" , true)
-
-        for (k , o) in pairs(inv_problem.optimizable)
-            k_str = string(k)
-            o_str = string(o)
-            group_op_i = WP._delete_if_overwrite_or_create_group!(group_op , k_str , true)
-            attrs = attributes(group_op_i)
-            attrs["string"] = o_str
-            if applicable(coeffs, o)
-                group_op_i["coeffs"] = coeffs(o)
-            end
-        end
-        add_direct_problem(inv_problem , group , add_serialized = add_serialized)    
-        
-       add_serialized && add_serialized_to_hdf5(inv_problem , group , INVERSE_PROBLEM_HDF5_SERIALIZED_GROUPNAME[] )
-
-    end
-    function add_serialized_to_hdf5(data , group ::HDF5.Group , name::String = ""  )
-            if length(name) == 0
-                name = string(uuid4())
-            end    
-            if haskey(group , name)
-                delete_object(group , name)
-            end
-            io = IOBuffer()
-            serialize(io, data) 
-            blob = take!(io) 
-            group[name] = blob
-            return nothing
-    end
-    add_direct_problem(inv_problem::SingleInverseProblem , group::HDF5.Group; kwargs...) = add_direct_problem(inv_problem.direct_problem , group ;kwargs...)
-    function WinPos.export_to_hdf5(d::HeatTransferProblem , fullfilename::AbstractString ;  
-        	opentype::String = "cw" , 
-			group_name::String = "direct_problem")
-
-            h5open(fullfilename, opentype) do h5
-               group = WP._delete_if_overwrite_or_create_group!(h5 , group_name , true)
-			   WP.export_to_hdf5(d , group) 
-            end
-        end
-    function add_direct_problem(d::HeatTransferProblem , group::HDF5.Group; 
-                        name::String = "direct_problem",  add_serialized::Bool = false )
-        
-        group_dir = WP._delete_if_overwrite_or_create_group!(group , name , true)
-        WP.try_write_struct_to_hdf5(group_dir , d)
-        t = collect(trange(d)) 
-        x = collect(xrange(d))
-        group_dir["time_grid"] = t                       
-        group_dir["x_grid"] = x
-        group_dir["upper_BC_type"] = string(OneDHeatTransfer.upper_bc_type(d))
-        group_dir["upper_BC"] = d.bc_up.(t)
-
-        group_dir["lower_BC_type"] = string(OneDHeatTransfer.lower_bc_type(d))
-        group_dir["lower_BC"] = d.bc_dwn.(t)
-
-        _T = Matrix{Float64}(undef , (100 , 2))
-        _T1 = @view _T[:,1]
-        _T2 = @view _T[:,2]
-        _T1 .=  range(extrema(d.T)... , 100)
-        @. _T2 = d.L_f(_T1)
-        group_dir["thermal_conductivity"] =_T
-
-        @. _T2 = d.C_f(_T1)
-        group_dir["heat_capacity"] = _T
-
-        @. _T2 = d.Ld_f(_T1)
-        group_dir["thermal_conductivity_derivative"] =_T
-        
-        add_serialized && add_serialized_to_hdf5(d , group_dir , "direct_problem_serialized" )
-    end
+    include("hdf5_data.jl")
     
 end ##end_of_module
 
