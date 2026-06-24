@@ -38,8 +38,8 @@ end
 # ╔═╡ cc2826a1-d6bf-4025-9ef3-2c5e7a15ff85
 using StatsBase, BenchmarkTools
 
-# ╔═╡ 93e56f7c-e7ad-43cd-9f4d-a48565d635e4
-using Profile
+# ╔═╡ 8a523c14-a56b-42d4-9cf5-4bc63c59acea
+using Distributions
 
 # ╔═╡ 5807712b-5d26-49c8-ab65-dac167ebad7b
 begin 
@@ -313,7 +313,7 @@ md"""
 
 Covariance type $(@bind covariance_type Select(IHT.ALL_COVARIANCE_TYPES))
 
-Covariance parameter τ = $(@bind tau confirm(Slider(1e-3:1e-2:10 , show_value = true, default = 1.0)))
+Covariance parameter τ = $(@bind tau confirm(NumberField(1e-4:1e-4:10 ,  default = 0.3)))
 
 Regularization type : $(@bind reg_type Select(IHT.ALL_REGULARIZATION_TYPES))
 
@@ -321,7 +321,7 @@ Regularization multiplier α: $(@bind reg_multiplier confirm(NumberField(0.0 : 1
 """
 
 # ╔═╡ 5e5b27d1-fdc8-451d-a4f0-93f33adbcf76
-md" Show weighted residuals $(@bind is_weighted_res CheckBox(true))"
+md" Show weighted residuals $(@bind residuals_type Select([:weighted , :unweighted , :both] , default = :both))"
 
 # ╔═╡ 2a1ca349-3732-443e-bc48-5be611a5d91f
 md"""
@@ -405,9 +405,6 @@ end
 
 # ╔═╡ bce5f7ae-49c5-4520-a0f6-6215e5078674
 includet(joinpath(source_path, "problem_ensemble_functions.jl"))
-
-# ╔═╡ 84e23b57-e5a4-4bf0-97ef-6b41b502b4e6
-optimizer
 
 # ╔═╡ d71fd6d1-167d-40fb-a253-b0982e19c0d0
 @bind Ttest Slider(range(lam_T_range[1],lam_T_range[2],100), show_value = true)
@@ -841,6 +838,52 @@ function descriptive_stats_table(p)
 		title ="Simple descriptive statistics")
 end
 
+# ╔═╡ 01ee5f36-c4e3-432e-bdcb-77196561d3c5
+#@benchmark IHT.ip_covariance($parallel_probls, $res.u)
+
+# ╔═╡ baaf2f95-9529-4829-a8fa-0724fd21b78e
+function autocorrelation_stats_table(autocor_stats)
+
+	N = length(autocor_stats) # number of problems 
+	
+	
+
+	a1 = autocor_stats[1][1][1]
+	
+	fn = filter(f->isa(getfield(a1 , f) , Number) , keys(a1)) # tests_names 
+
+	M  = length(fn)
+
+	#tbl = Matrix{Any}(undef, (N , 2 * M) )
+	tbl_vect = Any[]
+	for (i , a_i) in enumerate(autocor_stats)
+		# a_i - problem stats (vector, each element - corresponds to )
+ 	   	TPnumber = length(a_i) # length of  	
+		tbl_i = Matrix{Any}(undef, (TPnumber , 2 * M + 1) ) # i'th thermocouple table 
+		
+		for tp_i in 1 : TPnumber #over couples
+			a_i_t = a_i[tp_i] # tuple of weighted and unweighted
+			row = Any[]
+			push!(row, "P$(i) : T$(tp_i)")
+			for (j , f_cur) in enumerate(fn)
+				  push!(row , getfield(a_i_t.unweighted , f_cur))
+				push!(row , getfield(a_i_t.weighted , f_cur))
+			end
+			tbl_i[tp_i , :] = row
+		end
+		push!(tbl_vect , tbl_i)
+	end
+	col_names = Vector{String}(undef,  2 * M + 1)
+	col_names[1] = "names"
+	for i in 1 : M 
+		col_names[2i] = "$(fn[i]) weighted"
+		col_names[2i + 1] = "$(fn[i]) unweighted"
+	end	
+	tbb = vcat(tbl_vect...)
+	@show col_names
+	return pretty_table(HTML,tbb , column_labels = col_names , title = "Autocorrelation tests") 
+end
+
 # ╔═╡ e9e9e16d-0b2c-45ce-aa5b-cdcda6b143f1
 begin 
 	reg_multiplier
@@ -859,11 +902,16 @@ begin
 			disc_after = IHT.discrepancy!(res2.u, parallel_probls)
 			disc_before - disc_after
 		end
-		stats = xor(is_show_cp_conf && is_optimize_c , is_show_lambda_conf && is_optimize_lambda) ? covariance(parallel_probls , res.u) : nothing
+		#stats = xor(is_show_cp_conf && is_optimize_c , is_show_lambda_conf && is_optimize_lambda) ? IHT.ip_covariance(parallel_probls , res.u) : nothing
+		stats = IHT.ip_covariance(parallel_probls , res.u)
+		auto_cor_stats = IHT.autocorrelation_analysis(parallel_probls)
+		nothing
 	else
 		stats = nothing
+		auto_cor_stats = nothing
 	end
 	simple_stats_table = descriptive_stats_table(parallel_probls)
+	autocor_stats_table = isnothing(auto_cor_stats) ? nothing : autocorrelation_stats_table(auto_cor_stats)
 	refresh_graph = false
 end
 
@@ -871,6 +919,9 @@ end
 begin 
 	simple_stats_table
 end
+
+# ╔═╡ 159e8411-5061-4db6-b9b6-cd6abee46901
+autocor_stats_table
 
 # ╔═╡ 95dbc55f-ab5a-4828-a1e2-9a0c9a9ec19b
 begin 
@@ -889,7 +940,6 @@ begin
 end
 
 # ╔═╡ 4c9a5a5f-5839-4211-b561-7539dfa74a7a
-# plotting covariance 
 begin 
 	refresh_graph
 	
@@ -927,52 +977,129 @@ begin
 	ylabel!(p_fit_lam, "Thermal conductivity, W/(m*K)")
 	title!(p_fit_lam, "Fitted VS measured")
 
-	# plotting temeprature distribution 
-	p_residual = Plots.plot(;plot_common_args...)
+	# residuals
+	
 	p_distr = Plots.plot(;plot_common_args...)
-	p_autocor = Plots.plot(;plot_common_args...)
-	p_hist = Plots.histogram()
+
+	is_show_weighted_residuals = (residuals_type == :weighted) && (residuals_type != :both)
+	is_show_both = residuals_type == :both
+
+	_N = !is_show_both ? 1 : 2
+	
+	p_residual_tuple = ntuple(_N) do _
+			Plots.plot(;plot_common_args...)
+	end
+	p_autocor_tuple = ntuple(_N) do _
+		Plots.plot(;plot_common_args...)
+	end
+	p_hist_tuple = ntuple(_N) do _
+		Plots.histogram(;plot_common_args...)
+	end
+	_title = if is_show_weighted_residuals
+		(("Weighted residuals" , 
+		 	"Weighted residuals",
+		 	"Weighted residuals autocor"),)
+	elseif is_show_both
+		(
+			("Weighted residuals" , "Weighted residuals" , "Weighted residuals autocor") ,
+			("Residuals" , "Residuals" , "Residuals autocor")  
+		 	  
+		)
+	else
+		(
+			("Residuals" , 
+		 	 	"Residuals" , 
+		 		"Residuals autocor"),
+		)
+	end
 	
 	for (p_n , inv_probl) in enumerate(parallel_probls.problems)
 		
-		discr = IHT.evaluate_loss(inv_probl)
-		
+		# plotting temperature disctribution
 		for (i,(te,tm)) in enumerate(zip(eachcol(inv_probl.Tdata_evaluated) , eachcol(inv_probl.Tdata_measured)))
 			Plots.plot!(p_distr , te, label = "P$(p_n):T$(i)clc")
 			Plots.plot!(p_distr, tm, linestyle = :dash, label = "P$(p_n):T$(i)exp"; plot_common_args...)
 		end
-		title!(p_distr,"discrepancy = $(discr)")
+
+		title!(p_distr , "Temperature distributions")
 		xlabel!(p_distr, "Timestep index")
 		ylabel!(p_distr, "Temperature, ᵒC")
 
-		# ploting residuals
-		res_handle = is_weighted_res ? IHT.ResidualIterator(Val(true), inv_probl) : inv_probl.residual
-		for (i , c) in enumerate(eachcol(res_handle))
-			
-			c_i = collect(c)
-			
-			Plots.plot!(p_residual ,  c_i ; plot_common_args... , label = "P$(p_n):T$(i)")
-
-			lgs = collect(0:(length(c_i) - 1))
-			
-			Plots.plot!(p_autocor , autocor(c_i , lgs) ; plot_common_args... ,label="P$(p_n):T$(i)")
-
-			bb = range(minimum(c_i),maximum(c_i),20)
-			Plots.histogram!(p_hist , c_i , bins = bb,
-								 alpha=0.5 , label="P$(p_n):T$(i)";
-							 plot_common_args...)
+		# plotting residuals
+		res_iterator = if is_show_weighted_residuals
+			res_iterator = enumerate(zip(
+				eachcol(IHT.ResidualIterator(Val(true), inv_probl)), 
+			)
+			)
+		elseif is_show_both
+			enumerate(
+				zip(
+					eachcol(IHT.ResidualIterator(Val(true), inv_probl)) , eachcol(inv_probl.residual)
+				)
+			)
+		else
+			enumerate(zip(
+				eachcol(inv_probl.residual),
+								)
+					 )
 		end
-		title!(p_residual, "Residuals")
-		xlabel!(p_residual, "Timestep")
-		ylabel!(p_residual, "ΔT, ᵒC")
 
-		title!(p_autocor, "Autocorrelation")
-		xlabel!(p_autocor, "Timestep")
-		ylabel!(p_autocor, "ΔT, ᵒC")
-
-		ylabel!(p_hist , "Counts number")
-		xlabel!(p_hist , "ΔT")
+		for (i , c) in res_iterator
+			
+			
+			cur_label = "P$(p_n):T$(i)"
+			pargs = (label = cur_label,)
+			
+			for (c_ii, p_r , p_a , p_h , ttl) in zip(c , 
+											   p_residual_tuple ,
+											   p_autocor_tuple , 
+											   p_hist_tuple , 
+												 _title)
+				
+				#c_i = !is_show_both	? collect(c) : collect(first(c))
+				c_i = collect(c_ii)
+				Plots.plot!(p_r ,  c_i; pargs... , title = ttl[1])
+		
+				lgs = collect(0:(length(c_i) - 1))
+				
+				Plots.plot!(p_a , autocor(c_i , lgs) ; pargs..., title = ttl[3])
+	
+				bb = range(minimum(c_i),maximum(c_i),20)
+				Plots.histogram!(p_h , c_i ; bins = bb,						 alpha=0.5 , pargs..., title = ttl[2])
+			end
+			
+		end
 	end
+	if is_show_both
+		_args = (plot_common_args... , layout = (2,1) )
+		p_residual = Plots.plot(p_residual_tuple...; _args...)
+		p_autocor =  Plots.plot(p_autocor_tuple...; _args...)
+		p_hist =  Plots.plot(p_hist_tuple...; _args...)
+	else
+		p_residual = first(p_residual_tuple)
+		p_autocor = first(p_autocor_tuple)
+		p_hist = first(p_hist_tuple)
+	end
+	Plots.plot!(p_distr;plot_common_args...)
+	  Plots.plot!(p_autocor;plot_common_args...)
+	  Plots.histogram!(p_hist;plot_common_args...)
+
+	#==#
+						
+	
+	#title!(p_residual, _title[1])
+	xlabel!(p_residual, "Timestep")
+	ylabel!(p_residual, "ΔT, ᵒC")
+		
+	#title!(p_hist , _title[2])
+	ylabel!(p_hist , "Counts number")
+	xlabel!(p_hist , "ΔT")
+	#	
+	#title!(p_autocor, _title[3])
+	xlabel!(p_autocor, "Timestep")
+	ylabel!(p_autocor, "ΔT, ᵒC")
+
+
 end ;
 
 # ╔═╡ 538487b4-b2fc-42c2-ba69-663b2ca5b768
@@ -994,14 +1121,14 @@ end
 # ╔═╡ 67763d8f-e1ac-4b1f-978f-4734af1e03ba
 ylims!(p_fit_lam, lam_y_scale_region)
 
-# ╔═╡ 9464897c-8591-4fe3-aa24-9c710a37f7b6
-p_autocor
-
 # ╔═╡ 33280e2b-2567-4289-970a-b034ba4c8cd2
 p_hist
 
 # ╔═╡ a660bf26-5b50-4910-b0ab-8e453623dc1a
 p_residual
+
+# ╔═╡ 9464897c-8591-4fe3-aa24-9c710a37f7b6
+p_autocor
 
 # ╔═╡ 042ea29b-63dd-43d0-a20f-68807c5f7cd4
 p_distr
@@ -1033,30 +1160,22 @@ if is_write_file
 	"✅ Data selection saved to hdf5-file $(ff_name) at $(Dates.format(now(), "HH:MM:SS"))"
 end
 
-# ╔═╡ b5736de4-320e-43b8-9e31-3fa93ba0264e
-@benchmark covariance($parallel_probls , $res.u)
-
-# ╔═╡ d1fdb0e8-b0f8-40a9-b4e1-dfbd1acb1b2c
-@benchmark IHT.discrepancy!( $res.u , $parallel_probls)
-
-# ╔═╡ 84a8c4d5-0f04-48d6-8528-3b64dcec37fa
-stpw = IHT.StaticProblemWrapper(parallel_probls , res.u)
-
 # ╔═╡ 6c47eae7-8c2c-4d01-b19d-f7467860b3a5
-IHT.ip_covariance(stpw, res.u)
+s2 = IHT.ip_covariance(parallel_probls, res.u)
 
-# ╔═╡ 951e0cb3-51fd-406b-a12b-bf06017db456
-@benchmark IHT.ip_covariance(stpw, res.u)
+# ╔═╡ 3ff54db7-c0bf-45a6-89cf-935a3d6582bd
+plot(s2.J)
 
-# ╔═╡ bd325516-535d-48f7-ab11-c9cbf6c2f7bb
-@bprofile IHT.discrepancy( $res.u , $stpw)
+# ╔═╡ baae2e3b-9b20-49b6-8ba5-cd915358dc74
+autocor_stats = IHT.autocorrelation_analysis(parallel_probls)
 
-# ╔═╡ df45979f-8faa-45a1-a794-25b7e940844b
-res.u
+# ╔═╡ 7009ac57-7be5-4bd3-a80e-b670d8c4313c
+autocorrelation_stats_table(autocor_stats)
 
 # ╔═╡ Cell order:
 # ╟─a17fe1fe-5542-454b-b45e-942ac52b6f1a
 # ╟─cc2826a1-d6bf-4025-9ef3-2c5e7a15ff85
+# ╟─8a523c14-a56b-42d4-9cf5-4bc63c59acea
 # ╟─5807712b-5d26-49c8-ab65-dac167ebad7b
 # ╟─2bfb4e52-6248-4832-aca1-98ba58959bff
 # ╟─3b1c3b0a-558e-4987-bf16-072963e455cf
@@ -1091,6 +1210,7 @@ res.u
 # ╟─8345302e-0b9d-4208-9a66-3d9f32903b39
 # ╟─672119a2-7a47-4813-a2d3-e0c15ee63491
 # ╟─b81ed1ca-cf5d-40e3-8eaf-903d720ef43e
+# ╟─159e8411-5061-4db6-b9b6-cd6abee46901
 # ╟─5843fcfb-4e0e-480d-b263-e3f3ad6a7ac3
 # ╟─d051f5e5-f836-4043-9326-639b40acaf87
 # ╟─16337bb4-438e-4b86-bdc5-b88ef210a960
@@ -1113,9 +1233,9 @@ res.u
 # ╟─95dbc55f-ab5a-4828-a1e2-9a0c9a9ec19b
 # ╟─33473b7a-e22f-4333-a2f2-374778c0d603
 # ╟─5e5b27d1-fdc8-451d-a4f0-93f33adbcf76
-# ╟─9464897c-8591-4fe3-aa24-9c710a37f7b6
 # ╟─33280e2b-2567-4289-970a-b034ba4c8cd2
 # ╟─a660bf26-5b50-4910-b0ab-8e453623dc1a
+# ╟─9464897c-8591-4fe3-aa24-9c710a37f7b6
 # ╟─042ea29b-63dd-43d0-a20f-68807c5f7cd4
 # ╟─2a1ca349-3732-443e-bc48-5be611a5d91f
 # ╟─d02ec3fd-1b0d-4bc3-92e9-adedc8bf2c8c
@@ -1141,19 +1261,18 @@ res.u
 # ╟─6800ae42-c5b1-4d1e-84fb-a03015bf138f
 # ╟─c4053281-7cd4-4590-b004-b4ca43771094
 # ╟─9cd8c4c8-7d11-4fb0-92d5-439702aa9496
-# ╟─e9e9e16d-0b2c-45ce-aa5b-cdcda6b143f1
-# ╠═70e2c8f2-d896-4773-8280-d391d9975307
-# ╠═bce5f7ae-49c5-4520-a0f6-6215e5078674
-# ╠═dd8fb4fa-fa67-4e26-988d-3ede79bc9540
-# ╠═cf8665e2-07d9-4464-b833-0531205408e9
-# ╠═2614e5ad-0d45-4046-abfd-053dd872c17c
-# ╠═1c32440c-32af-414c-9a7a-d6cc83685f7c
-# ╟─84e23b57-e5a4-4bf0-97ef-6b41b502b4e6
+# ╠═e9e9e16d-0b2c-45ce-aa5b-cdcda6b143f1
+# ╟─70e2c8f2-d896-4773-8280-d391d9975307
+# ╟─bce5f7ae-49c5-4520-a0f6-6215e5078674
+# ╟─dd8fb4fa-fa67-4e26-988d-3ede79bc9540
+# ╟─cf8665e2-07d9-4464-b833-0531205408e9
+# ╟─2614e5ad-0d45-4046-abfd-053dd872c17c
+# ╟─1c32440c-32af-414c-9a7a-d6cc83685f7c
 # ╟─c2564f33-dcf5-45fe-a462-70fe105bcf0a
 # ╟─27031733-7ade-4bda-b464-5a9ade0b2950
 # ╟─f5b13ec5-98f9-48bb-ad95-7dbd87e11f7b
-# ╠═d71fd6d1-167d-40fb-a253-b0982e19c0d0
-# ╠═fb2937d0-738b-4329-aef5-f3af1d17497a
+# ╟─d71fd6d1-167d-40fb-a253-b0982e19c0d0
+# ╟─fb2937d0-738b-4329-aef5-f3af1d17497a
 # ╠═efa9120f-5a45-41a0-9132-dc26f967fec3
 # ╠═4cf77d64-a720-41da-a9c2-5d875ea00135
 # ╟─023dc25f-6cf8-4802-83b4-77d1827cd2a7
@@ -1165,12 +1284,10 @@ res.u
 # ╟─4b8ddfc0-ed4f-4b66-b752-fa075d348608
 # ╟─04ad22b9-e474-41ed-bc87-7dbf9a2b1dcc
 # ╟─3b9e739c-9519-4efa-b2da-cac5451d55d3
-# ╟─f799c1f9-ebc2-4fdb-839e-ee721ab9b8f5
+# ╠═f799c1f9-ebc2-4fdb-839e-ee721ab9b8f5
 # ╠═6c47eae7-8c2c-4d01-b19d-f7467860b3a5
-# ╠═b5736de4-320e-43b8-9e31-3fa93ba0264e
-# ╠═951e0cb3-51fd-406b-a12b-bf06017db456
-# ╠═bd325516-535d-48f7-ab11-c9cbf6c2f7bb
-# ╠═93e56f7c-e7ad-43cd-9f4d-a48565d635e4
-# ╠═d1fdb0e8-b0f8-40a9-b4e1-dfbd1acb1b2c
-# ╠═84a8c4d5-0f04-48d6-8528-3b64dcec37fa
-# ╠═df45979f-8faa-45a1-a794-25b7e940844b
+# ╠═01ee5f36-c4e3-432e-bdcb-77196561d3c5
+# ╠═3ff54db7-c0bf-45a6-89cf-935a3d6582bd
+# ╠═baaf2f95-9529-4829-a8fa-0724fd21b78e
+# ╠═baae2e3b-9b20-49b6-8ba5-cd915358dc74
+# ╠═7009ac57-7be5-4bd3-a80e-b670d8c4313c

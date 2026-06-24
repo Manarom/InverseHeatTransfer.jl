@@ -1,5 +1,5 @@
 module InverseHeatTransfer
-    using LinearAlgebra , Reexport , StaticArrays , Interpolations, RecipesBase
+    using LinearAlgebra , Reexport , StaticArrays , Interpolations, RecipesBase , Distributions
     using Unrolled
     using InteractiveUtils
     using Static
@@ -769,7 +769,7 @@ function set_regularization_multiplier!(s::SingleInverseProblem{DT} , α::DT) wh
 Function evaluates scalar discrepancy for the current set of parameters 
 """
 function evaluate_loss(p :: SingleInverseProblem{DT}) where DT
-        loss = covariance_loss(p) # applies weighted least squares
+        loss = covariance_loss(p) # applies weighted least squares (each loss is divided by the length of residual vector )
         p.include_constraints_violation_to_loss[] && (loss += p.ψ[] * constraints_loss(p)) # adds constraints loss to the main discrepancy (if they are needed)
         loss += p.α[] * regularization_loss(p)
         return loss
@@ -826,10 +826,10 @@ function discrepancy!(x , pp::ParallelInverseProblems{TP, N}) where {TP , N}
             ntuple( N ) do i 
                 discrepancy!(x , pp.problems[i])
             end
-            )/N # total discrepancy divided by the problems number 
+            )# /N  total discrepancy divided by the problems number 
     end
  function evaluate_loss(pp::ParallelInverseProblems{TP, N}) where {TP , N }
-     return sum(evaluate_loss , pp.problems)/N
+     return sum(evaluate_loss , pp.problems)/N # dividing by the number of problems 
  end
     set_regularization_multiplier!(pp::ParallelInverseProblems , val) = foreach(pp.problems) do p 
                                     set_regularization_multiplier!(p , val)
@@ -914,7 +914,7 @@ function discrepancy!(x , pp::ParallelInverseProblems{TP, N}) where {TP , N}
             s2 = sst/(N - 1)
             r2 = 1 - sse/sst 
             r2a = 1 - (sse/(N - 1)) * (N - P)/sst
-            new{N , P}( σ2, s2, sse , sst , r2 , r2a )
+            new{N , P}( σ2 , s2 , sse , sst , r2 , r2a )
         end
     end
     function IPstats(p::AbstractInverseProblem)
@@ -929,29 +929,66 @@ function discrepancy!(x , pp::ParallelInverseProblems{TP, N}) where {TP , N}
     end
 
 
+   abstract type AbstractStaticWrapper{P , T , N , M} end
 """
-        The main idea behind StaticProblemWrapper is to make a static version of the optimization problem, which makes a 
-        deppcopy of initial problem, but after any modification returns to the initial state of the problem , this may be useful 
-        for local sensitivity analysis, several methods like residual calculation , scalar loss calculation are implemented 
-        on this wrapper 
+        Type to calculate the scalar discrepancy function for some optimization variables in the vicinity 
     """
-    struct StaticProblemWrapper{P,T}
+    struct StaticDiscrepancyWrapper{P , T, N , M} <: AbstractStaticWrapper{P,T,N,M}
         problem::P
         problem_shadow::P
-        u₀::T
-        StaticProblemWrapper(p::P , u₀::T) where {P<:AbstractInverseProblem , T<:AbstractVector} = begin 
-            new{P,T}(p , deepcopy(p) , u₀)
-        end
+        u₀::T 
     end
+    struct StaticResidualWrapper{P , T, N , M} <: AbstractStaticWrapper{P,T,N,M}
+        problem::P
+        problem_shadow::P
+        u₀::T 
+    end
+    struct StaticEvaluatedWrapper{P , T, N , M} <: AbstractStaticWrapper{P,T,N,M}
+        problem::P
+        problem_shadow::P
+        u₀::T 
+    end
+    function (::Type{ASW})(p::P , u₀::T ) where ASW <: AbstractStaticWrapper where {P <: AbstractInverseProblem , T <: AbstractVector } 
+        M = length(u₀)
+        N = residual_length(p)
+        ASW{P , T , N , M}(p , deepcopy(p) , u₀)
+    end
+    """
+    (p::StaticDiscrepancyWrapper)(x)
+
+Callable obj for discrepancy value , after evaluation returns problem to its previous state  
+"""
+(p::StaticDiscrepancyWrapper)(x)  = discrepancy(x , p)
+    """
+    (p::StaticResidualWrapper)(x)
+
+Vector function for inverse problem residuals 
+"""
+(p::StaticResidualWrapper)(x) = residual(x , p  )
+    """
+    (p::StaticResidualWrapper)(r , x)
+
+Can be used in-place to fill residauls vector 
+"""
+(p::StaticResidualWrapper)(r , x) = residual!(r , x , p  )
+
+    """
+    (p::StaticEvaluatedWrapper)(x)
+
+Returns evaluated temperature distribution, can be used for sensitivity analysis 
+"""
+(p::StaticEvaluatedWrapper)(x) = evaluated(x , p  )
+    (p::StaticEvaluatedWrapper)(r , x) = evaluated!(r , x , p  )
+
     """
     default_state(p::StaticProblemWrapper)
 
-Returns StaticProblemWrapper to its initial state 
+ReturnsStaticDiscrepancyWrapper to its initial state 
 """
-function default_state(p::StaticProblemWrapper)
-        #update_all_optimizables!(p.problem_shadow , p.u₀) # refreshes the values of parameters without solving the direct problem 
-        #solve_direct_problem!(p.problem_shadow) # solves the direct problem 
-        #fill_residual!(p.problem_shadow ) # fills residual matrix 
+function default_state(p::AbstractStaticWrapper)
+        # update_all_optimizables!(p.problem_shadow , p.u₀) # refreshes the values of parameters without solving the direct problem 
+        # solve_direct_problem!(p.problem_shadow) # solves the direct problem 
+        # fill_residual!(p.problem_shadow ) # fills residual matrix 
         discrepancy!(p.u₀ , p.problem_shadow)
     end
     """
@@ -961,19 +998,18 @@ Evaluates scalar discrepancy function on input vector 'x' but
 if `is_specific` is true (default) returns total discrepancy divided 
 by the total number of residual points 
 """
-function discrepancy(x , p::StaticProblemWrapper; is_specific::Bool = true)
+function discrepancy(x , p::AbstractStaticWrapper; is_specific::Bool = true)
         loss=discrepancy!(x , p.problem_shadow) 
         !is_specific && (loss *= residual_length(p.problem))
         default_state(p)
         return loss
     end
-    function residual(p::StaticProblemWrapper , x::AbstractVector{T}) where {T}
-        return residual!(
-                        Vector{T}(undef , residual_length(p.problem) ), 
-                        p ,
-                        x)
-    end
-    function residual!(r::AbstractVector , p::StaticProblemWrapper , x)
+
+    residual(x::AbstractVector{T} , p::AbstractStaticWrapper) where {T} = residual!(
+                                            Vector{T}(undef , residual_length(p.problem) ), 
+                                             x , p)
+
+    function residual!(r::AbstractVector ,   x  , p::AbstractStaticWrapper)
         discrepancy!(x , p.problem_shadow)
         copyto!(r , extract_weighted_residual_vector(p.problem_shadow ))
         default_state(p)
@@ -981,37 +1017,166 @@ function discrepancy(x , p::StaticProblemWrapper; is_specific::Bool = true)
     end
 
 
-# Inverse problems descriptive stats 
-    function ip_covariance(spw::StaticProblemWrapper , u)
-        #probs = deepcopy(p)
-        f = x-> discrepancy( x , spw)
-        N = residual_length(spw.problem_shadow)
-        σ = evaluate_loss(spw.problem_shadow)
-        Σ  = inv( FiniteDiff.finite_difference_hessian(f , u ) )
-        P = length(u)
-        Cov = Σ * σ
-        s = Vector{eltype(Σ)}(undef, P)
-        @inbounds for i in 1:P 
-            s[i] = Σ[i,i]
+    function evaluated(x::AbstractVector{T} , p::AbstractStaticWrapper) where {T}
+        return evaluated!(
+                        Vector{T}(undef , residual_length(p.problem) ), 
+                        x , p)
+    end
+    function evaluated!(t_measured::AbstractVector ,   x  , p::AbstractStaticWrapper)
+        discrepancy!(x , p.problem_shadow)
+        copyto!(t_measured , extract_evaluated_vector(p.problem_shadow ))
+        default_state(p)
+        return t_measured
+    end
+
+    """
+    fdif_hessian( p::AbstractInverseProblem , u::T) where T
+
+Hessian matrix using FiniteDiff package
+"""
+function fdif_hessian( p::AbstractInverseProblem , u::T) where T 
+        M = optimizable_parnumber(p)
+        @assert length(u)==M "Length of u must be the same as the number of th optimizable parameters $(M)"
+        H = Matrix{eltype(T)}(undef, (M , M))
+        fdif_hessian!(H , p , u)
+        return H
+    end
+    fdif_hessian!(H::AbstractMatrix , p::AbstractInverseProblem , u) = fdif_hessian!(H , StaticDiscrepancyWrapper(p , u))
+    fdif_hessian!(H , spw::StaticDiscrepancyWrapper ) = FiniteDiff.finite_difference_hessian!(H  , spw , spw.u₀ )
+
+
+        """
+        fdif_jacobian( p::AbstractInverseProblem , u::T) where T
+
+    Jacobian matrix of the problem using FiniteDiff package 
+    """
+    function fdif_jacobian( p::AbstractInverseProblem , u::T) where T 
+            M = optimizable_parnumber(p)
+            N = residual_length(p)
+            @assert length(u)==M "Length of u must be the same as the number of th optimizable parameters $(M)"
+            J = Matrix{eltype(T)}(undef, (N , M))
+            fdif_jacobian!(J , p , u)
+            return J
         end
-        return (;std = s , Cov = Cov , Σ = Σ , σ = σ , N = N)
+    fdif_jacobian!(J::AbstractMatrix , p::AbstractInverseProblem , u) = fdif_jacobian!(J , StaticResidualWrapper(p , u))
+
+    fdif_jacobian!(J::AbstractMatrix  , srw::Union{StaticResidualWrapper , StaticEvaluatedWrapper})  = FiniteDiff.finite_difference_jacobian!(J , srw , srw.u₀)
+
+    function fdif_sensitivity( p::AbstractInverseProblem , u::T) where T 
+            M = optimizable_parnumber(p)
+            N = residual_length(p)
+            @assert length(u)==M "Length of u must be the same as the number of th optimizable parameters $(M)"
+            J = Matrix{eltype(T)}(undef, (N , M))
+            fdif_sensitivity!(J , p , u)
+            return J
+        end
+    fdif_sensitivity!(J::AbstractMatrix , p::AbstractInverseProblem , u) = fdif_jacobian!(J , StaticEvaluatedWrapper(p , u))
+
+
+    # approximate hessian functions 
+    """
+    fdif_approximate_hessian!(H, p::AbstractInverseProblem , u::T) where T
+
+Function for approximate Hessian J'J , J is weighted residuals Jacobian 
+"""
+function fdif_approximate_hessian!(H, p::AbstractInverseProblem , u::T) where T 
+        J = fdif_jacobian(p , u)
+        mul!(H , transpose(J) , J)
+        return H
     end
+    fdif_approximate_hessian( p::AbstractInverseProblem , u::T) where T = fdif_approximate_hessian!(Matrix{eltype(T)}(undef , ntuple(_->length(u) , 2)), p , u) 
+# Inverse problems descriptive stats 
+    """
+    ip_covariance(ip::AbstractInverseProblem , u)
 
-    #=
+Function evaluates several quantities on post-processing
+"""
+function ip_covariance(p::AbstractInverseProblem , u::T; use_approximate_hessian::Bool = true ) where T <: AbstractVector
 
-    function extract_diag(m::AbstractMatrix)
-        N = size(m , 1)
-        @assert N==size(m, 2) "Matrix must be square"
-        return [m[i , i] for i in 1:N]
+        N = residual_length(p)
+        σ = evaluate_loss(p)
+        P = optimizable_parnumber(p)
+        @assert length(u) == P "Vector  `u` length should be equal to the number of optimizable variables $(P)" # parameters number
+        J = Matrix{eltype(T)}(undef, (N , P))
+        fdif_jacobian!(J , p , u)
+        H = Matrix{eltype(T)}(undef, (P , P)) # approximate jacobian 
+        if use_approximate_hessian
+            mul!(H , transpose(J) , J)
+        else
+            fdif_hessian!(H , p , u)
+        end
+        #=try 
+            cholesky!(H)
+        catch  er 
+            warning(er)
+        end=#
+        Σ = H\I 
+        Cov =Σ * σ
+        s = @view Cov[diagind(Cov)]
+
+        return (;std = s , Cov = Cov , H = H , Σ =H , σ = σ , N = N , J = J)
     end
+    autocorrelation_analysis(p::ParallelInverseProblems{TP , N}) where {TP , N}= ntuple(N) do i 
+                                                                                    autocorrelation_analysis(p.problems[i])
+                                                                                end
+    function autocorrelation_analysis(p::SingleInverseProblem{DT , TN, N}) where {DT, TN, N}
+        rw , r , cwr , cr=ntuple(_->Vector{DT}(undef, N) , 4)
+        lgs = collect(0:(N - 1)) # autocorrelation lags 
+        stat_eltype = NamedTuple{ (:weighted , :unweighted) ,
+                                    Tuple{
+                                        NamedTuple{(:dubin_watson, :integral_test , :autocor), Tuple{DT, DT , Vector{DT}}}, 
+                                        NamedTuple{(:dubin_watson, :integral_test , :autocor), Tuple{DT, DT , Vector{DT}}}
+                                        }
+                                }
 
-    =#
+        stats = Vector{stat_eltype}(undef , TN)
+        for (i,(w, uw)) in enumerate(zip(eachcol(extract_weighted_residual_vector(p)) , eachcol(p.residual)))
+            copyto!(rw , w )
+            copyto!(r  , uw)
+            autocor!(cwr , rw , lgs)
+            autocor!(cr , r ,  lgs)
+            weighted_stats = (dubin_watson = dubin_watson(rw) ,  integral_test = integral_cor_test(cwr)  , autocor = copy(cwr))
+            unweighted_stats = (dubin_watson = dubin_watson(r) ,  integral_test = integral_cor_test(cr)  , autocor = copy(cr) )
+            stats[i] = (weighted = weighted_stats , unweighted = unweighted_stats)
+        end
+        return stats
+    end
+    function dubin_watson(y)
+        ssqr = sumsqr(y)
+        s = zero(eltype(y))
+        for i in 2:length(y)
+            s+=(y[i] - y[i-1])^2
+        end
+        return s/ssqr
+    end
+    function integral_cor_test(cor)
+        return sumsqr(view(cor , 2 : length(cor)))/sumsqr(cor)
+    end
+    function ljungbox(r::AbstractVector{D}) where D
+        ""
+        n = length(r)
+        h = 2:Int(round(log(n)))
+        acor = autocor(r , 1:maximum(h))
+        
+        p_value = Vector{D}(undef,length(h))
+        
+        for (i, h_i) in enumerate(h)
+            Q = zero(D)
+            for k = 1 : h_i
+                Q +=  (acor[k]^2)/(n - k)
+            end
+            Q *= (n - 1) * (n + 1)
+        #df = (degrees_of_freedom > 0) ?  (h - degrees_of_freedom) : h # Adjust as needed with p
+            p_value[i] = ccdf(Chisq(h_i), Q)
+        end    
 
+        return p_value
+    end
     @recipe function f(m::OptimizableVariable)
         return (m.p)
     end
     include("problem_ensemble_functions.jl")
-    include("hdf5_data.jl")
+    include("hdf5_interface.jl")
     
 end ##end_of_module
 
