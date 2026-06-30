@@ -1,5 +1,5 @@
- const DC = DataConnector
-    const WP = DataConnector.WinPos
+const DC = DataConnector
+const WP = DataConnector.WinPos
 
     function WP.export_to_hdf5(inv_problem::SingleInverseProblem,
 		 	fullfilename::String ; 
@@ -29,7 +29,9 @@
             end
     end
     function WP.export_to_hdf5(inv_problem::SingleInverseProblem , 
-                                group::HDF5.Group; add_serialized::Bool = true)
+                                group::HDF5.Group; 
+                                add_serialized::Bool = true, 
+                                add_all_stats::Bool = true)
 
         group_setup = WP._delete_if_overwrite_or_create_group!(group , "setup" , true)
         WP.try_write_struct_to_hdf5(group_setup , inv_problem)
@@ -54,7 +56,7 @@
         add_direct_problem(inv_problem , group , add_serialized = add_serialized)    
         
        add_serialized && add_serialized_to_hdf5(inv_problem , group , INVERSE_PROBLEM_HDF5_SERIALIZED_GROUPNAME[] )
-
+       add_all_stats && add_all_stats_to_hdf5(inv_problem , group , ALL_STATS_HDF5_GROUPNAME[] )
     end
     function add_serialized_to_hdf5(data , group ::HDF5.Group , name::String = ""  )
             if length(name) == 0

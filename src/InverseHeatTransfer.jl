@@ -28,12 +28,15 @@ module InverseHeatTransfer
    
     const SupportedFlagType{N} = Union{Bool, AbstractVector{Bool}, NTuple{N,Bool}} where N
     const OPTIMIZABLE_VARIABLES_NAMES = (:λ , :C , :q_up , :q_dwn , :T₀ , :dλdT)
+
     const INVERSE_PROBLEM_HDF5_SERIALIZED_GROUPNAME = Ref("inverse_problem_serialized")
     const INVERSE_PROBLEM_HDF5_GROUPNAME = Ref("inverse_problem")
+    const ALL_STATS_HDF5_GROUPNAME = Ref("statistics")
+
     include("optimizable_variables.jl")
 
     # OptimizableVariable implementatio around ScaledPolynomial
-    const OVS = OptimizableVariable{N, DT, P,  B, V} where {N, DT, P<: ScaledPolynomial,  B, V}
+    const OVS = OptimizableVariable{N, DT, P,  B, V} where {N, DT, P <: ScaledPolynomial,  B, V}
         """
         OptimizableVariable(p::Q  ; lb::Union{Nothing , T , NTuple{N,T}, StaticVector{N,T}} = nothing, 
                                             ub::Union{Nothing , T , NTuple{N,T}, StaticVector{N,T}} = nothing, 
@@ -487,6 +490,12 @@ function fill_starting_vectors(p::SingleInverseProblem{DT}) where DT
         return (; x₀ = v , lb = lb , ub = ub)
     end
 
+    function extract_current_solution_vector!(u , p::SingleInverseProblem{DT , TN, N, ProblemType , CV , RG , DV, O , ON}) where {DT , TN, N, ProblemType , CV , RG , DV, O , ON}
+        copyto!(u , Iterators.flatten(
+
+        )
+        )
+    end
     """
     constraints_violation_loss(p::SingleInverseProblem)
 
@@ -972,20 +981,29 @@ autocorrelation_analysis(p::ParallelInverseProblems{TP , N}; is_unweighted::Bool
         return p_value
     end
 
-    sensitivity_analysis(p::AbstractInverseProblem , u) = sensitivity_analysis(fdif_sensitivity(p , u) , p)
+    sensitivity_analysis_statistics(p::AbstractInverseProblem , u) = sensitivity_analysis_statistics(fdif_sensitivity(p , u) )
     # 
-    function sensitivity_analysis(J , u)
-        #F = 
+    function sensitivity_analysis_statistics(J)
+        H = transpose(J)*J
+        return (
+            T = t_optimality_information(H),
+            D = d_optimality_information(H), 
+            K = k_optimality_information(H)
+
+            )
     end
-    function t_optimality_information(F)
-        trace()
-    end
-    function d_optimality(J)
-        log(det(transpose(J) * J)) 
-    end
-    function k_optimality(J)
-        cond((transpose(J) * J))
-    end
+
+    t_optimality_sensitivity(J) = sumsqr(J)
+    t_optimality_information(H) = sum(diag(H))
+ 
+    d_optimality_information(H) = log(det(H))
+    d_optimality_sensitivity(J) = log(det(cholesky(transpose(J)*J)))
+
+
+    k_optimality_information(H::AbstractMatrix) = cond(H)
+    k_optimality_sensitivity(J::AbstractMatrix) = cond(J)^2
+
+
     @recipe function f(m::OptimizableVariable)
         return (m.p)
     end

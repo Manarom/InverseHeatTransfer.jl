@@ -33,13 +33,9 @@ begin
 	using CSV
 	using FiniteDiff
 	using LinearAlgebra
+	using StatsBase, BenchmarkTools
+	using Distributions
 end
-
-# ╔═╡ cc2826a1-d6bf-4025-9ef3-2c5e7a15ff85
-using StatsBase, BenchmarkTools
-
-# ╔═╡ 8a523c14-a56b-42d4-9cf5-4bc63c59acea
-using Distributions
 
 # ╔═╡ 5807712b-5d26-49c8-ab65-dac167ebad7b
 begin 
@@ -225,7 +221,7 @@ is_data_loaded && @htl("""
 """)
 
 # ╔═╡ 62069546-44fb-4a77-986d-f03624719e29
-md" ## Physical properties setup"
+md" ## Physical properties"
 
 # ╔═╡ a46970c8-7c91-4795-83a9-41c56a7ca399
 md""" ### Compare to reference $(@bind show_passport CheckBox(default = true))"""
@@ -318,7 +314,7 @@ if is_data_loaded
 end
 
 # ╔═╡ 2b3a1a65-8d3c-424e-a6cf-0e96646795f4
-md" ### refit $(@bind is_fit_on CheckBox(default = false))"
+md" ### Refit $(@bind is_fit_on CheckBox(default = false))"
 
 # ╔═╡ 3432fabd-911b-4370-af86-c396cbc7bbab
 md" #### Individual settings for each problem $(@bind is_individual_settings CheckBox(false))"
@@ -339,6 +335,9 @@ md"""
 
 # ╔═╡ 5e5b27d1-fdc8-451d-a4f0-93f33adbcf76
 md" Display residuals $(@bind residuals_type Select([:weighted , :unweighted , :both] , default = :both))"
+
+# ╔═╡ 5d4b49c0-1d0f-41b5-b359-30c033fc8544
+input_table
 
 # ╔═╡ 2a1ca349-3732-443e-bc48-5be611a5d91f
 md"""
@@ -405,9 +404,6 @@ md"""### Click to resave file $(@bind resave_file Button("resave"))"""
 
 # ╔═╡ 9cd8c4c8-7d11-4fb0-92d5-439702aa9496
 md" ### OPTIMIZATION "
-
-# ╔═╡ fc5258aa-6c29-4847-863e-3348bc9760e9
-sin.((0.1,2.0))
 
 # ╔═╡ 70e2c8f2-d896-4773-8280-d391d9975307
 function extract_diag(m::AbstractMatrix)
@@ -700,6 +696,22 @@ function descriptive_stats_table(p)
 		title ="Simple descriptive statistics")
 end
 
+# ╔═╡ 544c4618-5b5e-4b25-a916-a43fc2e05913
+function sensitivity_stats_table(probs , u)
+	out = IHT.sensitivity_analysis_statistics(probs , u)
+	tbl = Matrix{Any}(undef, (length(out) , 2))
+	for (i , f_i) in enumerate(pairs(out)) 
+		tbl[i , 1] = "$(first(f_i))-optimality" 
+		tbl[i , 2] = last(f_i) 
+	end
+	
+	return pretty_table( 
+		HTML , 
+		tbl ,
+		column_labels = ["name"  , "value"] ,
+		title ="Optimality criteria")
+end
+
 # ╔═╡ e83d394a-f06f-48de-a664-aad82e4361fc
 function regression_stats_table(stats , u; α = 1.96)
 	std_d = stats.std
@@ -720,9 +732,6 @@ function regression_stats_table(stats , u; α = 1.96)
 		title ="Optimization variables ")
 
 end
-
-# ╔═╡ 01ee5f36-c4e3-432e-bdcb-77196561d3c5
-#@benchmark IHT.ip_covariance($parallel_probls, $res.u)
 
 # ╔═╡ baaf2f95-9529-4829-a8fa-0724fd21b78e
 function autocorrelation_stats_table(autocor_stats; is_unweighted::Bool = false)
@@ -915,14 +924,16 @@ begin
 					)
 		optp = OptimizationProblem(opt_fun, start, parallel_probls, lb = lb, ub = ub , maxiters=pso_iters )
 		res = solve(optp, optimizer())
-		IHT.discrepancy!(res.u, parallel_probls)
+		disc_before = IHT.discrepancy!(res.u, parallel_probls)
 		if is_after_fit
 			new_start = res.u
 			disc_before = IHT.discrepancy!(new_start, parallel_probls)
 			optp2= OptimizationProblem(opt_fun, new_start, parallel_probls , lb = lb, ub = ub , maxiters=pso_iters)
 			res = solve(optp2, NLopt.LN_BOBYQA())
 			disc_after = IHT.discrepancy!(res.u, parallel_probls)
-			disc_before - disc_after
+		else
+			disc_after = 0
+			
 		end
 	else
 		res = nothing
@@ -973,11 +984,14 @@ begin
 		auto_cor_stats_unweighted = IHT.autocorrelation_analysis(parallel_probls , is_unweighted = true)
 		simple_stats_table = descriptive_stats_table(parallel_probls)
 		reg_result_table = regression_stats_table(stats , res.u)
+
+		sensitivity_table = sensitivity_stats_table(parallel_probls , res.u)
 	else
 		stats = nothing
 		auto_cor_stats_weighted = nothing
 		simple_stats_table = nothing 
 		reg_result_table = nothing
+		sensitivity_table = nothing 
 	end
 	(autocor_weighted_stats_table , autocor_unweighted_stats_table)  = if auto_cor_stats_weighted != nothing
 		(
@@ -1007,16 +1021,19 @@ begin
 end
 
 # ╔═╡ b81ed1ca-cf5d-40e3-8eaf-903d720ef43e
-!isnothing(simple_stats_table) &&  simple_stats_table
+simple_stats_table
 
 # ╔═╡ eaa0040f-ca36-420b-ae74-d557806114c6
 reg_result_table
 
 # ╔═╡ c7cc981a-b8bd-495f-a214-8696de49ee10
-!isnothing(autocor_weighted_stats_table) && autocor_weighted_stats_table
+autocor_weighted_stats_table
 
 # ╔═╡ ecb7cb75-3257-448a-8bcd-7d4160343fdc
-!isnothing(autocor_unweighted_stats_table) && autocor_unweighted_stats_table
+autocor_unweighted_stats_table
+
+# ╔═╡ 8cbe7294-bc96-4386-bf8c-205aa4633f4d
+sensitivity_table
 
 # ╔═╡ f2943cf8-ffb9-4065-a272-1f344488dd0f
 begin 
@@ -1046,7 +1063,7 @@ begin
 	
 	xlabel!(p_fit_lam, "Temperature, ᵒC")
 	ylabel!(p_fit_lam, "Thermal conductivity, W/(m*K)")
-	title!(p_fit_lam, "Fitted VS measured")
+	#title!(p_fit_lam, "Fitted VS measured")
 
 	# residuals
 	
@@ -1100,12 +1117,12 @@ begin
 		ylabel!(p_distr, "Temperature, ᵒC")
 		# plotting jacobians 
 		local_minima = !isnothing(res) ?  res.u : IHT.fill_starting_vectors(parallel_probls).x₀
-		
-		J = IHT.fdif_jacobian(inv_probl , local_minima) 
-		for (i , c) in enumerate(eachcol(J))
-			plot!(p_jac_plot_tuple[p_n] , c,  label = "β$(i)" )
+		if length(local_minima) > 0 
+			J = IHT.fdif_jacobian(inv_probl , local_minima) 
+			for (i , c) in enumerate(eachcol(J))
+				plot!(p_jac_plot_tuple[p_n] , c,  label = "β$(i)" )
+			end
 		end
-
 		title!(p_jac_plot_tuple[p_n] , "Problem $(p_n)" )
 			
 		# plotting residuals
@@ -1213,9 +1230,6 @@ md"""
 --------------
 $p_jac_plot
 """
-
-# ╔═╡ 118f6126-1231-4f0d-86f9-439a07a7808e
-stats
 
 # ╔═╡ dd8fb4fa-fa67-4e26-988d-3ede79bc9540
 if use_l_curve
@@ -1367,36 +1381,16 @@ if is_write_file
 	"✅ Data selection saved to hdf5-file $(ff_name) at $(Dates.format(now(), "HH:MM:SS"))"
 end
 
-# ╔═╡ 6c47eae7-8c2c-4d01-b19d-f7467860b3a5
-s2 = IHT.ip_covariance(parallel_probls, res.u)
+# ╔═╡ ea619c49-c928-494d-827f-185b9137f27e
+IHT.coeffs(parallel_probls.problems[1].optimizable.λ)
 
-# ╔═╡ 3ff54db7-c0bf-45a6-89cf-935a3d6582bd
-plot(s2.J)
-
-# ╔═╡ 249b1648-3a00-466b-bd41-b8841205e94f
-IHT.fdif_gradient!(fill(0.0 , 4) ,  res.u , parallel_probls)
-
-# ╔═╡ ec73336f-4483-42ee-9b7d-f9c8c3e05ba9
-IHT.fdif_sensitivity(parallel_probls , [15.0 , 10.0  , 8.0 , 7.0])
-
-# ╔═╡ 16d8c591-c546-4523-807d-c1061b4330a7
-plot(IHT.fdif_jacobian(parallel_probls , res.u))
-
-# ╔═╡ 3ce1b2a4-d4c7-4d2d-a91d-c128dfe2a276
-transpose(IHT.fdif_jacobian(parallel_probls , res.u)) * collect(IHT.extract_weighted_residual_vector(parallel_probls ))
-
-# ╔═╡ 901fc3a8-01bc-4e06-b61e-232adfd8cb4c
-IHT.fdif_gradient(parallel_probls , res.u)
-
-# ╔═╡ 27a6e446-1796-47c5-91d5-5bfcc6d796c4
-plot(IHT.fdif_jacobian(parallel_probls.problems[1] , res.u))
+# ╔═╡ 2c692ea0-c6d7-4872-9d8d-f1c501e734ec
+parallel_probls
 
 # ╔═╡ Cell order:
 # ╟─a17fe1fe-5542-454b-b45e-942ac52b6f1a
-# ╠═cc2826a1-d6bf-4025-9ef3-2c5e7a15ff85
-# ╠═8a523c14-a56b-42d4-9cf5-4bc63c59acea
-# ╠═5807712b-5d26-49c8-ab65-dac167ebad7b
-# ╠═2bfb4e52-6248-4832-aca1-98ba58959bff
+# ╟─5807712b-5d26-49c8-ab65-dac167ebad7b
+# ╟─2bfb4e52-6248-4832-aca1-98ba58959bff
 # ╟─3b1c3b0a-558e-4987-bf16-072963e455cf
 # ╟─2db7cd7e-3d1a-4533-b0de-27188300565b
 # ╟─db671921-13dc-497b-81e5-dcb4da0695f9
@@ -1425,7 +1419,7 @@ plot(IHT.fdif_jacobian(parallel_probls.problems[1] , res.u))
 # ╟─eb755603-1eda-4182-a026-e9b163e78ae3
 # ╟─97618f0c-52ae-4772-b5b7-5512ea44af09
 # ╟─baffb68a-fb52-4bac-b484-4a215108aaed
-# ╠═c8cda804-9a2a-40c9-aa91-7a48500e85ff
+# ╟─c8cda804-9a2a-40c9-aa91-7a48500e85ff
 # ╟─538487b4-b2fc-42c2-ba69-663b2ca5b768
 # ╟─8345302e-0b9d-4208-9a66-3d9f32903b39
 # ╟─5843fcfb-4e0e-480d-b263-e3f3ad6a7ac3
@@ -1465,6 +1459,8 @@ plot(IHT.fdif_jacobian(parallel_probls.problems[1] , res.u))
 # ╟─9464897c-8591-4fe3-aa24-9c710a37f7b6
 # ╟─042ea29b-63dd-43d0-a20f-68807c5f7cd4
 # ╟─5f6f0710-4943-4fb4-b56a-251f74ce584d
+# ╟─8cbe7294-bc96-4386-bf8c-205aa4633f4d
+# ╟─5d4b49c0-1d0f-41b5-b359-30c033fc8544
 # ╟─2a1ca349-3732-443e-bc48-5be611a5d91f
 # ╟─d02ec3fd-1b0d-4bc3-92e9-adedc8bf2c8c
 # ╟─0a0324df-430f-4ac0-857b-4da6a7dca138
@@ -1474,25 +1470,24 @@ plot(IHT.fdif_jacobian(parallel_probls.problems[1] , res.u))
 # ╟─eb70f6d9-301f-4e0f-91a2-0e911b1a6dd9
 # ╟─a8f5cc07-b2bd-445c-8797-ffe78a25641b
 # ╟─10f7c083-a697-4b7e-87ea-de2791ed1a30
-# ╠═3f8c5c6a-f902-4b1e-abc1-7b572c8d2505
-# ╠═90c287a9-5719-4495-9a3a-c5ac21817cb3
-# ╠═ccbd5672-7385-4740-8e9f-d46a7afa8753
-# ╠═fe228354-5f3f-433d-9f8b-7d888e9c5ecb
-# ╠═f3e24d8a-e35d-41de-92e6-0df290d3503c
+# ╟─3f8c5c6a-f902-4b1e-abc1-7b572c8d2505
+# ╟─90c287a9-5719-4495-9a3a-c5ac21817cb3
+# ╟─ccbd5672-7385-4740-8e9f-d46a7afa8753
+# ╟─fe228354-5f3f-433d-9f8b-7d888e9c5ecb
+# ╟─f3e24d8a-e35d-41de-92e6-0df290d3503c
 # ╟─4c9a5a5f-5839-4211-b561-7539dfa74a7a
 # ╟─fc79d398-03d0-4f75-a777-41e2e27fee5e
 # ╠═1318f293-f606-4a9f-8896-853b87c0665d
-# ╠═6cd83678-860c-41c8-b3cd-007725f9e01d
-# ╠═f2943cf8-ffb9-4065-a272-1f344488dd0f
-# ╟─ffeafacd-2b98-48c0-b840-297fb51f5e54
+# ╟─6cd83678-860c-41c8-b3cd-007725f9e01d
+# ╟─f2943cf8-ffb9-4065-a272-1f344488dd0f
+# ╠═ffeafacd-2b98-48c0-b840-297fb51f5e54
 # ╟─ea412a80-0bf7-4ac6-9b90-8530a4c26008
 # ╟─23902c7d-5973-4868-8488-e0c7634573c4
 # ╟─6800ae42-c5b1-4d1e-84fb-a03015bf138f
 # ╟─c4053281-7cd4-4590-b004-b4ca43771094
-# ╟─9cd8c4c8-7d11-4fb0-92d5-439702aa9496
+# ╠═9cd8c4c8-7d11-4fb0-92d5-439702aa9496
 # ╠═e9e9e16d-0b2c-45ce-aa5b-cdcda6b143f1
 # ╠═0c2cf1d2-cb4d-4efa-881c-434784a92366
-# ╟─fc5258aa-6c29-4847-863e-3348bc9760e9
 # ╟─70e2c8f2-d896-4773-8280-d391d9975307
 # ╟─bce5f7ae-49c5-4520-a0f6-6215e5078674
 # ╟─dd8fb4fa-fa67-4e26-988d-3ede79bc9540
@@ -1516,18 +1511,11 @@ plot(IHT.fdif_jacobian(parallel_probls.problems[1] , res.u))
 # ╟─4b8ddfc0-ed4f-4b66-b752-fa075d348608
 # ╟─04ad22b9-e474-41ed-bc87-7dbf9a2b1dcc
 # ╟─3b9e739c-9519-4efa-b2da-cac5451d55d3
-# ╠═f799c1f9-ebc2-4fdb-839e-ee721ab9b8f5
+# ╟─f799c1f9-ebc2-4fdb-839e-ee721ab9b8f5
+# ╠═544c4618-5b5e-4b25-a916-a43fc2e05913
 # ╠═e83d394a-f06f-48de-a664-aad82e4361fc
-# ╠═6c47eae7-8c2c-4d01-b19d-f7467860b3a5
-# ╠═118f6126-1231-4f0d-86f9-439a07a7808e
-# ╠═01ee5f36-c4e3-432e-bdcb-77196561d3c5
-# ╠═3ff54db7-c0bf-45a6-89cf-935a3d6582bd
-# ╠═249b1648-3a00-466b-bd41-b8841205e94f
-# ╠═ec73336f-4483-42ee-9b7d-f9c8c3e05ba9
-# ╠═16d8c591-c546-4523-807d-c1061b4330a7
-# ╠═3ce1b2a4-d4c7-4d2d-a91d-c128dfe2a276
-# ╠═901fc3a8-01bc-4e06-b61e-232adfd8cb4c
-# ╠═27a6e446-1796-47c5-91d5-5bfcc6d796c4
-# ╟─baaf2f95-9529-4829-a8fa-0724fd21b78e
-# ╟─b32b35a1-f31c-428f-a9ab-d640f2be496e
+# ╠═baaf2f95-9529-4829-a8fa-0724fd21b78e
+# ╠═b32b35a1-f31c-428f-a9ab-d640f2be496e
 # ╟─9c4936fd-25d6-4760-85f5-38aba54f1800
+# ╠═ea619c49-c928-494d-827f-185b9137f27e
+# ╠═2c692ea0-c6d7-4872-9d8d-f1c501e734ec
