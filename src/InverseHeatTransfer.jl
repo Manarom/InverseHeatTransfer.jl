@@ -90,10 +90,27 @@ module InverseHeatTransfer
         ub_coeffs(ov::OVS)  =  ScaledPolynomials.coeffs(ov.ub)
 
         derivative!(ov_der::OVS, ov::OVS) = ScaledPolynomials.derivative!(ov_der.p, ov.p)
+
+        """
+    ov_covariance(ov::OptimizableVariable{N, DT, P, B, V} , cov , τ)  where {N, DT, P <: ScaledPolynomial, B, V}
+
+Returns the covariance matrix of OV evaluated on vectgor τ , cov is coefficients covariance matrix 
+provided externally  
+"""
+function  ov_covariance(ov::OptimizableVariable{N, DT, P, B, V} , cov , τ )  where {N, DT, P <: ScaledPolynomial, B, V}
+            vander_matrix = ScaledPolynomials.vander(deepcopy(ov.p) , τ)
+            return vander_matrix * cov * transpose(vander_matrix)
+        end
         """
         create_index_mapping(optimizable)
 
     Used to create mapping of optimization variables vector to OptimizableVariable's Tuple
+    each element of index mapping Tuple contains indices of particular optimizable variable 
+    e.g. λ parameters in the input parameters vector provided by the optimizer, e.g.:
+
+    If the optimization problem is stated for `λ` and `C` and e.g. `λ` has `3` parameters 
+    and `C` has `4` parameters , than the input optimizer state vector has `7` parameters
+    index mapping is `( 1:3 , 4:7)`
     """
     function create_index_mapping(optimizable)
                 cursor = 1 # updated variables counter 
@@ -398,8 +415,23 @@ function SingleInverseProblem(
             return nothing
     end
 
-    residual_length(::SingleInverseProblem{DT, TN, N} ) where {DT , TN, N} = N * TN
+        """
+        residual_length(::SingleInverseProblem{DT, TN, N} ) where {DT , TN, N}
 
+    The length of residuals as if it is a single vector 
+    """
+    residual_length(::SingleInverseProblem{DT, TN, N} ) where {DT , TN, N} = N * TN
+        """
+        optimizable_functions_number(::SingleInverseProblem{DT, TN, N , ProblemType , CV , RG , DV, O, ON }) where {DT, TN, N , ProblemType , CV , RG , DV, O, ON }
+
+    Total number of fucntions to be optimized 
+    """
+    optimizable_functions_number(::SingleInverseProblem{DT, TN, N , ProblemType , CV , RG , DV, O, ON }) where {DT, TN, N , ProblemType , CV , RG , DV, O, ON } = ON
+        """
+        solve_direct_problem!(p::SingleInverseProblem)
+
+    Solves direct problem 
+    """
     solve_direct_problem!(p::SingleInverseProblem) = solve_problem!(p.direct_problem)
 
 
@@ -418,19 +450,20 @@ function SingleInverseProblem(
             is_λ_optimizable(p) && modify_λ_derivative!(p)
             return nothing
         end
-#= 
-looks like version using ntuple is faster than `Unrolled`
-    @unroll function _modify_optimizables(optimizables , index_mapper::D{V} , x) where V
-        @unroll for i  in 1 : V
-                (ov, r) = (optimizables[i] , index_mapper[i])
-                #modify!(ov, view(x , r))
-                modify!(ov, x , r)
-            end
-    end
-=#
-    optimizable_parnumber(p::SingleInverseProblem) = sum(optimizable_parnumber, p.optimizable)
+    """
+    optimizable_parnumber(p::SingleInverseProblem)
 
-    is_λ_optimizable(p::SingleInverseProblem) = haskey(p.optimizable,:λ)
+Total number of parameters to be modified during th eoptimization
+"""
+optimizable_parnumber(p::SingleInverseProblem) = sum(optimizable_parnumber, p.optimizable)
+"""
+    optimizable_function_names(::SingleInverseProblem{DT, TN, N , ProblemType , CV , RG , DV, O}) where {DT, TN, N , ProblemType , CV , RG , DV, O}
+
+Returns names of functions included in the optimizable variables 
+"""
+optimizable_functions_names(::SingleInverseProblem{DT, TN, N , ProblemType , CV , RG , DV, O}) where {DT, TN, N , ProblemType , CV , RG , DV, O} = fieldnames(O)
+    
+is_λ_optimizable(p::SingleInverseProblem) = haskey(p.optimizable,:λ)
 
     function modify_λ_derivative!(p::SingleInverseProblem) 
         derivative!(p.optimizable.dλdT, p.optimizable.λ)
@@ -490,12 +523,6 @@ function fill_starting_vectors(p::SingleInverseProblem{DT}) where DT
         return (; x₀ = v , lb = lb , ub = ub)
     end
 
-    function extract_current_solution_vector!(u , p::SingleInverseProblem{DT , TN, N, ProblemType , CV , RG , DV, O , ON}) where {DT , TN, N, ProblemType , CV , RG , DV, O , ON}
-        copyto!(u , Iterators.flatten(
-
-        )
-        )
-    end
     """
     constraints_violation_loss(p::SingleInverseProblem)
 
@@ -642,10 +669,29 @@ function discrepancy!(x , pp::ParallelInverseProblems{TP, N}) where {TP , N}
                 )
     end
     optimizable_parnumber(p::ParallelInverseProblems) = optimizable_parnumber(first(p.problems))
+    optimizable_functions_number(p::ParallelInverseProblems) = optimizable_functions_number(first(p.problems))
+    optimizable_functions_names(p::ParallelInverseProblems) = optimizable_functions_names(first(p.problems))
+
     const ALL_REGULARIZATION_TYPES = subtypes(AbstractRegularization)
     const ALL_COVARIANCE_TYPES = subtypes(AbstractCovariance)
 
 
+    """
+    extract_current_solution_vector!(u , p::SingleInverseProblem)
+
+Returns current solution state 
+"""
+function extract_current_solution_vector!(u , p::SingleInverseProblem) 
+        copyto!(u , 
+            Iterators.flatten(
+                Iterators.map(fview_coeffs, p.optimizable)
+            )
+        )
+        return u
+    end
+    extract_current_solution_vector!(u , p::ParallelInverseProblems) = extract_current_solution_vector!(u , first(p.problems))
+    extract_current_solution_vector(p::SingleInverseProblem{DT}) where DT = extract_current_solution_vector!(Vector{DT}(undef , optimizable_parnumber(p)) , p)
+    extract_current_solution_vector(p::ParallelInverseProblems) = extract_current_solution_vector(first(p.problems))
         """
         extract_residual_vector(p::SingleInverseProblem)
 
@@ -721,7 +767,8 @@ function discrepancy!(x , pp::ParallelInverseProblems{TP, N}) where {TP , N}
 
 
     for wrapper_type in (:StaticDiscrepancyWrapper , :StaticResidualWrapper , :StaticEvaluatedWrapper)
-        @eval struct $wrapper_type{P , T, N , M} <: AbstractStaticWrapper{P,T,N,M}
+
+            @eval struct $wrapper_type{P , T, N , M} <: AbstractStaticWrapper{P,T,N,M}
             problem::P
             problem_shadow::P
             u₀::T 
@@ -808,6 +855,9 @@ function discrepancy(x , p::AbstractStaticWrapper; is_specific::Bool = true)
         return t_measured
     end
 
+    ## Bunch of functions to evaluate the Jacobian , Hessian , sensitivity and gradient using FiniteDiff 
+    # based on StaticWrapper structures, which are callable warppers around the problem restoring their 
+    # state 
     """
     fdif_hessian( p::AbstractInverseProblem , u::T) where T
 
@@ -887,37 +937,126 @@ function fdif_approximate_hessian!(H , u::T ,  p::AbstractInverseProblem) where 
         return H
     end
     fdif_approximate_hessian( p::AbstractInverseProblem , u::T) where T = fdif_approximate_hessian!(Matrix{eltype(T)}(undef , ntuple(_->length(u) , 2)) , u , p) 
+
+# this makes versions of fdif functions when calling solely on the problem , the central point of local 
+# is taken from the current state of the problem 
+    for f in (:fdif_gradient , :fdif_hessian , :fdif_jacobian , :fdif_sensitivity , :fdif_approximate_hessian)
+        @eval $f(p::AbstractInverseProblem) = $f(p , extract_current_solution_vector(p))
+        f! = Symbol(String(f)*"!")
+        @eval $f!(a , p::AbstractInverseProblem) = $f!(a , extract_current_solution_vector(p) , p)
+    end
+
 # Inverse problems descriptive stats 
     """
     ip_covariance(ip::AbstractInverseProblem , u)
 
-Function evaluates several quantities on post-processing
+Function evaluates several quantities on post-processing , bu default uses approximate hessian 
+J'*J but if `use_approximate_hessian` is false than uses full hessian, when there is more than 
+one optimizable function this flag sticked to `true` 
 """
-function ip_covariance(p::AbstractInverseProblem , u::T; use_approximate_hessian::Bool = true ) where T <: AbstractVector
+function ip_covariance(p::AbstractInverseProblem , u::T ; use_approximate_hessian::Bool = true ) where T <: AbstractVector
 
         N = residual_length(p)
-        σ = evaluate_loss(p)
+        
         P = optimizable_parnumber(p)
         @assert length(u) == P "Vector  `u` length should be equal to the number of optimizable variables $(P)" # parameters number
-        J = Matrix{eltype(T)}(undef, (N , P))
-        fdif_jacobian!(J ,  u , p)
-        H = Matrix{eltype(T)}(undef, (P , P)) # approximate jacobian 
         if use_approximate_hessian
-            mul!(H , transpose(J) , J)
-        else
-            fdif_hessian!(H  , u , p)
-        end
-        #=try 
-            cholesky!(H)
-        catch  er 
-            warning(er)
-        end=#
-        Σ = H\I 
-        Cov =Σ * σ
-        s = @view Cov[diagind(Cov)]
+            J = Matrix{eltype(T)}(undef, (N , P))
+            fdif_jacobian!(J ,  u , p)
+            return ip_approximate_covariance(J , p , u)
+        else # using 
 
-        return (;std = s , Cov = Cov , H = H , Σ =H , σ = σ , N = N , J = J)
+        end
+
     end
+function ip_approximate_covariance(J::AbstractMatrix{T} , p::AbstractInverseProblem , u) where T
+        OVN = optimizable_functions_number(p) # total number of optimization variables (some of them has no optimizable parameters)
+        OVnames = optimizable_functions_names(p)
+        N = residual_length(p)
+        σ = evaluate_loss(p)
+        p_i = isa(p , SingleInverseProblem) ? p : first(p.problems) # taking problem 
+        (OVN > 1) && (use_approximate_hessian = true) # frocing to use approximate hessian if there is more than two optimization variables 
+        out = NamedTuple{OVnames}(
+            ntuple(OVN) do i
+            P_i = optimizable_parnumber(p_i.optimizable[i])
+            (P_i <= 0) && return nothing
+            H = Matrix{T}(undef, (P_i , P_i)) # approximate jacobian 
+            _J = @view J[: , p_i.index_mapper[i]] # taking only part of jacobian 
+            mul!(H , transpose(_J) , _J)    
+            (_regression_covariance(H , σ)... , N = N , J = _J , u = u[p_i.index_mapper[i]])
+        end)
+        return out
+end
+function ip_hessian_covariance(H , p::AbstractInverseProblem , u)
+        σ = evaluate_loss(p)
+        fdif_hessian!(H  , u , p)
+        return (_regression_covariance(H , σ)... , u=u) 
+end
+function _regression_covariance(H , σ) 
+
+    Σ = H\I 
+    Cov =Σ * σ
+    s = @view Cov[diagind(Cov)] 
+    return (;std = s , Cov = Cov , H = H , Σ = H , σ = σ )
+end
+
+struct IPCovariance{S , ST , IsAp , N}
+    stats::S
+    function IPCovariance(p::AbstractInverseProblem ; use_approximate_hessian::Bool = true)
+        _stats = ip_covariance(p , use_approximate_hessian = use_approximate_hessian)
+        stats = filter(t->!isnothing(t) , _stats)
+        new{typeof(stats) , typeof(first(stats)) , use_approximate_hessian , length(stats)}(stats)
+    end
+    function IPCovariance(stats::NamedTuple ; use_approximate_hessian::Bool = true)
+        _stats = filter(t->!isnothing(t) , stats)
+        new{typeof(_stats) , typeof(first(_stats)) , use_approximate_hessian , length(_stats)}(_stats)
+    end
+end
+function Base.getproperty(c::IPCovariance{S , ST , IsAp , N} , p::Symbol) where {S , ST ,  IsAp , N} 
+    if hasfield(IPCovariance , p)
+        getfield(c , p)
+    elseif hasfield(S , p)
+        getfield(c.stats , p)
+    elseif hasfield(ST , p)
+        NamedTuple{fieldnames(S)}(
+            ntuple(N) do i 
+                s_i = c.stats[i]
+                getfield(s_i , p)
+            end
+        )
+    else
+        error("There is no such field $(p)")
+    end
+end
+
+ip_covariance(p::AbstractInverseProblem; kwargs...) = ip_covariance(p , extract_current_solution_vector(p); kwargs...)
+
+has_function_name(::IPCovariance{S} , n::Symbol) where S = hasfield(S , n)
+
+confidence_bounds(p::AbstractInverseProblem ,  τ ; kwargs...) = confidence_bounds(p , IPCovariance(p) , τ ; kwargs...)
+confidence_bounds(p::ParallelInverseProblems , cov::IPCovariance ,  τ ; kwargs...) = confidence_bounds(first(p.problems) , cov , τ ; kwargs...)
+
+"""
+    confidence_bounds(p::SingleInverseProblem  , cov::IPCovariance , τ::V ) where V <: AbstractVector
+
+Function evaluates confidence bounds for all optimizable variables associated with the inverse problem `p` 
+`cov` is the inverse problem covariance object , τ is the vector of independent variable values ,  
+"""
+function confidence_bounds(p::SingleInverseProblem  , cov::IPCovariance , τ::V ; α::Union{Tuple , Float64} = 1.96) where V <: AbstractVector #
+    # {DT , TN , N , ProblemType , CV , RG , DV , O , ON , IM}
+    # {S , ST , IsAp , N}
+    names = filter(n -> has_function_name(cov , n), optimizable_functions_names(p) )# names of all optimizable function 
+    N = length(names)
+    _α =  isa(α , Tuple) ? α : ntuple(Returns(α) , N )
+    NamedTuple{names}( 
+        ntuple(N) do  i
+            n = names[i]
+            ov = getfield( p.optimizable , n)
+            c = getproperty(cov , n)
+            confidence_bounds(ov , c.Cov , τ; α = _α[i])
+        end
+    )
+end
 
     """
     autocorrelation_analysis(p::ParallelInverseProblems{TP , N}; is_unweighted::Bool = false) where {TP , N}
@@ -974,23 +1113,41 @@ autocorrelation_analysis(p::ParallelInverseProblems{TP , N}; is_unweighted::Bool
                 Q +=  (acor[k]^2)/(n - k)
             end
             Q *= (n - 1) * (n + 1)
-        #df = (degrees_of_freedom > 0) ?  (h - degrees_of_freedom) : h # Adjust as needed with p
+        # df = (degrees_of_freedom > 0) ?  (h - degrees_of_freedom) : h # Adjust as needed with p
             p_value[i] = ccdf(Chisq(h_i), Q)
         end    
 
         return p_value
     end
 
-    sensitivity_analysis_statistics(p::AbstractInverseProblem , u) = sensitivity_analysis_statistics(fdif_sensitivity(p , u) )
+    function sensitivity_analysis_statistics(p::AbstractInverseProblem , u) 
+
+        J = fdif_sensitivity(p , u)
+        # stats = ip_approximate_covariance(J , p , u)
+
+        OVN = optimizable_functions_number(p) # total number of optimization variables (some of them has no optimizable parameters)
+        OVnames = optimizable_functions_names(p)
+
+        p_i = isa(p , SingleInverseProblem) ? p : first(p.problems) # taking problem 
+        
+        out = NamedTuple{OVnames}(
+            ntuple(OVN) do i
+            !is_optimizable(p_i.optimizable[i]) && return nothing 
+            _J = @view J[: , p_i.index_mapper[i]] # taking only part of jacobian 
+            sensitivity_analysis_statistics(_J)
+        end)
+
+        return out
+    end
     # 
-    function sensitivity_analysis_statistics(J)
+    sensitivity_analysis_statistics(p::AbstractInverseProblem) = sensitivity_analysis_statistics(p , extract_current_solution_vector(p))
+    function sensitivity_analysis_statistics(J::AbstractMatrix)
         H = transpose(J)*J
         return (
             T = t_optimality_information(H),
             D = d_optimality_information(H), 
             K = k_optimality_information(H)
-
-            )
+        )
     end
 
     t_optimality_sensitivity(J) = sumsqr(J)
@@ -999,16 +1156,223 @@ autocorrelation_analysis(p::ParallelInverseProblems{TP , N}; is_unweighted::Bool
     d_optimality_information(H) = log(det(H))
     d_optimality_sensitivity(J) = log(det(cholesky(transpose(J)*J)))
 
-
-    k_optimality_information(H::AbstractMatrix) = cond(H)
-    k_optimality_sensitivity(J::AbstractMatrix) = cond(J)^2
-
+    k_optimality_information(H) = cond(H)
+    k_optimality_sensitivity(J) = cond(J)^2
 
     @recipe function f(m::OptimizableVariable)
         return (m.p)
     end
     include("problem_ensemble_functions.jl")
     include("hdf5_interface.jl")
+    #include("tables_data.jl")
     
+#########################----STATISTICS---TABLES----######################
+
+    function autocorrelation_stats_table(p::AbstractInverseProblem; is_unweighted::Bool = false)
+        s = autocorrelation_analysis(p , is_unweighted=is_unweighted)
+        return _autocorrelation_stats_table(s, is_unweighted=is_unweighted)
+    end
+    """
+        autocorrelation_stats_table(autocor_stats; is_unweighted::Bool = false)
+
+    Creates args ready for table data creation 
+    """
+    function _autocorrelation_stats_table(autocor_stats; is_unweighted::Bool = false)
+        N = length(autocor_stats) # number of problems 
+        a1 = autocor_stats[1][1]
+        fn = filter(f->isa(getfield(a1 , f) , Number) , fieldnames(typeof(a1))) # tests_names 
+        M  = length(fn)
+        tbl_vect = Any[]
+        for (i , a_i) in enumerate(autocor_stats)
+            # a_i - problem stats (vector, each element - corresponds to )
+            TPnumber = length(a_i) # length of  	
+            tbl_i = Matrix{Any}(undef, (TPnumber ,  M + 1) ) # i'th thermocouple table
+            for tp_i in 1 : TPnumber #over couples
+                a_i_t = a_i[tp_i] #
+                row = Any[]
+                push!(row, "P$(i) : T$(tp_i)")
+                for (j , f_cur) in enumerate(fn)
+                    push!(row , getfield(a_i_t, f_cur))
+                end
+                tbl_i[tp_i , :] = row
+            end
+            push!(tbl_vect , tbl_i)
+        end
+        col_names = Vector{String}(undef,  M + 1)
+        col_names[1] = "names"
+        for i in 1 : M 
+            col_names[i + 1] = "$(fn[i]) "
+        end	
+        tbb = vcat(tbl_vect...)
+        return return (tbb , ( column_labels = col_names ,  
+                                title = "Autocor. tests for $(is_unweighted ? "unweighted res." : "weighted res.")"))
+    end
+    const AVAILABLE_STATS_TABLES =(:loss_distribution , :descriptive , :regression , :autocorrelation_weighted , :autocorrelation_unweighted ,   :sensitivity)
+
+    function stats_table(p::AbstractInverseProblem , stats_type::Symbol; kwargs...)
+        if (stats_type == :autocorrelation_weighted) || (stats_type == :autocorrelation)
+            autocorrelation_stats_table(p ;is_unweighted = false, kwargs...)
+        elseif stats_type == :autocorrelation_unweighted
+            autocorrelation_stats_table(p ;is_unweighted = true, kwargs...)
+        elseif stats_type == :descriptive
+            descriptive_stats_table(p)
+        elseif stats_type == :regression
+            regression_stats_table(p  ; kwargs...)
+        elseif stats_type == :sensitivity 
+            sensitivity_stats_table(p ; kwargs...)
+        elseif stats_type == :loss_distribution  
+            loss_distribution_table(p ; kwargs...)
+        else
+            error("got unsupported stats type $stats_type ")
+        end
+    end
+
+    function descriptive_stats_table(p::AbstractInverseProblem)
+
+        ips = IPstats(p)
+        fn = fieldnames(IPstats)
+        N  = length(fn)
+        tbl = Matrix{Any}(undef, (N , 2) )
+
+        for i in 1:N 
+            f_cur = fn[i]
+            tbl[i , 1] = String(f_cur)
+            tbl[i , 2] = getfield(ips , f_cur)
+        end
+
+        return (tbl ,
+            (
+                column_labels = ["name", "value"] ,
+                title ="Simple descriptive statistics")
+            )
+    end
+
+    regression_stats_table(p::AbstractInverseProblem;kwargs...) = regression_stats_table(ip_covariance(p);kwargs...)
+    """
+    regression_stats_table(stats , u; α = 1.96)
+
+Regression analysis statistics table , if some of stats elements is `nothing` 
+it propagates further 
+"""
+function regression_stats_table(stats::NamedTuple ; α = 1.96)
+    N  = length(stats)   
+    names = fieldnames(typeof(stats))
+    
+    NamedTuple{names}(
+        ntuple(N) do i 
+            st = stats[i]
+            isnothing(st) && return nothing
+            std_d = st.std
+            NN = length(std_d)
+            # @assert N == length(u) "Incorrect u size"
+            tbl = Matrix{Any}(undef, (NN , 4) )
+            for ii in 1 : NN 
+                tbl[ii , 1] = "$(names[i]):β$(ii)"
+                tbl[ii , 2] = st.u[ii]
+                tbl[ii , 3] = std_d[ii]
+                tbl[ii , 4] = α * std_d[ii]
+            end
+
+            return (
+                tbl ,
+                (column_labels = ["name", "value" ,  "std",  "d" ] ,
+                title ="Optimization variable $(names[i]) "
+                )
+            )
+        end
+    )    
+    end
+    """
+    sensitivity_stats_table(p::AbstractInverseProblem)
+
+Sensitivity table with optimal criteria
+"""
+sensitivity_stats_table(p::AbstractInverseProblem) = sensitivity_stats_table(p , extract_current_solution_vector(p))
+    function sensitivity_stats_table(probs::AbstractInverseProblem , u)
+        out = sensitivity_analysis_statistics(probs , u)
+        tbl = Matrix{Any}(undef, (length(out) , 2))
+        for (i , f_i) in enumerate(pairs(out)) 
+            tbl[i , 1] = "$(first(f_i))-optimality" 
+            tbl[i , 2] = last(f_i) 
+        end
+        
+        return ( 
+            tbl ,
+            (column_labels = ["name"  , "value"] ,
+            title ="Optimality criteria")
+        )
+    end
+    """
+    all_stats_tables(p::AbstractInverseProblem)
+
+Returns named tuple of all avaliable stat tables data 
+"""
+function all_stats_tables(p::AbstractInverseProblem)
+        return NamedTuple{AVAILABLE_STATS_TABLES}(
+            ntuple(length(AVAILABLE_STATS_TABLES)) do i 
+             stats_table(p , AVAILABLE_STATS_TABLES[i] )
+        end
+        )
+    end
+    function data_selection_table(all_data::DataSelectorsGroup)
+        table_data = Matrix{Any}(undef , (length(all_data.d) , 6))
+        for (i , (k , d)) in enumerate(all_data.d)
+            table_data[i, 1]  = "P$(i)"
+            table_data[i, 2]  = k
+            table_data[i, 3] = 1e3 * DataConnector.thickness(d)
+            table_data[i, 4] = [ Pair(v,k) for (k,v) in zip(1e3 * DataConnector.sensors_locations(d) , DataConnector.selected_names(d))]
+            table_data[i, 5] = DataConnector.tmin(d)
+            table_data[i, 6] = DataConnector.tmax(d)
+        end
+        return (
+                table_data , (column_labels = ["probl", "name"," h" , "Locations","tmin", "tmax"] , 
+							   title ="Sample properties")
+        )
+    end
+    function loss_distribution_table(p::AbstractInverseProblem)
+        loss_table = loss_distribution_matrix(p)
+        PN = isa(p , ParallelInverseProblems) ? length(p.problems) : 1
+	    projects_names = ["P$(i)" for i in 1:PN]
+
+        table_data = hcat(projects_names , [v for v in loss_table]...) 
+        column_labels  =vcat("name", [String(k) for k in keys(loss_table)]...)
+       return (
+                table_data , 
+                (title = "Loss distribution" , 
+                column_labels = column_labels)
+                )
+    end
+
+
+
+    ############################LCURVE_ANALYSIS############################
+
+    
+function l_curve_analysis(p::AbstractInverseProblem , alphas , solver )
+
+	lcurve_probs = deepcopy(p)
+	
+	(_start, _lb, _ub)  =  fill_starting_vectors(lcurve_probs)
+    r = solver(lcurve_probs)
+	sols = fill(r , length(alphas))
+	Threads.@sync for i in 1:length(alphas)
+		 Threads.@spawn begin
+			p_i = deepcopy(lcurve_probs)
+			set_regularization_multiplier!(p_i , alphas[i])
+            sols[i] = solver(p_i)
+		end
+	end
+    cov_loss = similar(alphas)
+	reg_loss = similar(alphas)
+	total_loss = similar(alphas)
+    for (i , r) in enumerate(sols) 
+        discrepancy!(r.u , lcurve_probs)
+        _loss_full = loss_distribution(lcurve_probs)
+        cov_loss[i] = _loss_full.covariance
+        reg_loss[i] = _loss_full.regularization/alphas[i]
+        total_loss[i] = _loss_full.total
+    end
+    return (;alphas = alphas , total_loss = total_loss , cov_loss = cov_loss , reg_loss = reg_loss , sols = sols)
+end
 end ##end_of_module
 

@@ -188,13 +188,13 @@ By default covariance fill cache do nothing
     # trying to implement the lazy iterator over  residuals
     """ResidualIterator{W , PT , CV, N , TN , DT} structure to iterate over residauls as a vector without allocating 
     new vector 
-    W - Val{true} - weighted residuals, unweighted otherwise
-    PT - problem type 
-    CV - porblem covariance type 
-    N - number of time steps 
-    TN - number of residual vector columns 
-    DT - data type 
-    RT - residual matrix eltype 
+        W - Val{true} - weighted residuals, unweighted otherwise
+        PT - problem type 
+        CV - porblem covariance type 
+        N - number of time steps 
+        TN - number of residual vector columns 
+        DT - data type 
+        RT - residual matrix eltype 
     """
     struct ResidualIterator{W , PT , CV, N , TN , DT , RT}
         p::PT

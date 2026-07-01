@@ -151,26 +151,9 @@ end;
 # ╔═╡ 074c47c6-a1ae-4ded-8e64-b40393d7ba4a
 !is_data_loaded && md" there is no such file $(data_selection_fullfile)"
 
-# ╔═╡ 35b5c27e-921f-4fe7-90bc-3b327d9150fe
-if is_data_loaded 
-	
-	
-	table_data = Matrix{Any}(undef , (length(all_data.d) , 6))
-	for (i , (k , d)) in enumerate(all_data.d)
-		table_data[i, 1]  = "P$(i)"
-		table_data[i, 2]  = k
-		table_data[i, 3] = 1e3*DC.thickness(d)
-		table_data[i, 4] = [ Pair(v,k) for (k,v) in zip(1e3*DC.sensors_locations(d) , DC.selected_names(d))]
-		table_data[i, 5] = DC.tmin(d)
-		table_data[i, 6] = DC.tmax(d)
-	end
-
-	input_table = pretty_table(HTML , table_data , column_labels = ["probl", "name"," h" , "Locs","tmin", "tmax"] , top_left_string ="Sample properties")
-
-end
-
 # ╔═╡ 5be15388-cea2-4884-b8de-bff5be64e506
 if is_data_loaded	
+	
 	PN = length(all_data.d)
 	projects_names = ["P$(i)" for i in 1:PN]
 	
@@ -246,11 +229,23 @@ if !use_cp_table_for_constraints
 	md" **Lower Cp limit** = $(@bind lower_cp_limit confirm(Slider(100.0 : 1e-1 : 10000.0, default = 750.0, show_value = true)))"
 end
 
-# ╔═╡ 8345302e-0b9d-4208-9a66-3d9f32903b39
-md""" Show Cp confidence bounds $(
+# ╔═╡ 558b7123-dd19-4bc0-ad0f-7e23f27e94c8
+@bind cp_y_scale_region PlutoUI.combine() do Child 
+md"""
+	**Figure y-range**
+	
+	``Cp_{min} ``= $(
+		Child(NumberField(100:1e-2:3000 , default=300.0))
+	) \
+	``Cp_{max} `` = $(
+		Child(NumberField(100:1e-2:3000, default=1500.0))
+	)\
+
+	Show Cp confidence bounds $(
 		@bind is_show_cp_conf CheckBox(true)
 	)
-"""
+	"""
+end
 
 # ╔═╡ 0ff89750-2a97-436b-b759-7da1354b2c6f
 md" ## Thermal conductivity setup"
@@ -336,9 +331,6 @@ md"""
 # ╔═╡ 5e5b27d1-fdc8-451d-a4f0-93f33adbcf76
 md" Display residuals $(@bind residuals_type Select([:weighted , :unweighted , :both] , default = :both))"
 
-# ╔═╡ 5d4b49c0-1d0f-41b5-b359-30c033fc8544
-input_table
-
 # ╔═╡ 2a1ca349-3732-443e-bc48-5be611a5d91f
 md"""
 ### Select optimizer $(@bind optimizer Select(OPTIMIZERS, default = OptimizationNLopt.NLopt.LN_BOBYQA)) 
@@ -367,7 +359,7 @@ begin
 	else
 		l_culve_alphas_default_range = range(1e-6 ,10 , 1000)
 	end
-end
+end;
 
 # ╔═╡ eb70f6d9-301f-4e0f-91a2-0e911b1a6dd9
 md"""
@@ -378,7 +370,11 @@ md"""
 """
 
 # ╔═╡ 10f7c083-a697-4b7e-87ea-de2791ed1a30
-md" α = $(10 .^extrema(l_curve_alpha)) " 
+md"""
+#### Regularization multiplier range:
+
+#### α = $(10 ^minimum(l_curve_alpha)) ... $(10 ^maximum(l_curve_alpha))
+""" 
 
 # ╔═╡ fc79d398-03d0-4f75-a777-41e2e27fee5e
 if is_data_loaded 
@@ -386,9 +382,6 @@ if is_data_loaded
 	(Tmin,Tmax) = (lam_T_range[1],lam_T_range[2])
 	Tplot = range(Tmin, Tmax, 100)
 end;
-
-# ╔═╡ ffeafacd-2b98-48c0-b840-297fb51f5e54
-input_table
 
 # ╔═╡ ea412a80-0bf7-4ac6-9b90-8530a4c26008
 md"### Save data to file ? $(@bind is_write_file CheckBox(false))"
@@ -404,13 +397,6 @@ md"""### Click to resave file $(@bind resave_file Button("resave"))"""
 
 # ╔═╡ 9cd8c4c8-7d11-4fb0-92d5-439702aa9496
 md" ### OPTIMIZATION "
-
-# ╔═╡ 70e2c8f2-d896-4773-8280-d391d9975307
-function extract_diag(m::AbstractMatrix)
-	N = size(m , 1)
-	@assert N==size(m, 2) "Matrix must be square"
-	return [m[i , i] for i in 1:N]
-end
 
 # ╔═╡ bce5f7ae-49c5-4520-a0f6-6215e5078674
 includet(joinpath(source_path, "problem_ensemble_functions.jl"))
@@ -650,120 +636,6 @@ begin
 	end
 end;
 
-# ╔═╡ 04ad22b9-e474-41ed-bc87-7dbf9a2b1dcc
-function eval_conf_bounds(st , ov; α = 2.0)
-	@assert length(st.std) == IHT.ScaledPolynomials.parnumber(ov) "Inappropriate size"
-	@warn all(i->i > 0 , st.std) "All elements of std must be greater then zero"
-	
-	c = IHT.ScaledPolynomials.coeffs(ov)
-	v_up = deepcopy(ov)
-	v_low = deepcopy(ov)
-	IHT.ScaledPolynomials.refill!(v_up , @. c + α*sqrt(abs(st.std)))
-	IHT.ScaledPolynomials.refill!(v_low , @. c - α*sqrt(abs(st.std)))
-	return (;up = v_up , low = v_low)
-end
-
-# ╔═╡ 3b9e739c-9519-4efa-b2da-cac5451d55d3
-function covariance(p , u)
-	probs = deepcopy(p)
-	IHT.discrepancy!(u , probs)
-	f(x) = IHT.discrepancy!(x , deepcopy(probs))
-	N = sum([length(p.residual) for p in probs.problems])
-	σ = sum(IHT.evaluate_loss , p.problems)/N#sum([sum(t->t^2 , p.residual) for p in probs.problems])/(N^2)
-	Σ  = inv(FiniteDiff.finite_difference_hessian(f , u ))
-	#@show Σ
-	Cov = Σ * σ
-	s = extract_diag(Cov)
-	return (;std = s , Cov=Cov , Σ = Σ , σ=σ , N=N)
-end
-
-# ╔═╡ f799c1f9-ebc2-4fdb-839e-ee721ab9b8f5
-function descriptive_stats_table(p)
-	ips = IHT.IPstats(p)
-	fn = fieldnames(IHT.IPstats)
-	N  = length(fn)
-	tbl = Matrix{Any}(undef, (N , 2) )
-	for i in 1:N 
-		f_cur = fn[i]
-		tbl[i , 1] = String(f_cur)
-		tbl[i , 2] = getfield(ips , f_cur)
-	end
-
-	return pretty_table( 
-		HTML , 
-		tbl ,
-		column_labels = ["name", "value"] ,
-		title ="Simple descriptive statistics")
-end
-
-# ╔═╡ 544c4618-5b5e-4b25-a916-a43fc2e05913
-function sensitivity_stats_table(probs , u)
-	out = IHT.sensitivity_analysis_statistics(probs , u)
-	tbl = Matrix{Any}(undef, (length(out) , 2))
-	for (i , f_i) in enumerate(pairs(out)) 
-		tbl[i , 1] = "$(first(f_i))-optimality" 
-		tbl[i , 2] = last(f_i) 
-	end
-	
-	return pretty_table( 
-		HTML , 
-		tbl ,
-		column_labels = ["name"  , "value"] ,
-		title ="Optimality criteria")
-end
-
-# ╔═╡ e83d394a-f06f-48de-a664-aad82e4361fc
-function regression_stats_table(stats , u; α = 1.96)
-	std_d = stats.std
-	N = length(std_d)
-	@assert N == length(u) "Incorrect u size"
-	tbl = Matrix{Any}(undef, (N , 4) )
-	for i in 1:N 
-		tbl[i , 1] = "β$(i)"
-		tbl[i , 2] = u[i]
-		tbl[i , 3] = std_d[i]
-		tbl[i , 4] = α * std_d[i]
-	end
-
-	return pretty_table( 
-		HTML , 
-		tbl ,
-		column_labels = ["name","value" ,  "std", "d"] ,
-		title ="Optimization variables ")
-
-end
-
-# ╔═╡ baaf2f95-9529-4829-a8fa-0724fd21b78e
-function autocorrelation_stats_table(autocor_stats; is_unweighted::Bool = false)
-	N = length(autocor_stats) # number of problems 
-	a1 = autocor_stats[1][1]
-	fn = filter(f->isa(getfield(a1 , f) , Number) , fieldnames(typeof(a1))) # tests_names 
-	M  = length(fn)
-	tbl_vect = Any[]
-	for (i , a_i) in enumerate(autocor_stats)
-		# a_i - problem stats (vector, each element - corresponds to )
- 	   	TPnumber = length(a_i) # length of  	
-		tbl_i = Matrix{Any}(undef, (TPnumber ,  M + 1) ) # i'th thermocouple table
-		for tp_i in 1 : TPnumber #over couples
-			a_i_t = a_i[tp_i] #
-			row = Any[]
-			push!(row, "P$(i) : T$(tp_i)")
-			for (j , f_cur) in enumerate(fn)
-				  push!(row , getfield(a_i_t, f_cur))
-			end
-			tbl_i[tp_i , :] = row
-		end
-		push!(tbl_vect , tbl_i)
-	end
-	col_names = Vector{String}(undef,  M + 1)
-	col_names[1] = "names"
-	for i in 1 : M 
-		col_names[i + 1] = "$(fn[i]) "
-	end	
-	tbb = vcat(tbl_vect...)
-	return pretty_table(HTML,tbb  , column_labels=col_names ,  title = "Autocor. tests for $(is_unweighted ? "unweighted res." : "weighted res.")") 
-end
-
 # ╔═╡ b32b35a1-f31c-428f-a9ab-d640f2be496e
 function result_table(res)
 	isnothing(res) && return nothing
@@ -781,6 +653,32 @@ function result_table(res)
 	tbl[end , 2] = res.original
 	pretty_table(HTML , tbl ,  column_labels=["name" , "value"] , title="Optimizer statistics")
 end
+
+# ╔═╡ de0fa1f1-f75f-4bbc-ae15-63805b9111de
+pretty_t(data ;kwargs...) = pretty_table(HTML , data ;kwargs...)
+
+# ╔═╡ 956a31d2-7060-492a-941d-f9765bb6350e
+pretty_t(d::Tuple) = pretty_t(first(d);last(d)...)
+
+# ╔═╡ e518c7a6-dd75-44aa-99dd-96b673846e6f
+function pretty_t(d::NamedTuple)
+	fl = [isnothing(t) for t in d]
+	d_i = filter(t->!isnothing(t) , d)
+	N_i = fieldnames(typeof(d_i))
+	return NamedTuple{N_i}(
+	ntuple(length(d_i)) do i 
+		pretty_t(d_i[i])
+	end
+	) 
+end
+
+# ╔═╡ ff426ca1-f248-4afb-8248-7c18171535b5
+pretty_t(p::IHT.AbstractInverseProblem,flag;kwargs...) = begin 
+	pretty_t(IHT.stats_table(p , flag ; kwargs...))
+end
+
+# ╔═╡ 35b5c27e-921f-4fe7-90bc-3b327d9150fe
+is_data_loaded ? pretty_t(IHT.data_selection_table(all_data)) : nothing
 
 # ╔═╡ 9c4936fd-25d6-4760-85f5-38aba54f1800
 function rep_tup(a , N::Int)
@@ -886,11 +784,6 @@ begin
 	end
 end;
 
-# ╔═╡ fe228354-5f3f-433d-9f8b-7d888e9c5ecb
-begin 
-	IHT.set_regularization_multiplier!(parallel_probls , reg_multiplier)
-end
-
 # ╔═╡ 6cd83678-860c-41c8-b3cd-007725f9e01d
 begin 
 	
@@ -922,18 +815,21 @@ begin
 		opt_fun = OptimizationFunction(IHT.discrepancy! , 
 									  grad = IHT.fdif_gradient!
 					)
-		optp = OptimizationProblem(opt_fun, start, parallel_probls, lb = lb, ub = ub , maxiters=pso_iters )
+		optp = OptimizationProblem(opt_fun, start,
+								   parallel_probls, 
+								   lb = lb, ub = ub , maxiters=pso_iters )
 		res = solve(optp, optimizer())
 		disc_before = IHT.discrepancy!(res.u, parallel_probls)
 		if is_after_fit
 			new_start = res.u
 			disc_before = IHT.discrepancy!(new_start, parallel_probls)
-			optp2= OptimizationProblem(opt_fun, new_start, parallel_probls , lb = lb, ub = ub , maxiters=pso_iters)
+			optp2= OptimizationProblem(opt_fun, new_start,
+									   parallel_probls , lb = lb, 
+									   ub = ub , maxiters=pso_iters)
 			res = solve(optp2, NLopt.LN_BOBYQA())
 			disc_after = IHT.discrepancy!(res.u, parallel_probls)
 		else
 			disc_after = 0
-			
 		end
 	else
 		res = nothing
@@ -954,11 +850,6 @@ begin
 	
 end
 
-# ╔═╡ 672119a2-7a47-4813-a2d3-e0c15ee63491
-begin 
-	pretty_table(HTML,hcat(table_data[:,1] , [v for v in loss_table]...) , column_labels  =vcat("name", [String(k) for k in keys(loss_table)]...) , title = "Loss distribution")
-end
-
 # ╔═╡ f0380d5c-ba65-471c-beea-65d766634bc2
 if @isdefined res 
 	refresh_graph
@@ -967,41 +858,34 @@ else
 	nothing
 end
 
-# ╔═╡ 4c9a5a5f-5839-4211-b561-7539dfa74a7a
-begin 
-	refresh_graph
-	
-	IHT.loss_distribution(parallel_probls)
-end
-
 # ╔═╡ 0c2cf1d2-cb4d-4efa-881c-434784a92366
 begin 
 	
 	refresh_graph
 	if is_fit_on && (IHT.optimizable_parnumber(parallel_probls) > 0)
-		stats = IHT.ip_covariance(parallel_probls , res.u)
-		auto_cor_stats_weighted = IHT.autocorrelation_analysis(parallel_probls)
-		auto_cor_stats_unweighted = IHT.autocorrelation_analysis(parallel_probls , is_unweighted = true)
-		simple_stats_table = descriptive_stats_table(parallel_probls)
-		reg_result_table = regression_stats_table(stats , res.u)
-
-		sensitivity_table = sensitivity_stats_table(parallel_probls , res.u)
+		
+		stats = IHT.IPCovariance( IHT.ip_covariance(parallel_probls , res.u))
+		
+		conf_bounds = IHT.confidence_bounds(parallel_probls , stats , Tplot , α = 4.0)
+		
+		all_tables = OrderedDict( [
+			first(p)=>pretty_t(last(p)) for p in  
+			pairs(IHT.all_stats_tables(parallel_probls))
+				  ]...)
+		
+		tables_to_show= []
+		for (k,p) in all_tables
+			if isa(p, NamedTuple)
+				append!(tables_to_show , collect(p_i for p_i in p) )
+			else
+				push!(tables_to_show , p)
+			end
+		end
 	else
 		stats = nothing
-		auto_cor_stats_weighted = nothing
-		simple_stats_table = nothing 
-		reg_result_table = nothing
-		sensitivity_table = nothing 
+		tables_to_show = nothing
+		conf_bounds = nothing
 	end
-	(autocor_weighted_stats_table , autocor_unweighted_stats_table)  = if auto_cor_stats_weighted != nothing
-		(
-		   autocorrelation_stats_table(auto_cor_stats_weighted),
-		 	autocorrelation_stats_table(auto_cor_stats_unweighted , is_unweighted=true)
-		)
-	else
-		(nothing , nothing)
-	end
-
 end;
 
 # ╔═╡ 538487b4-b2fc-42c2-ba69-663b2ca5b768
@@ -1011,29 +895,19 @@ begin
 	if show_passport
 		Plots.plot!(c_plot ,c_x ,c_y ./density , label = "Reference",marker = :circle , markersize  = 8; plot_common_args... )
 	end
-	if !isnothing(stats) && is_show_cp_conf && is_optimize_c && !is_optimize_lambda
+	if is_show_cp_conf && !isnothing(stats) &&  is_optimize_c && !is_optimize_lambda
 
-			_o = eval_conf_bounds(stats ,C_poly , α = 2.0)
-			plot!(c_plot , Tplot , _o.up.(Tplot)/density , label = nothing)
-			plot!(c_plot , Tplot , _o.low.(Tplot)/density , fillrange = (_o.up.(Tplot)/density , _o.low.(Tplot)/density) , alpha = 0.3 , label = "±Δ")
+			_o = conf_bounds.C
+			plot!(c_plot , Tplot , _o.ub./density , label = nothing)
+			plot!(c_plot , Tplot , _o.lb./density , fillrange = (_o.ub ./ density , _o.lb ./density) , alpha = 0.3 , label = "±Δ")
 	end
-	c_plot
+	ylims!(c_plot , cp_y_scale_region)
 end
 
-# ╔═╡ b81ed1ca-cf5d-40e3-8eaf-903d720ef43e
-simple_stats_table
-
-# ╔═╡ eaa0040f-ca36-420b-ae74-d557806114c6
-reg_result_table
-
-# ╔═╡ c7cc981a-b8bd-495f-a214-8696de49ee10
-autocor_weighted_stats_table
-
-# ╔═╡ ecb7cb75-3257-448a-8bcd-7d4160343fdc
-autocor_unweighted_stats_table
-
-# ╔═╡ 8cbe7294-bc96-4386-bf8c-205aa4633f4d
-sensitivity_table
+# ╔═╡ a875f371-c2dc-4454-824f-b8caaa677a09
+md""" 
+	$tables_to_show
+	"""
 
 # ╔═╡ f2943cf8-ffb9-4065-a272-1f344488dd0f
 begin 
@@ -1047,16 +921,15 @@ begin
 		f_range =  (d_cur.x .>= Tmin) .& (d_cur.x .<=Tmax)
 		Plots.plot!(p_fit_lam, d_cur.x[f_range],d_cur.y[f_range], label = "Reference",marker = :circle;  plot_common_args...)
 	end
-	if !isnothing(stats) && is_show_lambda_conf && is_optimize_lambda && !is_optimize_c
+	if !isnothing(conf_bounds) && is_show_lambda_conf && is_optimize_lambda
 
-			_ol = eval_conf_bounds(stats ,λ.p , α = 1.0)
+			_ol = conf_bounds.λ
 			plot!(p_fit_lam , Tplot , 
-				  _ol.up.(Tplot) , label = nothing)
+				  _ol.ub , label = nothing)
 			plot!(p_fit_lam , Tplot , 
-				  _ol.low.(Tplot) , 
-				  fillrange = (_ol.up.(Tplot) , 
-							   _ol.low.(Tplot)
-							  ) , 
+				  _ol.lb , 
+				  fillrange = (_ol.ub , 
+							   _ol.lb) , 
 				  alpha = 0.3 , 
 				  label = "±Δ")
 	end
@@ -1326,14 +1199,16 @@ if  use_l_curve
 	Plots.scatter!(l_curve_plot , l_curve_cov_loss , l_curve_reg_loss ; scale_args..., plot_common_args... , label = nothing)
 	xlabel!(l_curve_plot , "Model prediction loss")
 	ylabel!(l_curve_plot , "Regularization loss"  )
-	
+else
+	l_curve_plot = nothing
+	reg_plot = nothing
 end;
 
 # ╔═╡ 90c287a9-5719-4495-9a3a-c5ac21817cb3
-use_l_curve && l_curve_plot
+l_curve_plot
 
 # ╔═╡ ccbd5672-7385-4740-8e9f-d46a7afa8753
-use_l_curve && reg_plot
+reg_plot
 
 # ╔═╡ c2564f33-dcf5-45fe-a462-70fe105bcf0a
 if false 
@@ -1381,11 +1256,12 @@ if is_write_file
 	"✅ Data selection saved to hdf5-file $(ff_name) at $(Dates.format(now(), "HH:MM:SS"))"
 end
 
-# ╔═╡ ea619c49-c928-494d-827f-185b9137f27e
-IHT.coeffs(parallel_probls.problems[1].optimizable.λ)
-
-# ╔═╡ 2c692ea0-c6d7-4872-9d8d-f1c501e734ec
-parallel_probls
+# ╔═╡ 70e2c8f2-d896-4773-8280-d391d9975307
+function extract_diag(m::AbstractMatrix)
+	N = size(m , 1)
+	@assert N==size(m, 2) "Matrix must be square"
+	return [m[i , i] for i in 1:N]
+end
 
 # ╔═╡ Cell order:
 # ╟─a17fe1fe-5542-454b-b45e-942ac52b6f1a
@@ -1421,7 +1297,7 @@ parallel_probls
 # ╟─baffb68a-fb52-4bac-b484-4a215108aaed
 # ╟─c8cda804-9a2a-40c9-aa91-7a48500e85ff
 # ╟─538487b4-b2fc-42c2-ba69-663b2ca5b768
-# ╟─8345302e-0b9d-4208-9a66-3d9f32903b39
+# ╟─558b7123-dd19-4bc0-ad0f-7e23f27e94c8
 # ╟─5843fcfb-4e0e-480d-b263-e3f3ad6a7ac3
 # ╟─d051f5e5-f836-4043-9326-639b40acaf87
 # ╟─16337bb4-438e-4b86-bdc5-b88ef210a960
@@ -1448,19 +1324,13 @@ parallel_probls
 # ╟─c4bb1772-36d2-4963-be39-f53c8e95a29b
 # ╟─33473b7a-e22f-4333-a2f2-374778c0d603
 # ╟─aad5d954-fb91-4a7d-a09e-02105ef3d0f9
-# ╟─672119a2-7a47-4813-a2d3-e0c15ee63491
-# ╟─b81ed1ca-cf5d-40e3-8eaf-903d720ef43e
-# ╟─eaa0040f-ca36-420b-ae74-d557806114c6
-# ╟─c7cc981a-b8bd-495f-a214-8696de49ee10
-# ╟─ecb7cb75-3257-448a-8bcd-7d4160343fdc
+# ╟─a875f371-c2dc-4454-824f-b8caaa677a09
 # ╟─5e5b27d1-fdc8-451d-a4f0-93f33adbcf76
 # ╟─33280e2b-2567-4289-970a-b034ba4c8cd2
 # ╟─a660bf26-5b50-4910-b0ab-8e453623dc1a
 # ╟─9464897c-8591-4fe3-aa24-9c710a37f7b6
 # ╟─042ea29b-63dd-43d0-a20f-68807c5f7cd4
 # ╟─5f6f0710-4943-4fb4-b56a-251f74ce584d
-# ╟─8cbe7294-bc96-4386-bf8c-205aa4633f4d
-# ╟─5d4b49c0-1d0f-41b5-b359-30c033fc8544
 # ╟─2a1ca349-3732-443e-bc48-5be611a5d91f
 # ╟─d02ec3fd-1b0d-4bc3-92e9-adedc8bf2c8c
 # ╟─0a0324df-430f-4ac0-857b-4da6a7dca138
@@ -1473,22 +1343,18 @@ parallel_probls
 # ╟─3f8c5c6a-f902-4b1e-abc1-7b572c8d2505
 # ╟─90c287a9-5719-4495-9a3a-c5ac21817cb3
 # ╟─ccbd5672-7385-4740-8e9f-d46a7afa8753
-# ╟─fe228354-5f3f-433d-9f8b-7d888e9c5ecb
 # ╟─f3e24d8a-e35d-41de-92e6-0df290d3503c
-# ╟─4c9a5a5f-5839-4211-b561-7539dfa74a7a
 # ╟─fc79d398-03d0-4f75-a777-41e2e27fee5e
-# ╠═1318f293-f606-4a9f-8896-853b87c0665d
+# ╟─1318f293-f606-4a9f-8896-853b87c0665d
 # ╟─6cd83678-860c-41c8-b3cd-007725f9e01d
 # ╟─f2943cf8-ffb9-4065-a272-1f344488dd0f
-# ╠═ffeafacd-2b98-48c0-b840-297fb51f5e54
 # ╟─ea412a80-0bf7-4ac6-9b90-8530a4c26008
 # ╟─23902c7d-5973-4868-8488-e0c7634573c4
 # ╟─6800ae42-c5b1-4d1e-84fb-a03015bf138f
 # ╟─c4053281-7cd4-4590-b004-b4ca43771094
-# ╠═9cd8c4c8-7d11-4fb0-92d5-439702aa9496
+# ╟─9cd8c4c8-7d11-4fb0-92d5-439702aa9496
 # ╠═e9e9e16d-0b2c-45ce-aa5b-cdcda6b143f1
 # ╠═0c2cf1d2-cb4d-4efa-881c-434784a92366
-# ╟─70e2c8f2-d896-4773-8280-d391d9975307
 # ╟─bce5f7ae-49c5-4520-a0f6-6215e5078674
 # ╟─dd8fb4fa-fa67-4e26-988d-3ede79bc9540
 # ╟─cf8665e2-07d9-4464-b833-0531205408e9
@@ -1509,13 +1375,10 @@ parallel_probls
 # ╟─dbd6f9d9-4b44-4238-86ca-7cd361545a56
 # ╟─206e1e8f-16f3-4144-8401-c2cbf40c0125
 # ╟─4b8ddfc0-ed4f-4b66-b752-fa075d348608
-# ╟─04ad22b9-e474-41ed-bc87-7dbf9a2b1dcc
-# ╟─3b9e739c-9519-4efa-b2da-cac5451d55d3
-# ╟─f799c1f9-ebc2-4fdb-839e-ee721ab9b8f5
-# ╠═544c4618-5b5e-4b25-a916-a43fc2e05913
-# ╠═e83d394a-f06f-48de-a664-aad82e4361fc
-# ╠═baaf2f95-9529-4829-a8fa-0724fd21b78e
-# ╠═b32b35a1-f31c-428f-a9ab-d640f2be496e
+# ╟─b32b35a1-f31c-428f-a9ab-d640f2be496e
+# ╟─de0fa1f1-f75f-4bbc-ae15-63805b9111de
+# ╟─956a31d2-7060-492a-941d-f9765bb6350e
+# ╟─e518c7a6-dd75-44aa-99dd-96b673846e6f
+# ╟─ff426ca1-f248-4afb-8248-7c18171535b5
 # ╟─9c4936fd-25d6-4760-85f5-38aba54f1800
-# ╠═ea619c49-c928-494d-827f-185b9137f27e
-# ╠═2c692ea0-c6d7-4872-9d8d-f1c501e734ec
+# ╟─70e2c8f2-d896-4773-8280-d391d9975307

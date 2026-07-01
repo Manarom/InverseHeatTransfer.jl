@@ -47,8 +47,8 @@
                                  f1::F1, 
                                  f2::F2) where {P, B <: MVector{N,Bool}, V, F1, F2} where {N,DT}
             # Здесь можно добавить проверки размеров, если нужно
-            lb_violation = MVector{N,DT}(fill(zero(DT) ,  N))
-            ub_violation = MVector{N,DT}(fill(zero(DT) ,  N))
+            lb_violation = MVector{N , DT}(fill(zero(DT) ,  N))
+            ub_violation = MVector{N , DT}(fill(zero(DT) ,  N))
             new{N, DT, P, B, V, F1, F2}(p, flag, lb, ub, iu, il, f1, f2, lb_violation, ub_violation)
         end
     end
@@ -57,7 +57,7 @@
 
     (ov::OV)(x) = ov.p(x)
 
-
+    
     is_optimizable(_) = false
     total_parnumber(::OV{N}) where N = N
     is_optimizable(ov::OV) = any(ov.flag)
@@ -95,13 +95,13 @@ function modify!(ov::OV{N , DT}, x) where {N , DT}
         # copyto!(fview_coeffs(ov), x)
         return nothing
     end
-"""
-    modify!(ov::OV{N , DT}, x , r) where {N , DT}
+    """
+        modify!(ov::OV{N , DT}, x , r) where {N , DT}
 
-Function fills parameters of `ov` marked by ov.flag from 
-x[r], r can be a vector of indices or indices range
-"""
-function modify!(ov::OV{N , DT}, x , r) where {N , DT}
+    Function fills parameters of `ov` marked by ov.flag from 
+    x[r], r can be a vector of indices or indices range
+    """
+    function modify!(ov::OV{N , DT}, x , r) where {N , DT}
         n = optimizable_parnumber(ov)
         nr = length(r)
         nr == 0 && return nothing
@@ -205,10 +205,10 @@ function modify!(ov::OV{N , DT}, x , r) where {N , DT}
     function fixed_diagonal_regularization_loss(ov::OV{N,DT} ) where {N , DT}
 
         loss = zero(DT)
-        avg_coeffs = zero(DT)
+        # avg_coeffs = zero(DT)
         @inbounds @simd for i in 1 : N
             _c = coeffs(ov)[i]
-            #avg_coeffs += _c
+            # avg_coeffs += _c
             loss +=  _c^2.0
         end 
         
@@ -222,10 +222,36 @@ function modify!(ov::OV{N , DT}, x , r) where {N , DT}
 
     extract_all_params(ov::OV) = copy(coeffs(ov))
     extract_optimizable_params(ov::OV) = copy(fview_coeffs(ov))
+    ov_variance(ov::OV , cov , τ ; α::Float64 = 1.96)  = diag(ov_covariance(ov , cov , τ ))
+    function confidence_bounds(ov::OV , cov , τ;  α::Float64 = 1.96)
+        f = ov.(τ)
+        lb = similar(f)
+        v = ov_variance(ov , cov , τ )
+        ub = @. f + α * v
+        lb = @. f - α * v
+        return (; f = f , lb = lb , ub = ub )
+    end
     # interface
     # necessary function for details see the implementation for ScaledPolynomials
+        """
+        coeffs(::OV{N,DT,P}) where {N,DT,P}
+
+    returns the reference to all coefficients of th eoptimizable variable (e.g. polynomial)
+    """
     coeffs(::OV{N,DT,P}) where {N,DT,P}  = error("OptimizableVariable wrappers is not implemenented for $(P) type")
+        """
+        lb_coeffs(::OV{N,DT,P})  where {N,DT,P}
+
+    lower boundary coefficients
+    """
     lb_coeffs(::OV{N,DT,P})  where {N,DT,P}  = error("OptimizableVariable wrappers around $(P) is not implemenented")
+
+        """
+        ub_coeffs(::OV{N,DT,P}) where {N,DT,P}
+
+    upper boundary coefficients 
+    """
     ub_coeffs(::OV{N,DT,P}) where {N,DT,P}  = error("OptimizableVariable wrappers around $(P) is not implemenented")
-    # not necessary
+        # not necessary
     derivative!(::OV, ::OV)  = error("OptimizableVariable wrappers around is not implemented")
+    ov_covariance(::OV{N,DT,P} , cov , τ ) where {N,DT,P} = error("OptimizableVariable wrappers around $(P) is not implemenented")
