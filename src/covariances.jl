@@ -1,7 +1,7 @@
 # covariances loss functions 
     covariance_loss(p::SingleInverseProblem{DT, TN, N,
                         PT , CV  } ) where {DT, TN, N,
-                                            PT , CV <: NoCovariance } = sum(abs2 , p.residual)/(N * TN)
+                                            PT , CV <: NoCovariance } = sum(abs2 , p.residual)#/(N * TN)
     """
         Covariance with diagonal elements provided externally as a function dependent on temperature 
     
@@ -39,7 +39,7 @@
                 loss += (r * r) / p.covariance.σ²[i]
             end
         end
-        return loss/(N * TN)
+        return loss#/(N * TN)
     end
 
 
@@ -101,7 +101,7 @@
            # @show loss
         end
     
-        return loss/(N * TN)
+        return loss#/(N * TN)
    end
     """
     covariance_loss(::SingleInverseProblem)
@@ -153,7 +153,7 @@ By default covariance fill cache do nothing
                 loss += (r * r) / sigma_sq
             end
         end
-        return loss/(N * TN)
+        return loss#/(N * TN)
     end
     """
         Covariance proportional to the value of temperature to take into account relative 
@@ -181,14 +181,14 @@ By default covariance fill cache do nothing
                 loss += (r * r) / sigma_sq
             end
         end
-        return loss/(N * TN)
+        return loss #/(N * TN)
     end
 
 
     # trying to implement the lazy iterator over  residuals
     """ResidualIterator{W , PT , CV, N , TN , DT} structure to iterate over residauls as a vector without allocating 
     new vector 
-        W - Val{true} - weighted residuals, unweighted otherwise
+        W - Val{true} - weighted residuals, unweighted otherwise (for unweighted it is preferable to use just residauls matrix )
         PT - problem type 
         CV - porblem covariance type 
         N - number of time steps 
@@ -224,6 +224,7 @@ By default covariance fill cache do nothing
     _get_weighted_residual_val(iter::ResidualIterator{Val{false}}, i , j) = iter.r[i, j]
     _get_weighted_residual_val(iter::ResidualIterator{Val{true}, PT , CV} , i , j) where {PT , CV <: NoCovariance} = iter.r[i, j]
     _get_weighted_residual_val(iter::ResidualIterator{Val{true}, PT , CV} , i , j) where {PT , CV <:TemperatureDependentDiagonalCovariance}  = iter.r[i , j] / sqrt(iter.p.covariance.cache[i , j])
+    
     function _get_weighted_residual_val(iter::ResidualIterator{Val{true}, PT , CV} , i , j) where {PT , CV <: AR1Covariance{DT}} where DT 
         dt = timestep(iter.p.direct_problem)
         ρ = exp(- dt / iter.p.covariance.τ)

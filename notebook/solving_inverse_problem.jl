@@ -37,6 +37,9 @@ begin
 	using Distributions
 end
 
+# ╔═╡ 8fbcaafc-1345-4179-b149-e6b9f2208eb2
+last_lcurve_suggestion = Ref(-100.0); # this remembers the last result of lcurve analysis
+
 # ╔═╡ 5807712b-5d26-49c8-ab65-dac167ebad7b
 begin 
 
@@ -222,7 +225,7 @@ md" **C(T) parameters number** $(@bind c_basis_degree Select(1:100, default = 4)
 md" **Use table for constraints** $(@bind use_cp_table_for_constraints CheckBox(false))"
 
 # ╔═╡ 97618f0c-52ae-4772-b5b7-5512ea44af09
-!use_cp_table_for_constraints  && md" **Upper Cp limit** = $(@bind upper_cp_limit confirm(Slider(100.0 : 1e-1 : 10000.0, default = 1300.0, show_value = true)))"
+!use_cp_table_for_constraints  ? md" **Upper Cp limit** = $(@bind upper_cp_limit confirm(Slider(100.0 : 1e-1 : 10000.0, default = 1300.0, show_value = true)))" : nothing
 
 # ╔═╡ baffb68a-fb52-4bac-b484-4a215108aaed
 if !use_cp_table_for_constraints 
@@ -232,15 +235,18 @@ end
 # ╔═╡ 558b7123-dd19-4bc0-ad0f-7e23f27e94c8
 @bind cp_y_scale_region PlutoUI.combine() do Child 
 md"""
-	**Figure y-range**
+	**Cp plotting range**
 	
 	``Cp_{min} ``= $(
-		Child(NumberField(100:1e-2:3000 , default=300.0))
-	) \
-	``Cp_{max} `` = $(
-		Child(NumberField(100:1e-2:3000, default=1500.0))
+		Child(NumberField(100:1e-2:3000 , default=500.0))
+	) ``Cp_{max} `` = $(
+		Child(NumberField(100:1e-2:3000, default=1400.0))
 	)\
-
+	``T_{min} ``= $(
+		Child(NumberField(0:1e-2:3000 , default=0.0))
+	)  ``T_{max} `` = $(
+		Child(NumberField(0:1e-2:3000, default=1500.0))
+	)\
 	Show Cp confidence bounds $(
 		@bind is_show_cp_conf CheckBox(true)
 	)
@@ -268,17 +274,23 @@ md" **Use table for constraints** $(@bind use_lam_table_for_constraints CheckBox
 # ╔═╡ 68ed85b2-7308-4ea7-b696-0f1951219592
 @bind lam_y_scale_region PlutoUI.combine() do Child 
 md"""
-	**Figure y-range**
+	**λ plotting range:**
 	
 	``\lambda_{min} ``= $(
 		Child(NumberField(0:1e-2:50,default=0.0))
-	) \
-	``\lambda_{max} `` = $(
+	)   	``\lambda_{max} `` = $(
 		Child(NumberField(0:1e-3:50,default=30.0))
 	)\
-
+	``T_{min} ``= $(
+		Child(NumberField(0:1e-2:3000,default=20.0))
+	)   	``T_{max} `` = $(
+		Child(NumberField(0:1e-3:3000,default=1500.0))
+	) \
 	show confidence bounds $(
 		@bind is_show_lambda_conf CheckBox(true)
+	)
+	compare errors $(
+		@bind is_lambda_error_compare CheckBox(true)
 	)
 	"""
 end
@@ -319,7 +331,7 @@ md"""
 
 
 
-Regularization multiplier α: $(@bind reg_multiplier confirm(NumberField(0.0 : 1e-3 : 1000 , default = 1e-3)))
+### Regularization multiplier α: $(@bind reg_multiplier confirm(NumberField(0.0 : 1e-3 : 1000 , default = 10)))
 """
 
 # ╔═╡ aad5d954-fb91-4a7d-a09e-02105ef3d0f9
@@ -344,6 +356,7 @@ md"addtitional fit $(@bind is_after_fit CheckBox(default = false))"
 
 # ╔═╡ c8cd1797-b631-4fdf-a51f-67e22c86c55a
 md"""
+	-----------------------------
 	### L-curve analysis $(@bind use_l_curve CheckBox(default = false))
 
 	α points number $(@bind l_curve_points_number Select(3:100 , default = 20) )
@@ -355,9 +368,9 @@ md" Use logarithmic scale $(@bind is_l_curve_logscale CheckBox( default = true))
 # ╔═╡ a8f5cc07-b2bd-445c-8797-ffe78a25641b
 begin 
 	if is_l_curve_logscale
-		l_culve_alphas_default_range = range(-4.0 , 2 , 1000)
+		l_culve_alphas_default_range = range(-2.0 , 10 , 10000)
 	else
-		l_culve_alphas_default_range = range(1e-6 ,10 , 1000)
+		l_culve_alphas_default_range = range(1e-2 ,10 , 10000)
 	end
 end;
 
@@ -415,7 +428,8 @@ begin
 	"NIASIT" => 2000.0,
 	"OTM357" => 2530.0,
 	"HAFS" => 1600.0,
-	"BAFS" => 1800.0
+	"BAFS" => 1800.0,
+	"RBSNpassport" => 2700.0
 	
 );
 	md" ### ρ"
@@ -428,6 +442,10 @@ begin
 	"RBSN" =>(;
 		x = Float64.([ 20.0 ,100, 500, 800, 1100, 1500, 2000, 2500]),
 		y = Float64.([690, 810, 1160, 1240, 1250, 1300, 1350, 1450])
+			 ), 
+	"RBSNpassport" =>(;
+		x = Float64.([ 20.0 ,100, 500, 800, 1100]),
+		y = Float64.([690, 810, 1160, 1240, 1250])
 			 ), 
 	"NIASIT" => (;
 		x =  Float64.([20, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100]),
@@ -462,11 +480,16 @@ end
 
 # ╔═╡ 023dc25f-6cf8-4802-83b4-77d1827cd2a7
 begin 
-	L_Dict =Dict( "RBSN" =>(;
-						x = Float64.([ 25, 100, 300, 500, 700, 900, 1100, 1300, 1500, 1600, 1700, 1800, 2000, 2500]),
-						y = Float64.([18, 16, 14,  12,  11,  9,    8,    7,     7,   6,     7,    11, 12, 14])
-					   ),
-									   
+	L_Dict =Dict( 
+		
+"RBSN" =>(;
+				x = Float64.([ 25, 100, 300, 500, 700, 900, 1100, 1300, 1500, 1600, 1700, 1800, 2000, 2500]),
+				y = Float64.([18, 16, 14,  12,  11,  9,    8,    7,     7,   6,     7,    11, 12, 14])
+			   ),
+"RBSNpassport" =>(;
+				x = Float64.([ 25, 100, 300, 500, 700, 900, 1100]),
+				y = Float64.([18, 16, 14,  12,  11,  9,    8])
+			   ),									   
 "NIASIT" =>(;
 	x = Float64.([20, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100]),
 	y = [0.83, 0.88, 0.92, 0.95, 0.98, 1.01,1.05, 1.09,1.13,1.17, 1.2, 1.23]
@@ -809,7 +832,7 @@ bc_plot
 begin 
 	reg_multiplier
 	is_data_ready
-	
+	IHT.set_regularization_multiplier!(parallel_probls , reg_multiplier)
 	if is_fit_on 
 		(start, lb, ub)  =  IHT.fill_starting_vectors(parallel_probls)
 		opt_fun = OptimizationFunction(IHT.discrepancy! , 
@@ -890,18 +913,20 @@ end;
 
 # ╔═╡ 538487b4-b2fc-42c2-ba69-663b2ca5b768
 begin 
-	c_plot = Plots.plot(Tplot,C.(Tplot) ./density, label = "Inverse", xlabel = "Temperature, °C",linecolor = :green , ylabel = "Heat capacity, J/(kg⋅°C)"; plot_common_args...)
+	c_plot_label = is_optimize_c ? "Inverse" : "Reference extrapolation"
+	c_plot = Plots.plot(Tplot,C.(Tplot) ./density, label = c_plot_label, xlabel = "Temperature, °C",linecolor = :green , ylabel = "Heat capacity, J/(kg⋅°C)"; plot_common_args...)
 	
 	if show_passport
 		Plots.plot!(c_plot ,c_x ,c_y ./density , label = "Reference",marker = :circle , markersize  = 8; plot_common_args... )
 	end
-	if is_show_cp_conf && !isnothing(stats) &&  is_optimize_c && !is_optimize_lambda
+	if is_show_cp_conf && !isnothing(stats) &&  is_optimize_c 
 
 			_o = conf_bounds.C
 			plot!(c_plot , Tplot , _o.ub./density , label = nothing)
 			plot!(c_plot , Tplot , _o.lb./density , fillrange = (_o.ub ./ density , _o.lb ./density) , alpha = 0.3 , label = "±Δ")
 	end
-	ylims!(c_plot , cp_y_scale_region)
+	ylims!(c_plot , cp_y_scale_region[1:2]...)
+	xlims!(c_plot , cp_y_scale_region[3:4]...)
 end
 
 # ╔═╡ a875f371-c2dc-4454-824f-b8caaa677a09
@@ -914,12 +939,15 @@ begin
 	refresh_graph
 	problems_number = length(parallel_probls.problems)
 	# plotting fitted values 
-
-	p_fit_lam = Plots.plot(Tplot, λ.(Tplot), label = "Inverse", linewidth = 2,linecolor = :green)
+	lam_plot_label  = is_optimize_lambda ? "Inverse" : "Reference extrapolation"
+	
+	p_fit_lam = Plots.plot(Tplot, λ.(Tplot), label = lam_plot_label, linewidth = 2,linecolor = :green)
 	if haskey(L_Dict, material_name) && show_passport
 		d_cur = L_Dict[material_name]
 		f_range =  (d_cur.x .>= Tmin) .& (d_cur.x .<=Tmax)
-		Plots.plot!(p_fit_lam, d_cur.x[f_range],d_cur.y[f_range], label = "Reference",marker = :circle;  plot_common_args...)
+		pass_T_range = d_cur.x[f_range]
+		λ_pass = d_cur.y[f_range]
+		Plots.plot!(p_fit_lam, pass_T_range , λ_pass, label = "Reference",marker = :circle;  plot_common_args...)
 	end
 	if !isnothing(conf_bounds) && is_show_lambda_conf && is_optimize_lambda
 
@@ -1067,7 +1095,33 @@ begin
 end ;
 
 # ╔═╡ 67763d8f-e1ac-4b1f-978f-4734af1e03ba
-ylims!(p_fit_lam, lam_y_scale_region)
+begin 
+	ylims!(p_fit_lam, lam_y_scale_region[1:2]...)
+	xlims!(p_fit_lam, lam_y_scale_region[3:4]...)
+end
+
+# ╔═╡ 8139f7e4-7e7a-4e4c-81e5-578ea7e4ca6d
+if  !isnothing(conf_bounds) && is_optimize_lambda && is_lambda_error_compare
+	
+	relative_error_plot = plot(;plot_common_args...)
+	error_lam_ident = linear_interpolation(Tplot , conf_bounds.λ.f - conf_bounds.λ.lb)
+	
+	error_lam_interp = linear_interpolation(Tplot , conf_bounds.λ.f - conf_bounds.λ.lb , extrapolation_bc=Line())
+	error_pasp = 100*abs.(λ.(pass_T_range) - λ_pass)./ λ_pass 
+	error_reg = 100 * error_lam_interp.(pass_T_range)./λ.(pass_T_range)
+	bar!(relative_error_plot , pass_T_range ,  error_pasp   , alpha = 0.5 ,  label = "reference error")
+
+	bar!(relative_error_plot , pass_T_range , error_reg , alpha = 0.5 , label = "regression error" , baseline = 0)
+	ylabel!(relative_error_plot , "Relative error, %")
+	xlabel!(relative_error_plot , "Temperature , ᵒC")
+	ylims!(relative_error_plot , (0 , 20))
+end
+
+# ╔═╡ 99ae351b-5a17-4199-9c4b-1b840c50b5d9
+if !isnothing(conf_bounds) && is_optimize_lambda && is_lambda_error_compare 
+	error_tbl = hcat(pass_T_range , error_pasp , error_reg)
+	pretty_table(HTML , error_tbl , column_labels=["Temperature , ᵒC" , "Reference error , %" , "Regression error , %"])
+end
 
 # ╔═╡ 33280e2b-2567-4289-970a-b034ba4c8cd2
 md""" 
@@ -1112,7 +1166,7 @@ if use_l_curve
 	
 	alphas = is_l_curve_logscale ? 10.0 .^alpha_range : alpha_range
 
-	lcurve_probs = IHT.ParallelInverseProblems(Tuple(probls)...)
+	lcurve_probs = deepcopy(parallel_probls)
 	
 	(_start, _lb, _ub)  =  IHT.fill_starting_vectors(lcurve_probs)
 	
@@ -1151,20 +1205,22 @@ if  use_l_curve
 	permute!(l_curve_reg_loss,l_curve_ind)
 	permute!(l_curve_total_loss, l_curve_ind)
 	permute!(alphas,l_curve_ind)
-end
+end;
 
 # ╔═╡ 2614e5ad-0d45-4046-abfd-053dd872c17c
 if use_l_curve
 		best_alf_Index = Main.find_l_corner_index(log10.(l_curve_cov_loss) , log10.(l_curve_reg_loss))
 
 	l_curve_best_alpha = alphas[best_alf_Index]
-
-end
+	last_lcurve_suggestion[] = l_curve_best_alpha
+	
+end;
 
 # ╔═╡ 3f8c5c6a-f902-4b1e-abc1-7b572c8d2505
-if use_l_curve
+if last_lcurve_suggestion[] > 0.0
+	@isdefined l_curve_best_alpha
 	md"""
-	##### L-curve methods suggests to try α = $(l_curve_best_alpha)
+	##### L-curve method suggests to try α = $(last_lcurve_suggestion[])
 	"""
 end
 
@@ -1174,8 +1230,6 @@ if  use_l_curve
 	scale_type = (any(lessem16 , l_curve_cov_loss) || any(lessem16 , l_curve_reg_loss) ) ? :identity : :log10
 
 	scale_args = (xscale = scale_type, yscale = scale_type)
-	
-
 	
 	reg_plot = Plots.scatter(;plot_common_args...)
 	Plots.scatter!(reg_plot , alphas , l_curve_cov_loss , label = "model " ; scale_args... , plot_common_args...)
@@ -1265,6 +1319,7 @@ end
 
 # ╔═╡ Cell order:
 # ╟─a17fe1fe-5542-454b-b45e-942ac52b6f1a
+# ╟─8fbcaafc-1345-4179-b149-e6b9f2208eb2
 # ╟─5807712b-5d26-49c8-ab65-dac167ebad7b
 # ╟─2bfb4e52-6248-4832-aca1-98ba58959bff
 # ╟─3b1c3b0a-558e-4987-bf16-072963e455cf
@@ -1309,6 +1364,8 @@ end
 # ╟─88e8d37d-e4e4-486d-921e-03a74fbf00f2
 # ╟─67763d8f-e1ac-4b1f-978f-4734af1e03ba
 # ╟─68ed85b2-7308-4ea7-b696-0f1951219592
+# ╟─8139f7e4-7e7a-4e4c-81e5-578ea7e4ca6d
+# ╟─99ae351b-5a17-4199-9c4b-1b840c50b5d9
 # ╟─4330cdcd-24fc-459b-8d29-a935c6a7c347
 # ╟─ce3dc022-0f15-41cb-8cd2-2c33b726c482
 # ╟─c8861fa2-9cb3-4349-9ece-eba285c24eab
@@ -1323,6 +1380,7 @@ end
 # ╟─131ceae5-9327-4822-a1d3-f3e2c24ed4c5
 # ╟─c4bb1772-36d2-4963-be39-f53c8e95a29b
 # ╟─33473b7a-e22f-4333-a2f2-374778c0d603
+# ╟─3f8c5c6a-f902-4b1e-abc1-7b572c8d2505
 # ╟─aad5d954-fb91-4a7d-a09e-02105ef3d0f9
 # ╟─a875f371-c2dc-4454-824f-b8caaa677a09
 # ╟─5e5b27d1-fdc8-451d-a4f0-93f33adbcf76
@@ -1338,9 +1396,8 @@ end
 # ╟─c8cd1797-b631-4fdf-a51f-67e22c86c55a
 # ╟─aea6fc8f-5ee2-40a3-aebd-942c45eec0d6
 # ╟─eb70f6d9-301f-4e0f-91a2-0e911b1a6dd9
-# ╟─a8f5cc07-b2bd-445c-8797-ffe78a25641b
 # ╟─10f7c083-a697-4b7e-87ea-de2791ed1a30
-# ╟─3f8c5c6a-f902-4b1e-abc1-7b572c8d2505
+# ╟─a8f5cc07-b2bd-445c-8797-ffe78a25641b
 # ╟─90c287a9-5719-4495-9a3a-c5ac21817cb3
 # ╟─ccbd5672-7385-4740-8e9f-d46a7afa8753
 # ╟─f3e24d8a-e35d-41de-92e6-0df290d3503c
@@ -1353,12 +1410,12 @@ end
 # ╟─6800ae42-c5b1-4d1e-84fb-a03015bf138f
 # ╟─c4053281-7cd4-4590-b004-b4ca43771094
 # ╟─9cd8c4c8-7d11-4fb0-92d5-439702aa9496
-# ╠═e9e9e16d-0b2c-45ce-aa5b-cdcda6b143f1
-# ╠═0c2cf1d2-cb4d-4efa-881c-434784a92366
+# ╟─e9e9e16d-0b2c-45ce-aa5b-cdcda6b143f1
+# ╟─0c2cf1d2-cb4d-4efa-881c-434784a92366
 # ╟─bce5f7ae-49c5-4520-a0f6-6215e5078674
 # ╟─dd8fb4fa-fa67-4e26-988d-3ede79bc9540
 # ╟─cf8665e2-07d9-4464-b833-0531205408e9
-# ╟─2614e5ad-0d45-4046-abfd-053dd872c17c
+# ╠═2614e5ad-0d45-4046-abfd-053dd872c17c
 # ╟─1c32440c-32af-414c-9a7a-d6cc83685f7c
 # ╟─c2564f33-dcf5-45fe-a462-70fe105bcf0a
 # ╟─27031733-7ade-4bda-b464-5a9ade0b2950

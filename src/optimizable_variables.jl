@@ -202,7 +202,7 @@ function modify!(ov::OV{N , DT}, x) where {N , DT}
 
     Simple regularization 
     """
-    function fixed_diagonal_regularization_loss(ov::OV{N,DT} ) where {N , DT}
+    function fixed_diagonal_regularization_loss(ov::OV{N , DT} ) where {N , DT}
 
         loss = zero(DT)
         # avg_coeffs = zero(DT)
@@ -227,8 +227,8 @@ function modify!(ov::OV{N , DT}, x) where {N , DT}
         f = ov.(τ)
         lb = similar(f)
         v = ov_variance(ov , cov , τ )
-        ub = @. f + α * v
-        lb = @. f - α * v
+        ub = @. f + α * sqrt(v)
+        lb = @. f - α * sqrt(v)
         return (; f = f , lb = lb , ub = ub )
     end
     # interface
