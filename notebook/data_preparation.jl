@@ -248,6 +248,9 @@ end
 # ╔═╡ b8d5a2ee-5a5e-462f-9588-c7d910f446e8
 is_projects_selected && raw_raw_data_plot
 
+# ╔═╡ 8e0fff6a-4a02-4e6b-a017-477a46269918
+md""" Resave data selection $(@bind resave_selection_trigger Button("resave"))"""
+
 # ╔═╡ 6c4cb363-3bda-4dfa-8499-8201a013895d
 is_projects_selected && @bind show_data_table Select(collect(keys(all_data)))
 
@@ -268,9 +271,6 @@ md" Show table $(@bind is_show_all_data_table CheckBox(false))"
 # ╔═╡ c9717703-5218-451d-9a80-a4ddb79b929d
 
 @bind data_selection_save_pathname PF.multi_values(PlutoUI.TextField, ("path" , "name") , title = "Data selection path/name" , defaults=(working_folder , "data_selection"))
-
-# ╔═╡ 8e0fff6a-4a02-4e6b-a017-477a46269918
-md""" Resave data selection $(@bind resave_selection_trigger Button("resave"))"""
 
 # ╔═╡ 12699165-eb53-4bca-b177-8326a0a72aed
 md"""
