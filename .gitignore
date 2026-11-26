@@ -7,3 +7,4 @@ data_utils/binary_files/*
 *backup*
 *.hdf5
 jl_*
+notebook/local/*
